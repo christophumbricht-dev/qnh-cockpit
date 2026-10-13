@@ -20,6 +20,7 @@
       "dependencies": [
         "npm:@electric-sql/pglite@~0.5.9",
         "npm:@supabase/supabase-js@^2.117.3",
+        "npm:fflate@~0.8.3",
         "npm:vite@^8.3.4"
       ]
     }

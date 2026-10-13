@@ -1,27 +1,16 @@
 # QNH Cockpit
 
-Alle QNH-Apps auf einen Blick: Übersicht, Feedback, Fehler und Beta-Anmeldungen.
+Internes Dashboard der QNH GmbH: Übersicht, Verlauf, Feedback, Fehler, Beta, Verifizierung, Meldungen und **Social** (Instagram-Beiträge mit Freigabe).
 
-## Starten
+- **Starten:** `npm run dev` → <http://localhost:5185> (Demo ohne Anmeldung: <http://localhost:5185/?demo>)
+- **Online:** <https://cockpit.setqnh.ch> – Einrichtung: [docs/hosting.md](docs/hosting.md)
+- **Social einrichten:** [docs/social-setup.md](docs/social-setup.md) · Paketformat: [docs/social-paket.md](docs/social-paket.md)
 
-In PowerShell im Ordner `C:\Projects\qnh-cockpit`:
+## Tests
 
-```
-npm run dev
-```
-
-Dann im Browser <http://localhost:5185> öffnen.
-
-- **Anmelden:** mit deiner normalen Downwind-E-Mail. Du bekommst einen 6-stelligen Code per E-Mail, wie in der App. Es funktionieren nur Konten, die in Downwind Admin sind.
-- **Demo ohne Anmeldung:** <http://localhost:5185/?demo> zeigt erfundene Beispieldaten.
-
-## Was du machen kannst
-
-| Bereich | Inhalt |
+| Befehl | Was |
 |---|---|
-| Übersicht | Piloten, aktive Nutzer, Flüge, neues Feedback, Fehler, Beta-Anmeldungen |
-| Feedback | lesen, Screenshot ansehen, als erledigt markieren |
-| Fehler | gruppiert nach Fehlermeldung, mit Anzahl, Version und Details |
-| Beta | Anmeldungen von flydownwind.ch/beta, als eingeladen oder abgelehnt markieren, E-Mails für TestFlight kopieren |
-
-Änderungen im Cockpit (z.B. "Erledigt") gelten gleich wie in der Moderation in der App.
+| `npm test` | Prüfungen (Format, Länge, Hashtags, Schweizer Zeit), Paket-Import, Diagramme, Schlüssel-Check, Datenbankregeln (PGlite) |
+| `npm run test:functions` | Edge Function `social-publish` mit nachgebauter Instagram-API (Deno) |
+| `npm run check:secrets` | Keine geheimen Schlüssel in `src/`, `public/`, `dist/`, `supabase/` |
+| `npm run test:all` | alles zusammen |
