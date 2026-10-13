@@ -119,6 +119,13 @@ test("tokens: only the server reads them; refresh writes Vault and the expiry", 
   assert.ok(!cols.some((c) => /^(token|access_token|secret)$/.test(c)), "no token column");
 });
 
+test("the Edge Function (service_role) may update posts and read accounts directly", async () => {
+  const id = await newPost();
+  await as("service", `update social_posts set status='published', remote_media_id='M1', permalink='https://x' where id='${id}'`);
+  assert.equal((await as(ADMIN, `select status from social_posts where id='${id}'`)).rows[0].status, "published");
+  assert.equal((await as("service", "select count(*)::int n from social_accounts")).rows[0].n, 1);
+});
+
 test("storage: only admins upload to social-media", async () => {
   await as(ADMIN, "insert into storage.objects (bucket_id, name) values ('social-media', 'x/1.jpg')");
   await assert.rejects(as(OTHER, "insert into storage.objects (bucket_id, name) values ('social-media', 'x/2.jpg')"));

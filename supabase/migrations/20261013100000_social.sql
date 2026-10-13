@@ -44,6 +44,7 @@ create table if not exists public.social_accounts (
 alter table public.social_accounts enable row level security;
 revoke all on public.social_accounts from anon, authenticated;
 grant select on public.social_accounts to authenticated;
+grant select, update on public.social_accounts to service_role;   -- explicit: the project does not expose new tables automatically
 drop policy if exists "social_accounts: admins read" on public.social_accounts;
 create policy "social_accounts: admins read" on public.social_accounts for select to authenticated using ((select public.is_qnh_admin()));
 
@@ -137,6 +138,7 @@ create trigger social_posts_guard before insert or update on public.social_posts
 alter table public.social_posts enable row level security;
 revoke all on public.social_posts from anon, authenticated;
 grant select, insert, update, delete on public.social_posts to authenticated;
+grant select, insert, update, delete on public.social_posts to service_role;   -- Edge Function social-publish
 drop policy if exists "social_posts: admins read" on public.social_posts;
 create policy "social_posts: admins read" on public.social_posts for select to authenticated using ((select public.is_qnh_admin()));
 drop policy if exists "social_posts: admins add" on public.social_posts;
