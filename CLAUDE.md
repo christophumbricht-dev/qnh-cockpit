@@ -25,3 +25,16 @@ Internal dashboard of QNH GmbH (owner: Christoph Umbricht) for all its apps. Tal
 ## Planned (version 2+)
 
 App Store Connect (TestFlight/Store status, ratings, downloads), Codemagic build status, RevenueCat revenue. These need secret API keys, so they need a small server part (e.g. a Supabase Edge Function in a QNH project) — never keys in the browser. Hosting of the cockpit (e.g. cockpit.setqnh.ch) is not decided yet; ask Christoph.
+
+## Hosting (cockpit.setqnh.ch)
+
+GitHub Pages via `.github/workflows/pages.yml` (test, `check:secrets`, build with repository *variables* `VITE_*`, deploy). `public/CNAME`. Hash routing, so no 404 fallback. Production builds get a strict CSP (`vite.config.js`). `robots.txt` disallows all. Without a session only "QNH Cockpit – intern" is shown (login gate: QNH Core if configured, else the first app). Guide: `docs/hosting.md`. Never add secrets: `npm run check:secrets` fails on service_role JWTs, `sb_secret_`, Meta tokens and private `.env` values.
+
+## Social (QNH Core project)
+
+Backend in `supabase/` of THIS repo (the folder `Website Flying\QNH Core` is a different thing: an app template). Supabase project "QNH Core" (`project_id = "qnh-core"`).
+- `migrations/20261013100000_social.sql`: `qnh_admins` + `is_qnh_admin()`, `social_accounts` (no tokens; token in Vault under `token_name`), `social_posts` with guard trigger (inserts are drafts; only an admin update approves and needs `scheduled_at`; approved content frozen; server fields only via service_role), `social_claim()` / `social_token()` / `social_store_token()` (service_role only), public bucket `social-media` (admin write). Tests: `tests/db.test.mjs` (PGlite with auth/storage/vault stand-ins).
+- `migrations/20261013100100_social_cron.sql`: pg_cron → `social-publish` (publish every 10 min, refresh-tokens weekly, cleanup daily) with Vault secrets `qnh_project_url`, `social_cron_secret`.
+- `functions/social-publish/`: Instagram API with Instagram Login (`graph.instagram.com`, `GRAPH_VERSION` in `graph.ts`); logic in `publish.ts` (store + fetch injected), Deno tests `publish.test.ts` (`npm run test:functions`). Facebook prepared, off (`FACEBOOK_ENABLED`).
+- Cockpit: `src/social/` (`validate.js` limits + Swiss time, `data.js`, `ui.js`, `package.js`, `demo.js`). Package format: `docs/social-paket.md`. Setup: `docs/social-setup.md`.
+- Rules: nothing auto-approves; packages are always drafts; tokens only in Vault, entered by Christoph himself in the SQL editor; stage 2 (inbox, reply drafts) is an open item – no liking/following/commenting on other accounts.
