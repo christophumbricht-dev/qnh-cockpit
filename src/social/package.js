@@ -1,0 +1,87 @@
+// Post packages: a folder or a .zip with post.json + media files, e.g. prepared in a Claude chat.
+// A package always becomes a DRAFT – approving stays a separate, manual step.
+// Format: docs/social-paket.md
+import { unzipSync } from "fflate";
+import { KINDS, zurichToUtc } from "./validate.js";
+
+const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", mp4: "video/mp4", mov: "video/quicktime" };
+const MAX_TOTAL = 200 * 1024 * 1024;
+const base = (name) => String(name).split(/[\\/]/).pop();
+const typeOf = (name) => TYPES[base(name).split(".").pop().toLowerCase()];
+
+export class PackageError extends Error {}
+
+// Browser entry: FileList/array from <input type=file> (one .zip, or the files of a folder).
+export async function readPackage(fileList, accounts) {
+  const files = [...fileList];
+  const entries = new Map();
+  if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
+    if (files[0].size > MAX_TOTAL) throw new PackageError("Das Paket ist grösser als 200 MB.");
+    const unzipped = unzipSync(new Uint8Array(await files[0].arrayBuffer()), { filter: (f) => !f.name.endsWith("/") && !/(^|\/)(__MACOSX|\.)/.test(f.name) });
+    for (const [name, bytes] of Object.entries(unzipped)) addEntry(entries, name, new File([bytes], base(name), { type: typeOf(name) ?? (name.endsWith(".json") ? "application/json" : "") }));
+  } else {
+    for (const f of files) addEntry(entries, f.webkitRelativePath || f.name, f);
+  }
+  return parsePackage(entries, accounts);
+}
+
+function addEntry(entries, name, file) {
+  const key = base(name);
+  if (entries.has(key)) throw new PackageError(`Die Datei «${key}» kommt zweimal vor.`);
+  entries.set(key, file);
+}
+
+// Pure part (unit-tested): entries = Map<basename, File>
+export async function parsePackage(entries, accounts) {
+  const manifest = entries.get("post.json");
+  if (!manifest) throw new PackageError("Im Paket fehlt die Datei post.json.");
+  let post;
+  try {
+    post = JSON.parse(await manifest.text());
+  } catch {
+    throw new PackageError("post.json ist kein gültiges JSON.");
+  }
+
+  const [appId, platform = "instagram"] = String(post.account ?? "").split("/");
+  const account = accounts.find((a) => a.app_id === appId && a.platform === platform);
+  if (!account) throw new PackageError(`Unbekanntes Konto «${post.account}». Verbunden sind: ${accounts.map((a) => `${a.app_id}/${a.platform}`).join(", ") || "keine"}.`);
+  if (!KINDS[post.kind]) throw new PackageError(`Unbekannte Art «${post.kind}». Erlaubt: ${Object.keys(KINDS).join(", ")}.`);
+
+  const names = Array.isArray(post.media) ? post.media : [];
+  if (!names.length) throw new PackageError("post.json: «media» braucht mindestens eine Datei.");
+  if (names.length > 10) throw new PackageError("post.json: höchstens 10 Dateien.");
+  const files = names.map((n) => {
+    const f = entries.get(base(n));
+    if (!f) throw new PackageError(`Die Datei «${n}» aus post.json fehlt im Paket.`);
+    if (!typeOf(n)) throw new PackageError(`«${n}»: nur JPEG (.jpg) und MP4/MOV sind erlaubt.`);
+    return f.type ? f : new File([f], f.name, { type: typeOf(n) });
+  });
+  const total = files.reduce((s, f) => s + f.size, 0);
+  if (total > MAX_TOTAL) throw new PackageError("Die Dateien sind zusammen grösser als 200 MB.");
+
+  let cover = null;
+  if (post.cover) {
+    cover = entries.get(base(post.cover));
+    if (!cover) throw new PackageError(`Das Titelbild «${post.cover}» fehlt im Paket.`);
+  }
+
+  let suggested = null;
+  if (post.suggested_time) {
+    const t = String(post.suggested_time);
+    suggested = /(Z|[+-]\d\d:?\d\d)$/.test(t) ? new Date(t) : zurichToUtc(t) && new Date(zurichToUtc(t));
+    if (!suggested || Number.isNaN(suggested.getTime())) throw new PackageError(`suggested_time «${t}» ist kein Datum (z. B. 2026-10-25T18:30).`);
+    suggested = suggested.toISOString();
+  }
+
+  const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
+  return {
+    account,
+    kind: post.kind,
+    caption: String(post.caption ?? ""),
+    first_comment: String(post.first_comment ?? ""),
+    alt,
+    suggested_time: suggested,
+    files,
+    cover,
+  };
+}

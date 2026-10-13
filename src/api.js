@@ -13,7 +13,7 @@ export function configured(app) {
   return DEMO || Boolean(app.url && app.anonKey);
 }
 
-function client(app) {
+export function client(app) {
   if (!clients.has(app.id)) {
     clients.set(app.id, createClient(app.url, app.anonKey, {
       auth: { storageKey: `qnh-cockpit-${app.id}`, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },

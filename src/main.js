@@ -3,9 +3,11 @@ import { APPS, QNH, appById } from "./apps.js";
 import * as api from "./api.js";
 import { esc, relTime, shortDate, num, sourceLabel, errorText } from "./format.js";
 import { bucket, chartSvg, periodLabel } from "./charts.js";
+import { createSocial } from "./social/ui.js";
+import { socialConfigured } from "./social/data.js";
 
 const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365, "1 Jahr"]];
-const TAB_LABELS = { overview: "Übersicht", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
+const TAB_LABELS = { overview: "Übersicht", social: "Social", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
 const ERROR_DAYS = [1, 7, 30];
 
 const S = {
@@ -27,6 +29,7 @@ const S = {
 };
 
 const root = document.getElementById("app");
+const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
 
@@ -57,6 +60,7 @@ function ensureData(force = false) {
     if (a.tabs.includes("verify")) load(a, "verify", () => api.verificationQueue(a), force);
     if (a.tabs.includes("reports")) load(a, "reports", () => api.reports(a), force);
   }
+  if (socialConfigured() && (S.tab === "overview" || S.tab === "social") && (api.DEMO || S.users[QNH.id])) social.load(force);
   const a = app();
   if (!a || !S.users[a.id]) return;
   if (S.tab === "trend") load(a, `trend${S.trendDays}`, () => api.timeseries(a, S.trendDays), force);
@@ -68,7 +72,9 @@ function ensureData(force = false) {
 function route() {
   const [appId, tab] = location.hash.replace(/^#\/?/, "").split("/");
   const a = appById(appId);
-  if (a?.tabs?.includes(tab)) {
+  if (appId === "social") {
+    S.tab = "social";
+  } else if (a?.tabs?.includes(tab)) {
     S.appId = a.id;
     S.tab = tab;
   } else {
@@ -101,11 +107,11 @@ function render() {
 
 function header() {
   const a = app();
-  const tabs = ["overview", ...(a?.tabs ?? [])];
+  const tabs = ["overview", ...(socialConfigured() ? ["social"] : []), ...(a?.tabs ?? [])];
   const stats = a && S.data[`${a.id}:stats`]?.value;
   const nav = tabs.map((t) => {
-    const href = t === "overview" ? "#" : `#${a.id}/${t}`;
-    const n = t === "overview" ? 0 : badge(a, t, stats);
+    const href = t === "overview" ? "#" : t === "social" ? "#social" : `#${a.id}/${t}`;
+    const n = t === "overview" ? 0 : t === "social" ? social.badge() : badge(a, t, stats);
     return `<a href="${href}" class="tab${S.tab === t ? " on" : ""}">${TAB_LABELS[t]}${n ? `<span class="badge">${n}</span>` : ""}</a>`;
   }).join("");
   const appsWithTabs = APPS.filter((x) => x.tabs?.length);
@@ -139,6 +145,7 @@ function tileValue(a, t, stats) {
 
 function view() {
   if (S.tab === "overview") return overview();
+  if (S.tab === "social") return social.view();
   const a = app();
   if (!S.users[a.id]) return `<section class="card">${cardHead(a)}${loginForm(a)}</section>`;
   if (S.tab === "trend") return trendView(a);
@@ -153,7 +160,7 @@ function view() {
 // ---- overview ---------------------------------------------------------------
 
 function overview() {
-  return `<div class="cards">${APPS.map((a) => `<section class="card">${cardHead(a)}${cardBody(a)}</section>`).join("")}</div>`;
+  return `<div class="cards">${APPS.map((a) => `<section class="card">${cardHead(a)}${cardBody(a)}</section>`).join("")}${social.overviewCard()}</div>`;
 }
 
 function cardHead(a) {
@@ -464,7 +471,13 @@ root.addEventListener("submit", async (e) => {
   render();
 });
 
-root.addEventListener("change", (e) => {
+root.addEventListener("input", (e) => social.onInput(e));
+root.addEventListener("dragover", (e) => social.onDragOver(e));
+root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop]")?.classList.remove("over"));
+root.addEventListener("drop", (e) => social.onDrop(e));
+
+root.addEventListener("change", async (e) => {
+  if (await social.onChange(e)) return;
   if (e.target.dataset.action === "pick-app") location.hash = `#${e.target.value}/${appById(e.target.value).tabs[0]}`;
 });
 
@@ -472,6 +485,7 @@ root.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-action]");
   if (!el || el.tagName === "SELECT") return;
   const { action, id, status, value } = el.dataset;
+  if (action.startsWith("soc-")) return social.onClick(action, el);
   const a = el.dataset.app ? appById(el.dataset.app) : app();
 
   switch (action) {

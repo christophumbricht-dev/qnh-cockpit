@@ -16,7 +16,8 @@
     "test:functions": "npx -y deno@2 test --no-check=remote supabase/functions/"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.3"
+    "@supabase/supabase-js": "^2.117.3",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.9",
