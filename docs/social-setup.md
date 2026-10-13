@@ -34,7 +34,7 @@ In der App unter **Instagram → API setup with Instagram login → Permissions*
 | `instagram_business_manage_comments` | den **ersten Kommentar** schreiben (ohne diese Berechtigung klappt alles andere, nur der Kommentar nicht) |
 
 ## 4. Instagram-Konto mit der App verbinden und Token erzeugen (10 Min., pro App-Konto)
-1. In der App → **App Roles** → **Roles** → **Add People** → **Instagram Tester** → Instagram-Benutzername (z. B. `flydownwind`).
+1. In der App → **App Roles** → **Roles** → **Add People** → **Instagram Tester** → Instagram-Benutzername (z. B. `fly_downwind`).
 2. In der Instagram-App die Einladung annehmen: **Einstellungen** → **Website-Berechtigungen** / **Apps und Websites** → **Tester-Einladungen** (Ort im UI prüfen).
 3. Zurück in der Meta-App → **Instagram → API setup with Instagram login** → **Generate access tokens** → **Add account** → mit dem Instagram-Konto anmelden → Berechtigungen bestätigen.
 4. Du siehst jetzt:
@@ -77,7 +77,7 @@ Neue Query, die Platzhalter **direkt im SQL Editor** ersetzen, **Run**, danach d
 select vault.create_secret('HIER_DEN_TOKEN_EINFUEGEN', 'meta_token_downwind_instagram');
 
 insert into public.social_accounts (app_id, platform, remote_id, handle, token_name, token_expires_at)
-values ('downwind', 'instagram', 'HIER_DIE_INSTAGRAM_KONTO_ID', 'flydownwind', 'meta_token_downwind_instagram', now() + interval '60 days');
+values ('downwind', 'instagram', 'HIER_DIE_INSTAGRAM_KONTO_ID', 'fly_downwind', 'meta_token_downwind_instagram', now() + interval '60 days');
 ```
 Für SecondSeat später dasselbe mit `secondseat` und `meta_token_secondseat_instagram`.
 

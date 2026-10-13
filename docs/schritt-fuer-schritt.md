@@ -158,7 +158,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
 
 ---
 
-## E – Instagram und Meta (pro App-Konto, zuerst @flydownwind)
+## E – Instagram und Meta (pro App-Konto, zuerst @fly_downwind)
 
 - [ ] **E1 Unternehmenskonto**
   1. Instagram-App → Profil → **☰** → **Einstellungen und Aktivität** → **Kontotyp und Tools** → **Zu professionellem Konto wechseln** → **Unternehmen** (Bezeichnungen im UI prüfen).
@@ -174,11 +174,11 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
   Keine Meta-Prüfung nötig, solange nur deine eigenen Konten verbunden sind.
 
 - [ ] **E4 Konto als Tester verbinden**
-  1. Meta-App → **App Roles → Roles → Add People → Instagram Tester** → `flydownwind`.
+  1. Meta-App → **App Roles → Roles → Add People → Instagram Tester** → `fly_downwind`.
   2. Instagram-App → **Einstellungen** → **Website-Berechtigungen** / **Apps und Websites** → **Tester-Einladungen** → annehmen (Ort im UI prüfen).
 
 - [ ] **E5 Token erzeugen**
-  1. Meta-App → Instagram → API setup with Instagram login → **Generate access tokens** → **Add account** → mit @flydownwind anmelden → bestätigen.
+  1. Meta-App → Instagram → API setup with Instagram login → **Generate access tokens** → **Add account** → mit @fly_downwind anmelden → bestätigen.
   2. **Instagram-Konto-ID** (Zahl) notieren.
   3. **Token** kopieren – **nirgends speichern**, gleich weiter mit F1.
 
@@ -192,10 +192,10 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
   select vault.create_secret('HIER_DEN_TOKEN_EINFUEGEN', 'meta_token_downwind_instagram');
 
   insert into public.social_accounts (app_id, platform, remote_id, handle, token_name, token_expires_at)
-  values ('downwind', 'instagram', 'HIER_DIE_INSTAGRAM_KONTO_ID', 'flydownwind',
+  values ('downwind', 'instagram', 'HIER_DIE_INSTAGRAM_KONTO_ID', 'fly_downwind',
           'meta_token_downwind_instagram', now() + interval '60 days');
   ```
-  - ✅ Im Cockpit unter Social erscheint «Downwind · Instagram @flydownwind · Token gültig bis …».
+  - ✅ Im Cockpit unter Social erscheint «Downwind · Instagram @fly_downwind · Token gültig bis …».
 
 - [ ] **F2 Server-Teil hochladen** (PowerShell)
   ```
@@ -230,7 +230,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
 
 - [ ] **G1**
   1. Testbild im Hochformat (1080 × 1920) als **JPEG**, z. B. ein iPhone-Screenshot.
-  2. Cockpit → **Social** → **Neuer Beitrag** → Konto @flydownwind → Art **Story** → Bild hineinziehen.
+  2. Cockpit → **Social** → **Neuer Beitrag** → Konto @fly_downwind → Art **Story** → Bild hineinziehen.
   3. Zeit: in 15 Minuten → **Freigeben** → bestätigen.
   4. Warten (oder **Jetzt veröffentlichen**). Status wechselt zu «Veröffentlicht».
   5. Auf Instagram prüfen. Die Story verschwindet nach 24 Stunden von selbst.
@@ -243,7 +243,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
 ## H – Profile (Texte zum Kopieren in `C:\Projects\setqnh-website\docs\social-profile.md`)
 
 - [ ] **H1 LinkedIn-Unternehmensseite** «QNH GmbH», URL `linkedin.com/company/setqnh`, Logo und Titelbild aus `Website Flying\QNH Logo\social\`.
-- [ ] **H2 Instagram @setqnh** reservieren (Profil sauber, Inhalte laufen über @flydownwind).
+- [ ] **H2 Instagram @setqnh** reservieren (Profil sauber, Inhalte laufen über @fly_downwind).
 - [ ] **H3** Erster LinkedIn-Beitrag «QNH ist gestartet», sobald Website und E-Mail laufen.
 
 ---
