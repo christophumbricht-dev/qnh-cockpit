@@ -24,7 +24,7 @@ Internal dashboard of QNH GmbH (owner: Christoph Umbricht) for all its apps. Tal
 
 ## Planned (version 2+)
 
-App Store Connect (TestFlight/Store status, ratings, downloads), Codemagic build status, RevenueCat revenue. These need secret API keys, so they need a small server part (e.g. a Supabase Edge Function in a QNH project) — never keys in the browser. Hosting of the cockpit (e.g. cockpit.setqnh.ch) is not decided yet; ask Christoph.
+App Store Connect (TestFlight/Store status, ratings, downloads), Codemagic build status, RevenueCat revenue. These need secret API keys, so they need a small server part (e.g. a Supabase Edge Function in a QNH project) — never keys in the browser. The secrets would live in the QNH Core project (see Social below).
 
 ## Hosting (cockpit.setqnh.ch)
 
