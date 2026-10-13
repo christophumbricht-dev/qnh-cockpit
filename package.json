@@ -12,7 +12,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test \"tests/*.test.mjs\"",
-    "check:secrets": "node scripts/check-secrets.mjs"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "test:functions": "echo 'no edge functions yet'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3"

@@ -1,0 +1,55 @@
+# Builds the cockpit and publishes it on GitHub Pages (https://cockpit.setqnh.ch) on every push to main.
+# The VITE_* values are public (Supabase URL + anon key) and come from repository *variables*
+# (Settings → Secrets and variables → Actions → Variables), not from secrets.
+name: Deploy cockpit to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      VITE_QNH_SUPABASE_URL: ${{ vars.VITE_QNH_SUPABASE_URL }}
+      VITE_QNH_SUPABASE_ANON_KEY: ${{ vars.VITE_QNH_SUPABASE_ANON_KEY }}
+      VITE_DOWNWIND_SUPABASE_URL: ${{ vars.VITE_DOWNWIND_SUPABASE_URL }}
+      VITE_DOWNWIND_SUPABASE_ANON_KEY: ${{ vars.VITE_DOWNWIND_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Edge Function tests (Deno)
+        run: npm run test:functions
+      - run: npm run check:secrets
+      - run: npm run build
+      - name: Check the built site for secrets
+        run: npm run check:secrets
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
