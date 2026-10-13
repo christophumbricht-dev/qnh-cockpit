@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "test": "node --test \"tests/*.test.mjs\"",
     "check:secrets": "node scripts/check-secrets.mjs",
-    "test:functions": "echo 'no edge functions yet'"
+    "test:functions": "npx -y deno@2 test --no-check=remote supabase/functions/"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3"

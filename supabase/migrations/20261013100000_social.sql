@@ -65,6 +65,7 @@ create table if not exists public.social_posts (
   published_at        timestamptz,
   remote_container_id text,
   remote_media_id     text,
+  remote_comment_id   text,
   permalink           text,
   attempts            int not null default 0,
   last_error          text check (last_error is null or char_length(last_error) <= 1000),
@@ -92,14 +93,14 @@ begin
     if new.status <> 'draft' then raise exception 'Neue Beiträge sind immer Entwürfe.' using errcode = '42501'; end if;
     new.created_by := auth.uid();
     new.approved_at := null; new.approved_by := null; new.published_at := null;
-    new.remote_container_id := null; new.remote_media_id := null; new.permalink := null;
+    new.remote_container_id := null; new.remote_media_id := null; new.remote_comment_id := null; new.permalink := null;
     new.attempts := 0; new.last_error := null; new.media_deleted_at := null;
     return new;
   end if;
 
   -- fields only the server writes
-  if (new.published_at, new.remote_container_id, new.remote_media_id, new.permalink, new.media_deleted_at, new.created_by, new.created_at)
-     is distinct from (old.published_at, old.remote_container_id, old.remote_media_id, old.permalink, old.media_deleted_at, old.created_by, old.created_at) then
+  if (new.published_at, new.remote_container_id, new.remote_media_id, new.remote_comment_id, new.permalink, new.media_deleted_at, new.created_by, new.created_at)
+     is distinct from (old.published_at, old.remote_container_id, old.remote_media_id, old.remote_comment_id, old.permalink, old.media_deleted_at, old.created_by, old.created_at) then
     raise exception 'Diese Felder setzt nur der Server.' using errcode = '42501';
   end if;
   if old.status in ('publishing', 'published') then
