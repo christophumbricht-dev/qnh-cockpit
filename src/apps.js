@@ -41,4 +41,12 @@ export const APPS = [
   },
 ];
 
-export const appById = (id) => APPS.find((a) => a.id === id);
+// QNH's own Supabase project ("QNH Core"): cockpit login gate, social media posts.
+export const QNH = {
+  id: "qnh",
+  name: "QNH Core",
+  url: import.meta.env.VITE_QNH_SUPABASE_URL,
+  anonKey: import.meta.env.VITE_QNH_SUPABASE_ANON_KEY,
+};
+
+export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id));

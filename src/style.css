@@ -203,3 +203,10 @@ blockquote { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--li
 .chart-card td { padding: 2px 16px 2px 0; }
 .chart-card td:last-child { text-align: right; }
 .tip { position: fixed; left: 0; top: 0; display: none; pointer-events: none; z-index: 20; background: var(--ink); color: var(--card); font-size: 13px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; }
+
+/* ---- login gate ---- */
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.gate-card { width: min(420px, 100%); text-align: left; }
+.gate-card svg { width: 30px; height: 40px; }
+.gate-card h1 { font-size: 20px; margin: 10px 0 16px; }
+.head-out { color: rgba(255, 255, 255, 0.75); margin: 0; font-size: 13px; }

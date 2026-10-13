@@ -1,5 +1,5 @@
 import "./style.css";
-import { APPS, appById } from "./apps.js";
+import { APPS, QNH, appById } from "./apps.js";
 import * as api from "./api.js";
 import { esc, relTime, shortDate, num, sourceLabel, errorText } from "./format.js";
 import { bucket, chartSvg, periodLabel } from "./charts.js";
@@ -82,9 +82,20 @@ function route() {
 // Rendering
 // ---------------------------------------------------------------------------
 
+// The first login: QNH Core if it is set up, otherwise the first app. Until then the page shows
+// nothing but "QNH Cockpit – intern" (no app names). The data itself is protected by the admin
+// functions in each database, not by this screen.
+function gateApp() {
+  if (api.DEMO) return null;
+  return QNH.url && QNH.anonKey ? QNH : APPS.find(live) ?? null;
+}
+
 function render() {
   const focused = document.activeElement?.name;
-  root.innerHTML = `${header()}<main>${view()}</main>${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ""}`;
+  const gate = gateApp();
+  root.innerHTML = gate && !S.users[gate.id]
+    ? `<main class="gate"><section class="card gate-card">${logo()}<h1>QNH Cockpit – intern</h1>${loginForm(gate, true)}</section></main>`
+    : `${header()}<main>${view()}</main>${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ""}`;
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
 }
 
@@ -106,6 +117,7 @@ function header() {
       <a href="#" class="brand" aria-label="QNH Cockpit">${logo()}<span>QNH <b>Cockpit</b></span></a>
       ${api.DEMO ? `<span class="demo">Demo-Daten</span>` : ""}
       <button class="icon-btn" data-action="refresh" title="Aktualisieren" aria-label="Aktualisieren">${refreshIcon()}</button>
+      ${!api.DEMO && S.users[QNH.id] ? `<button class="link head-out" data-action="sign-out" data-app="${QNH.id}">Abmelden</button>` : ""}
     </div>
     <nav>${picker}${nav}</nav>
   </header>`;
@@ -170,12 +182,12 @@ function tile(a, t, s) {
   return t.tab ? `<a class="${cls}" href="#${a.id}/${t.tab}">${inner}</a>` : `<div class="${cls}">${inner}</div>`;
 }
 
-function loginForm(a) {
+function loginForm(a, neutral = false) {
   const l = S.login[a.id] ?? { step: "email", email: "" };
   const err = l.error ? `<p class="error">${esc(l.error)}</p>` : "";
   if (l.step === "code") {
     return `<form class="login" data-form="verify-code" data-app="${a.id}">
-      <p>Code an <b>${esc(l.email)}</b> gesendet. Er steht in der Anmelde-E-Mail von ${esc(a.name)}.</p>
+      <p>Code an <b>${esc(l.email)}</b> gesendet.${neutral ? "" : ` Er steht in der Anmelde-E-Mail von ${esc(a.name)}.`}</p>
       <div class="row">
         <input name="code-${a.id}" inputmode="numeric" autocomplete="one-time-code" placeholder="6-stelliger Code" required maxlength="10" />
         <button class="btn" ${l.busy ? "disabled" : ""}>Anmelden</button>
@@ -185,7 +197,7 @@ function loginForm(a) {
     </form>`;
   }
   return `<form class="login" data-form="send-code" data-app="${a.id}">
-    <p>Mit deinem Admin-Konto von ${esc(a.name)} anmelden.</p>
+    ${neutral ? "" : `<p>Mit deinem Admin-Konto von ${esc(a.name)} anmelden.</p>`}
     <div class="row">
       <input name="email-${a.id}" type="email" autocomplete="email" placeholder="E-Mail" value="${esc(l.email)}" required />
       <button class="btn" ${l.busy ? "disabled" : ""}>Code senden</button>
@@ -607,6 +619,6 @@ window.addEventListener("focus", () => {
 
 (async () => {
   root.innerHTML = `<p class="muted loading">Lädt …</p>`;
-  for (const a of APPS) if (live(a)) S.users[a.id] = await api.currentUser(a);
+  for (const a of [QNH, ...APPS]) if (live(a)) S.users[a.id] = await api.currentUser(a);
   route();
 })();
