@@ -1,0 +1,22 @@
+{
+  "name": "qnh-cockpit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "QNH Cockpit – internal dashboard for all QNH apps.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test \"tests/*.test.mjs\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3"
+  },
+  "devDependencies": {
+    "vite": "^8.3.4"
+  }
+}

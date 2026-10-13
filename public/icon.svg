@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><title>QNH</title>
+<rect width="120" height="120" rx="27" fill="#0B7285"/>
+<g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" transform="translate(60 60) scale(.6) translate(-85 -104.5)">
+  <polyline points="50,155 85,120 120,155" stroke="#fff" stroke-opacity=".4"/>
+  <polyline points="50,122 85,87 120,122" stroke="#fff" stroke-opacity=".7"/>
+  <polyline points="50,89 85,54 120,89" stroke="#fff"/>
+</g>
+</svg>
