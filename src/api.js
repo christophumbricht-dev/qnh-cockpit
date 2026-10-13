@@ -16,7 +16,9 @@ export function configured(app) {
 export function client(app) {
   if (!clients.has(app.id)) {
     clients.set(app.id, createClient(app.url, app.anonKey, {
-      auth: { storageKey: `qnh-cockpit-${app.id}`, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      // QNH Core can only send Supabase's default e-mail (a sign-in link, no code) on the free plan,
+      // so its client also accepts the link (tokens in the URL). The app projects use the 6-digit code.
+      auth: { storageKey: `qnh-cockpit-${app.id}`, persistSession: true, autoRefreshToken: true, detectSessionInUrl: app.id === "qnh" },
     }));
   }
   return clients.get(app.id);
@@ -37,7 +39,8 @@ export async function currentUser(app) {
 }
 
 export async function sendCode(app, email) {
-  const { error } = await client(app).auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+  const emailRedirectTo = app.id === "qnh" ? location.origin + location.pathname : undefined;
+  const { error } = await client(app).auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo } });
   if (error) throw error;
 }
 

@@ -194,7 +194,7 @@ function loginForm(a, neutral = false) {
   const err = l.error ? `<p class="error">${esc(l.error)}</p>` : "";
   if (l.step === "code") {
     return `<form class="login" data-form="verify-code" data-app="${a.id}">
-      <p>Code an <b>${esc(l.email)}</b> gesendet.${neutral ? "" : ` Er steht in der Anmelde-E-Mail von ${esc(a.name)}.`}</p>
+      <p>E-Mail an <b>${esc(l.email)}</b> gesendet. ${a.id === QNH.id ? "Klick auf den Link in der E-Mail – am besten in diesem Browser. Steht ein Code drin, kannst du ihn auch hier eingeben." : `Gib den Code aus der Anmelde-E-Mail${neutral ? "" : ` von ${esc(a.name)}`} ein.`}</p>
       <div class="row">
         <input name="code-${a.id}" inputmode="numeric" autocomplete="one-time-code" placeholder="6-stelliger Code" required maxlength="10" />
         <button class="btn" ${l.busy ? "disabled" : ""}>Anmelden</button>
@@ -633,6 +633,10 @@ window.addEventListener("focus", () => {
 
 (async () => {
   root.innerHTML = `<p class="muted loading">Lädt …</p>`;
+  const linkError = new URLSearchParams(location.hash.slice(1)).get("error_description");
   for (const a of [QNH, ...APPS]) if (live(a)) S.users[a.id] = await api.currentUser(a);
+  // a sign-in link leaves tokens or an error in the URL hash – remove them before routing
+  if (/access_token|error_description|refresh_token/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+  if (linkError && QNH.url) S.login[QNH.id] = { step: "email", email: "", error: `Der Anmeldelink ist ungültig oder abgelaufen (${linkError}). Bitte neu anfordern.` };
   route();
 })();
