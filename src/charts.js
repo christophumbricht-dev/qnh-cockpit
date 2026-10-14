@@ -80,3 +80,21 @@ export function chartSvg({ periods, weekly, key, kind, label }) {
     ${grid}${marks}${xLabels}<line class="cross" x1="0" x2="0" y1="${PAD.t}" y2="${PAD.t + ih}" visibility="hidden"/><circle class="dot" r="4" visibility="hidden"/>${hits}
   </svg>`;
 }
+
+// Tiny trend line/bars for tiles (no axes, decorative – the number next to it is the real value).
+export function sparkSvg(values, kind = "line") {
+  const v = values.map((x) => Number(x) || 0);
+  const n = v.length;
+  if (n < 2) return "";
+  const W = 120, H = 34;
+  const max = Math.max(...v), min = kind === "line" ? Math.min(...v) : 0;
+  const y = (x) => H - 3 - ((x - min) / (max - min || 1)) * (H - 6);
+  if (kind === "bar") {
+    const bw = W / n;
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${v.map((x, i) =>
+      x ? `<rect x="${(i * bw + 0.6).toFixed(1)}" y="${y(x).toFixed(1)}" width="${Math.max(0.8, bw - 1.2).toFixed(1)}" height="${(H - 3 - y(x)).toFixed(1)}" rx="1"/>` : "").join("")}</svg>`;
+  }
+  const pts = v.map((x, i) => `${((i / (n - 1)) * W).toFixed(1)},${y(x).toFixed(1)}`);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <polygon class="area" points="0,${H} ${pts.join(" ")} ${W},${H}"/><polyline points="${pts.join(" ")}"/></svg>`;
+}

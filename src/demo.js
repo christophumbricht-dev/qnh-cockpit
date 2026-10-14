@@ -55,7 +55,7 @@ export function timeseries(days) {
     const pilots_new = rnd() < 0.18 * growth ? 1 + Math.floor(rnd() * 2) : 0;
     total += pilots_new;
     rows.push({ day: d.toISOString().slice(0, 10), pilots_new, pilots_total: total,
-      flights: Math.floor(rnd() * (weekend ? 7 : 3) * growth), active: 0,
+      flights: Math.floor(rnd() * (weekend ? 7 : 3) * growth), active: Math.floor(rnd() * (weekend ? 5 : 2) * growth),
       errors: rnd() < 0.15 ? Math.floor(rnd() * 6) : 0, feedback: rnd() < 0.08 ? 1 : 0, beta: rnd() < 0.2 ? 1 : 0 });
   }
   return delay(rows);
