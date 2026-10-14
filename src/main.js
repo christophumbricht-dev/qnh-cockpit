@@ -150,6 +150,7 @@ function render() {
     ? `<main class="gate" style="--photo:url('${PHOTO_BASE}band.webp')"><section class="gate-card">${logo()}<h1>QNH Cockpit</h1><p class="muted">intern</p>${loginForm(gate, true)}</section>${photoCredit()}</main>`
     : shell();
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
+  social.afterRender();
 }
 
 function shell() {
@@ -828,6 +829,8 @@ root.addEventListener("input", (e) => {
   }
   social.onInput(e);
 });
+// scroll does not bubble: listen in the capture phase (carousel preview swipe)
+root.addEventListener("scroll", (e) => social.onScroll(e), true);
 root.addEventListener("dragstart", (e) => qnh.onDragStart(e) || social.onDragStart(e));
 root.addEventListener("dragover", (e) => qnh.onDragOver(e) || social.onDragOver(e));
 root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col], [data-cal-day]")?.classList.remove("over"));

@@ -338,15 +338,23 @@ export function createSocial({ S, render, toast, errorText, appName }) {
   function previewHtml(ed, acc) {
     const handle = acc?.handle ?? "konto";
     const it = ed.items[Math.min(ed.preview, ed.items.length - 1)];
-    const media = it ? thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "phone-img") : `<span class="phone-img empty">Noch keine Datei</span>`;
+    const src = (x) => ({ ...x, url: x.url ?? (x.path ? data.mediaUrl(x.path) : x.copyFrom ? data.mediaUrl(x.copyFrom) : undefined) });
+    const slider = ed.kind === "carousel" && ed.items.length > 1;
+    const media = slider
+      ? `<div class="phone-track" data-slider>${ed.items.map((x) => `<div class="slide">${thumb(src(x), "phone-img")}</div>`).join("")}</div>
+        <span class="phone-count">${ed.preview + 1}/${ed.items.length}</span>
+        <button class="phone-nav prev" data-action="soc-slide" data-value="-1" aria-label="Vorheriges Bild">‹</button>
+        <button class="phone-nav next" data-action="soc-slide" data-value="1" aria-label="Nächstes Bild">›</button>`
+      : it ? thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "phone-img") : `<span class="phone-img empty">Noch keine Datei</span>`;
     const vertical = ed.kind === "story" || ed.kind === "reel";
-    const ratio = vertical ? "9 / 16" : it?.width ? `${it.width} / ${it.height}` : "4 / 5";
+    const shape = slider ? ed.items[0] : it;
+    const ratio = vertical ? "9 / 16" : shape?.width ? `${shape.width} / ${shape.height}` : "4 / 5";
     const dots = ed.kind === "carousel" && ed.items.length > 1
       ? `<div class="phone-dots">${ed.items.map((_, i) => `<button class="${i === ed.preview ? "on" : ""}" data-action="soc-preview" data-value="${i}" aria-label="Datei ${i + 1}"></button>`).join("")}</div>` : "";
     const cap = ed.caption.length > 125 ? `${esc(ed.caption.slice(0, 125))}… <span class="muted">mehr</span>` : esc(ed.caption);
     return `<div class="phone${vertical ? " vertical" : ""}">
       <div class="phone-head"><span class="avatar"></span><b>${esc(handle)}</b>${ed.kind === "story" ? `<span class="muted small">Story</span>` : ""}</div>
-      <div class="phone-media" style="aspect-ratio:${ratio}">${media}</div>
+      <div class="phone-media${slider ? " slider" : ""}" style="aspect-ratio:${ratio}">${media}</div>
       ${dots}
       ${vertical ? "" : `<div class="phone-caption"><b>${esc(handle)}</b> ${cap}</div>${ed.first_comment.trim() ? `<div class="phone-comment"><b>${esc(handle)}</b> ${esc(ed.first_comment.slice(0, 80))}</div>` : ""}`}
     </div>
@@ -360,7 +368,42 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     set("soc-counter", counterHtml(ed));
     set("soc-checks", checksHtml(ed));
     set("soc-preview", previewHtml(ed, account(ed.account_id)));
+    syncSlider(false);
   }
+
+  // ---------- carousel preview: swipe / arrows / dots ----------
+  const track = () => document.querySelector("#soc-preview [data-slider]");
+  function syncSlider(smooth) {
+    const t = track(), ed = S.social.editor;
+    if (!t || !ed) return;
+    t.scrollTo({ left: ed.preview * t.clientWidth, behavior: smooth ? "smooth" : "instant" });
+    markSlide();
+  }
+  function markSlide() {
+    const ed = S.social.editor, box = document.getElementById("soc-preview");
+    if (!ed || !box) return;
+    box.querySelectorAll(".phone-dots button").forEach((b, i) => b.classList.toggle("on", i === ed.preview));
+    const c = box.querySelector(".phone-count");
+    if (c) c.textContent = `${ed.preview + 1}/${ed.items.length}`;
+    box.querySelector(".phone-nav.prev")?.toggleAttribute("hidden", ed.preview === 0);
+    box.querySelector(".phone-nav.next")?.toggleAttribute("hidden", ed.preview >= ed.items.length - 1);
+  }
+  function slideTo(i) {
+    const ed = S.social.editor;
+    if (!ed) return;
+    ed.preview = Math.max(0, Math.min(ed.items.length - 1, i));
+    if (track()) syncSlider(true); else refreshBits();
+  }
+  // swiping (touch, trackpad) scrolls the track; the slide in view becomes the current one
+  function onScroll(e) {
+    const t = e.target;
+    if (!(t instanceof Element) || !t.matches("[data-slider]")) return false;
+    const ed = S.social.editor;
+    const i = Math.round(t.scrollLeft / Math.max(1, t.clientWidth));
+    if (ed && i !== ed.preview) { ed.preview = i; markSlide(); }
+    return true;
+  }
+  const afterRender = () => { if (S.social.editor) syncSlider(false); };
 
   async function probe(file) {
     const url = URL.createObjectURL(file);
@@ -516,7 +559,8 @@ export function createSocial({ S, render, toast, errorText, appName }) {
         return true;
       case "soc-remove": ed.items.splice(Number(el.dataset.value), 1); ed.preview = 0; ed.dirty = true; render(); return true;
       case "soc-remove-cover": ed.cover = null; ed.dirty = true; render(); return true;
-      case "soc-preview": ed.preview = Number(el.dataset.value); refreshBits(); return true;
+      case "soc-preview": slideTo(Number(el.dataset.value)); return true;
+      case "soc-slide": slideTo(ed.preview + Number(el.dataset.value)); return true;
       case "soc-save": {
         const { errors } = checks(ed);
         if (errors.length) { toast(`Noch nicht speicherbar: ${errors[0]}`); return true; }
@@ -666,5 +710,5 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     }
   }
 
-  return { todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart };
+  return { onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart };
 }
