@@ -78,3 +78,4 @@ npm.cmd run social -- import 2026-10-16-launch    nur dieses Paket (auch wenn de
 - Was schon importiert ist, merkt sich `pakete/.imported.json` (nur lokal). Eine `todo`-Notiz aus dem Paket kommt auch zu schon importierten (oder freigegebenen) Beiträgen, solange dort noch keine Notiz steht. Wird ein Paket später neu erstellt (z. B. besseres Bild), wird der Entwurf nachgeführt – aber **nicht**, wenn du ihn im Cockpit schon bearbeitet, freigegeben oder gelöscht hast.
 - Pakete, die du früher von Hand importiert hast, werden am gleichen Text erkannt und nicht doppelt angelegt.
 - Braucht die Anmeldung von `npm.cmd run roadmap -- login`.
+- Zusätzlich läuft auf Christophs PC die Windows-Aufgabe **«QNH Social-Import»** (täglich 07:30 und beim Anmelden, `scripts/social-import-task.ps1`). Protokoll: `pakete/.import.log`. Abschalten: Windows-Taste → «Aufgabenplanung» → Aufgabe «QNH Social-Import» → Deaktivieren.
