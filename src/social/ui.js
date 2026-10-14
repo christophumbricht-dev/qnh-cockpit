@@ -11,7 +11,7 @@ const PLATFORM = { instagram: "Instagram", facebook: "Facebook" };
 const LOCKED = ["approved", "publishing", "published"];
 
 export function createSocial({ S, render, toast, errorText, appName }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null };
   let unsubscribe = null;
   let reloadTimer;
 
@@ -75,18 +75,87 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       const token = left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
       return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span></li>`;
     }).join("");
-    return `<div class="toolbar"><div class="chips">${chips}</div>
+    const modes = [["list", "Liste"], ["calendar", "Kalender"]].map(([v, l]) =>
+      `<button class="chip${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}">${l}</button>`).join("");
+    return `<div class="toolbar"><div class="chips">${modes}<span class="chip-sep"></span>${chips}</div>
         <div class="row-right">
           <button class="btn ghost" data-action="soc-pick-package">Paket importieren</button>
           <button class="btn" data-action="soc-new"${accounts().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
       ${accounts().length ? `<ul class="accounts">${accountRows}</ul>` : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
-      ${GROUPS.map(([title, statuses]) => {
+      ${st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
         const rows = shown.filter((p) => statuses.includes(p.status))
           .sort((a, b) => (title === "Geplant" ? (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? "") : (b.published_at ?? b.created_at ?? "").localeCompare(a.published_at ?? a.created_at ?? "")));
         return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
       }).join("")}`;
+  }
+
+  // ---------- calendar (month view, Swiss time) ----------
+  function savedMode() {
+    try { return localStorage.getItem("qnh-social-mode") === "calendar" ? "calendar" : "list"; } catch { return "list"; }
+  }
+  const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
+  const todayKey = () => dayKey(new Date().toISOString());
+
+  function calendarView(list) {
+    const st = S.social;
+    const month = st.month ?? todayKey().slice(0, 7);
+    const [y, mo] = month.split("-").map(Number);
+    const startDow = (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7; // Monday first
+    let cells = Array.from({ length: 42 }, (_, i) => new Date(Date.UTC(y, mo - 1, 1 + i - startDow)).toISOString().slice(0, 10));
+    if (cells[35].slice(0, 7) !== month) cells = cells.slice(0, 35);
+    const byDay = new Map();
+    for (const p of list) {
+      const k = dayKey(p.published_at ?? p.scheduled_at);
+      if (k) byDay.set(k, [...(byDay.get(k) ?? []), p]);
+    }
+    const title = new Intl.DateTimeFormat("de-CH", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, mo - 1, 15)));
+    const shift = (n) => new Date(Date.UTC(y, mo - 1 + n, 1)).toISOString().slice(0, 7);
+    const today = todayKey();
+    const unplanned = list.filter((p) => !p.scheduled_at && !p.published_at).length;
+    const dayHtml = (k) => {
+      const dayPosts = (byDay.get(k) ?? []).sort((a, b) => String(a.published_at ?? a.scheduled_at).localeCompare(String(b.published_at ?? b.scheduled_at)));
+      const chips = dayPosts.map((p) => {
+        const a = account(p.account_id);
+        const movable = ["draft", "failed", "approved"].includes(p.status);
+        const time = utcToZurichLocal(p.published_at ?? p.scheduled_at).slice(11, 16);
+        return `<button class="cal-post ${p.status}" data-action="soc-open" data-id="${p.id}"${movable ? ` draggable="true" data-cal-post="${p.id}"` : ""} title="${esc(firstLines(p.caption, 1) || KINDS[p.kind])}"><b>${esc(time)}</b> ${esc(KINDS[p.kind])} · @${esc(a?.handle ?? "")}</button>`;
+      }).join("");
+      const cls = `cal-day${k.slice(0, 7) !== month ? " other" : ""}${k === today ? " today" : ""}${k < today ? " past" : ""}`;
+      const add = k >= today ? `<button class="cal-add" data-action="soc-new-on" data-value="${k}" aria-label="Neuer Beitrag am ${k}">+</button>` : "";
+      return `<div class="${cls}" data-cal-day="${k}"><span class="cal-num">${Number(k.slice(8))}</span>${add}${chips}</div>`;
+    };
+    return `<div class="cal-head">
+        <button class="icon-mini" data-action="soc-month" data-value="${shift(-1)}" aria-label="Vormonat">‹</button>
+        <h3>${esc(title)}</h3>
+        <button class="icon-mini" data-action="soc-month" data-value="${shift(1)}" aria-label="Nächster Monat">›</button>
+        <button class="chip" data-action="soc-month" data-value="${today.slice(0, 7)}">Heute</button>
+        ${unplanned ? `<span class="muted small">${unplanned} ohne Datum – siehe Liste</span>` : ""}
+      </div>
+      <div class="cal">${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((d) => `<div class="cal-dow">${d}</div>`).join("")}${cells.map(dayHtml).join("")}</div>
+      <p class="hint">Entwürfe und geplante Beiträge auf einen anderen Tag ziehen (die Uhrzeit bleibt). «+» legt einen Beitrag für diesen Tag an.</p>`;
+  }
+
+  async function reschedule(id, day) {
+    const p = posts().find((x) => x.id === id);
+    if (!p || p.status === "published" || p.status === "publishing") return;
+    const time = p.scheduled_at ? utcToZurichLocal(p.scheduled_at).slice(11, 16) : "18:00";
+    const iso = zurichToUtc(`${day}T${time}`);
+    if (new Date(iso).getTime() < Date.now()) return toast("Dieser Zeitpunkt liegt in der Vergangenheit.");
+    try {
+      if (p.status === "approved") {
+        if (!confirm(`Geplanten Beitrag auf ${formatZurich(iso)} verschieben? Er bleibt freigegeben.`)) return;
+        await data.setStatus(id, "draft");
+        await data.setStatus(id, "approved", iso);
+      } else {
+        await data.updatePost(id, { scheduled_at: iso });
+      }
+      toast(`Verschoben auf ${formatZurich(iso)}`);
+      await load(true);
+    } catch (err) {
+      toast(errorText(err));
+    }
   }
 
   function thumb(item, cls = "thumb") {
@@ -368,6 +437,12 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const id = el.dataset.id;
     switch (action) {
       case "soc-filter": st.filter = el.dataset.value; render(); return true;
+      case "soc-mode": st.mode = el.dataset.value; try { localStorage.setItem("qnh-social-mode", st.mode); } catch {} render(); return true;
+      case "soc-month": st.month = el.dataset.value; render(); return true;
+      case "soc-new-on":
+        openEditor(null);
+        if (S.social.editor) { S.social.editor.scheduledLocal = `${el.dataset.value}T18:00`; render(); }
+        return true;
       case "soc-new": openEditor(null); return true;
       case "soc-open": openEditor(posts().find((p) => p.id === id)); return true;
       case "soc-duplicate": openEditor(posts().find((p) => p.id === id) ?? (ed && { ...ed, media: ed.items, scheduled_at: zurichToUtc(ed.scheduledLocal), cover_path: ed.cover?.path }), { duplicate: true }); return true;
@@ -457,7 +532,22 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     return false;
   }
 
+  function onDragStart(e) {
+    const chip = e.target.closest?.("[data-cal-post]");
+    if (!chip) return false;
+    e.dataTransfer.setData("text/x-post", chip.dataset.calPost);
+    e.dataTransfer.effectAllowed = "move";
+    return true;
+  }
+
   function onDrop(e) {
+    const day = e.target.closest?.("[data-cal-day]");
+    if (day && [...(e.dataTransfer?.types ?? [])].includes("text/x-post")) {
+      e.preventDefault();
+      day.classList.remove("over");
+      reschedule(e.dataTransfer.getData("text/x-post"), day.dataset.calDay);
+      return true;
+    }
     const zone = e.target.closest?.("[data-drop]");
     if (!zone) return false;
     e.preventDefault();
@@ -466,6 +556,12 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     return true;
   }
   function onDragOver(e) {
+    const day = e.target.closest?.("[data-cal-day]");
+    if (day && [...(e.dataTransfer?.types ?? [])].includes("text/x-post")) {
+      e.preventDefault();
+      day.classList.add("over");
+      return true;
+    }
     const zone = e.target.closest?.("[data-drop]");
     if (!zone) return false;
     e.preventDefault();
@@ -505,5 +601,5 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     }
   }
 
-  return { load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver };
+  return { load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart };
 }

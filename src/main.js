@@ -801,9 +801,9 @@ root.addEventListener("input", (e) => {
   }
   social.onInput(e);
 });
-root.addEventListener("dragstart", (e) => qnh.onDragStart(e));
+root.addEventListener("dragstart", (e) => qnh.onDragStart(e) || social.onDragStart(e));
 root.addEventListener("dragover", (e) => qnh.onDragOver(e) || social.onDragOver(e));
-root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col]")?.classList.remove("over"));
+root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col], [data-cal-day]")?.classList.remove("over"));
 root.addEventListener("drop", (e) => qnh.onDrop(e) || social.onDrop(e));
 
 root.addEventListener("change", async (e) => {
