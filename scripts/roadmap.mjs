@@ -10,58 +10,14 @@
 // (refresh token) is kept in .qnh-session.json and the mirror in roadmap-local/ – both gitignored,
 // because the repository is public and the roadmap is internal.
 
-import { createClient } from "@supabase/supabase-js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { ROOT, args, fail, saveSession, signedIn, supabase } from "./qnh-session.mjs";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SESSION = join(ROOT, ".qnh-session.json");
 const OUT = join(ROOT, "roadmap-local");
 const STATUS = { idea: "Ideen", next: "Als Nächstes", doing: "In Arbeit", done: "Erledigt" };
 const SCOPES = { qnh: "QNH", downwind: "Downwind", secondseat: "SecondSeat" };
-
-function env() {
-  const file = join(ROOT, ".env");
-  const vars = existsSync(file)
-    ? Object.fromEntries(readFileSync(file, "utf8").split(/\r?\n/).map((l) => l.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/)).filter(Boolean).map((m) => [m[1], m[2]]))
-    : {};
-  const url = process.env.VITE_QNH_SUPABASE_URL ?? vars.VITE_QNH_SUPABASE_URL;
-  const key = process.env.VITE_QNH_SUPABASE_ANON_KEY ?? vars.VITE_QNH_SUPABASE_ANON_KEY;
-  if (!url || !key) fail("VITE_QNH_SUPABASE_URL / VITE_QNH_SUPABASE_ANON_KEY fehlen in .env");
-  return { url, key };
-}
-
-function fail(msg) {
-  console.error(`✗ ${msg}`);
-  process.exit(1);
-}
-
-function args(list) {
-  const out = { _: [] };
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].startsWith("--")) out[list[i].slice(2)] = list[++i];
-    else out._.push(list[i]);
-  }
-  return out;
-}
-
-const supabase = () => {
-  const { url, key } = env();
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-};
-
-async function signedIn() {
-  if (!existsSync(SESSION)) fail("Noch nicht angemeldet: npm run roadmap -- login");
-  const saved = JSON.parse(readFileSync(SESSION, "utf8"));
-  const sb = supabase();
-  const { data, error } = await sb.auth.refreshSession({ refresh_token: saved.refresh_token });
-  if (error || !data.session) fail(`Anmeldung abgelaufen (${error?.message ?? "keine Sitzung"}): npm run roadmap -- login`);
-  // refresh tokens rotate – keep the new one
-  writeFileSync(SESSION, JSON.stringify({ ...saved, refresh_token: data.session.refresh_token, email: data.session.user.email }, null, 2));
-  return sb;
-}
 
 async function login(email) {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -89,7 +45,7 @@ async function login(email) {
     result = await sb.auth.verifyOtp({ token_hash: token, type: u.searchParams.get("type") === "signup" ? "signup" : "magiclink" });
   }
   if (result.error || !result.data.session) fail(`Anmeldung fehlgeschlagen: ${result.error?.message ?? "keine Sitzung"} (Link schon benutzt oder abgelaufen? Nochmals login.)`);
-  writeFileSync(SESSION, JSON.stringify({ refresh_token: result.data.session.refresh_token, email: result.data.session.user.email }, null, 2));
+  saveSession(result.data.session);
   const { data: admin } = await sb.rpc("is_qnh_admin");
   console.log(`✓ Angemeldet als ${result.data.session.user.email}${admin ? " (Admin)" : " – ACHTUNG: kein QNH-Admin, die Roadmap bleibt leer"}`);
 }

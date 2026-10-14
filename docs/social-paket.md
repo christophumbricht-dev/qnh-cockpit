@@ -58,3 +58,18 @@ Das Cockpit prüft alles beim Import und zeigt Fehler im Editor an. Ein Paket mi
 > Bereite einen Instagram-Beitrag für **Downwind** vor (Brand-Profil: `C:\Projects\downwind\docs\instagram\brand-profile.md`).
 > Thema: … · Art: Karussell mit 3 Bildern · geplant für Donnerstag 18:00.
 > Gib mir am Ende eine `post.json` im Format aus `C:\Projects\qnh-cockpit\docs\social-paket.md` und sag mir, welche Bilder ich als `1.jpg`, `2.jpg`, … in den Ordner legen soll.
+
+## Automatisch importieren (Claude auf diesem PC)
+
+Pakete im Ordner `pakete/` holt Claude selbst ins Cockpit – du musst nichts hochladen:
+
+```
+npm.cmd run social                 zeigt, was neu oder geändert ist (ändert nichts)
+npm.cmd run social -- import       neue Pakete als Entwürfe anlegen, geänderte Entwürfe nachführen
+npm.cmd run social -- import 2026-10-16-launch    nur dieses Paket (auch wenn der Zeitpunkt vorbei ist)
+```
+
+- Zeitpunkt = `suggested_time` aus dem Paket. Alles wird **Entwurf** – freigeben machst nur du (Social → **Freigabe-Runde**: ein Entwurf nach dem anderen prüfen, freigeben oder überspringen).
+- Was schon importiert ist, merkt sich `pakete/.imported.json` (nur lokal). Wird ein Paket später neu erstellt (z. B. besseres Bild), wird der Entwurf nachgeführt – aber **nicht**, wenn du ihn im Cockpit schon bearbeitet, freigegeben oder gelöscht hast.
+- Pakete, die du früher von Hand importiert hast, werden am gleichen Text erkannt und nicht doppelt angelegt.
+- Braucht die Anmeldung von `npm.cmd run roadmap -- login`.

@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+// Imports post packages from pakete/ into the cockpit as DRAFTS (never approves, never publishes).
+//
+//   npm run social                        what is new / changed / already in the cockpit (changes nothing)
+//   npm run social -- import              import new packages, update changed drafts
+//   npm run social -- import <ordner> …   only these folders (also packages whose time has passed)
+//
+// Uses Christoph's admin session from `npm run roadmap -- login`. Remembers what was imported in
+// pakete/.imported.json (local, gitignored like the packages). Format: docs/social-paket.md
+
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
+import { EDITABLE, jpegSize, packageHash, plan } from "./social-lib.mjs";
+import { PackageError, parsePackage } from "../src/social/package.js";
+import { KINDS, formatZurich, validatePost, zurichToUtc } from "../src/social/validate.js";
+
+const DIR = join(ROOT, "pakete");
+const MARKERS = join(DIR, ".imported.json");
+const BUCKET = "social-media";
+const STATUS = { draft: "Entwurf", approved: "freigegeben", publishing: "wird veröffentlicht", published: "veröffentlicht", failed: "Fehler", cancelled: "abgebrochen" };
+const ext = (type) => (type === "image/jpeg" ? "jpg" : type === "video/quicktime" ? "mov" : "mp4");
+
+function readMarkers() {
+  return existsSync(MARKERS) ? JSON.parse(readFileSync(MARKERS, "utf8")) : {};
+}
+
+// pakete/<folder>/post.json + files → parsed package (same rules as the cockpit's «Paket importieren»)
+async function readFolder(folder, accounts) {
+  const dir = join(DIR, folder);
+  const raw = new Map();
+  const entries = new Map();
+  for (const name of readdirSync(dir)) {
+    if (name.startsWith(".") || !statSync(join(dir, name)).isFile()) continue;
+    const bytes = readFileSync(join(dir, name));
+    raw.set(name, bytes);
+    entries.set(name, new File([bytes], name));
+  }
+  const pkg = await parsePackage(entries, accounts);
+  const used = ["post.json", ...pkg.files.map((f) => f.name), ...(pkg.cover ? [pkg.cover.name] : [])];
+  const item = (f) => {
+    const bytes = raw.get(f.name);
+    const size = f.type === "image/jpeg" ? jpegSize(bytes) : null;
+    return { file: f, bytes, type: f.type, size: bytes.length, width: size?.width, height: size?.height };
+  };
+  return {
+    folder, pkg,
+    account_id: pkg.account.id, caption: pkg.kind === "story" ? "" : pkg.caption, suggested_time: pkg.suggested_time,
+    hash: packageHash(used.map((n) => [n, raw.get(n)])),
+    items: pkg.files.map((f, i) => ({ ...item(f), alt: pkg.alt[i] ?? "" })),
+    cover: pkg.cover ? item(pkg.cover) : null,
+  };
+}
+
+async function upload(sb, postId, it, i) {
+  const path = `${postId}/${Date.now().toString(36)}-${i}.${ext(it.type)}`;
+  const { error } = await sb.storage.from(BUCKET).upload(path, it.bytes, { contentType: it.type, upsert: false });
+  if (error) throw new Error(`Upload ${it.file.name}: ${error.message}`);
+  return path;
+}
+
+async function save(sb, p, id, isNew) {
+  const media = [];
+  for (const [i, it] of p.items.entries()) {
+    media.push({ path: await upload(sb, id, it, i), type: it.type, alt: it.alt, width: it.width ?? null, height: it.height ?? null, duration: null });
+  }
+  const cover_path = p.pkg.kind === "reel" && p.cover ? await upload(sb, id, p.cover, "cover") : null;
+  const row = {
+    account_id: p.account_id, kind: p.pkg.kind, caption: p.caption, first_comment: p.pkg.kind === "story" ? "" : p.pkg.first_comment,
+    media, cover_path, scheduled_at: p.suggested_time ?? tomorrow18(),
+  };
+  const q = isNew
+    ? sb.from("social_posts").insert({ id, ...row, source: "package" })
+    : sb.from("social_posts").update(row).eq("id", id);
+  const { data, error } = await q.select("id, status, updated_at, scheduled_at").single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+const tomorrow18 = () => zurichToUtc(`${new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date(Date.now() + 864e5))}T18:00`);
+
+function checks(p, when) {
+  const { errors, warnings } = validatePost(
+    { kind: p.pkg.kind, items: p.items, caption: p.caption, first_comment: p.pkg.first_comment },
+    { forApproval: true, scheduledAt: when },
+  );
+  return [...errors.map((e) => `    ✗ ${e}`), ...warnings.map((w) => `    ! ${w}`)];
+}
+
+const firstLine = (t) => String(t ?? "").split("\n").find(Boolean)?.slice(0, 70) ?? "";
+
+async function main() {
+  const [cmd = "status", ...rest] = process.argv.slice(2);
+  if (!["status", "import"].includes(cmd)) fail("Befehle: status | import [ordner …]");
+  const a = args(rest);
+  const only = new Set(a._);
+  if (!existsSync(DIR)) fail(`Ordner fehlt: ${DIR}`);
+
+  const sb = await signedIn();
+  const [{ data: accounts, error: e1 }, { data: posts, error: e2 }] = await Promise.all([
+    sb.from("social_accounts").select("id, app_id, platform, handle, active"),
+    sb.from("social_posts").select("id, status, account_id, caption, source, scheduled_at, updated_at, media").neq("status", "cancelled"),
+  ]);
+  if (e1 || e2) fail((e1 ?? e2).message);
+
+  const folders = readdirSync(DIR).filter((f) => existsSync(join(DIR, f, "post.json")) && (!only.size || only.has(f))).sort();
+  for (const f of only) if (!folders.includes(f)) fail(`Kein Paket «${f}» in pakete/`);
+
+  const pkgs = [];
+  const broken = [];
+  for (const folder of folders) {
+    try {
+      pkgs.push(await readFolder(folder, accounts));
+    } catch (err) {
+      broken.push({ folder, note: err instanceof PackageError ? err.message : String(err.message ?? err) });
+    }
+  }
+
+  const markers = readMarkers();
+  const rows = plan(pkgs, markers, posts).map((r) => (r.action === "past" && only.has(r.folder) ? { ...r, action: "new" } : r));
+  const handle = (id) => `@${accounts.find((x) => x.id === id)?.handle ?? "?"}`;
+  const todo = rows.filter((r) => ["new", "update", "link"].includes(r.action));
+
+  if (cmd === "import") {
+    for (const r of todo) {
+      try {
+        let saved = r.post;
+        if (r.action === "new") saved = await save(sb, r, crypto.randomUUID(), true);
+        if (r.action === "update") {
+          const old = r.post.media?.map((m) => m.path) ?? [];
+          saved = await save(sb, r, r.post.id, false);
+          if (old.length) await sb.storage.from(BUCKET).remove(old); // best effort
+        }
+        markers[r.folder] = { id: saved.id, hash: r.hash, updated_at: saved.updated_at, imported_at: new Date().toISOString() };
+        r.done = true;
+        r.status = saved.status;
+        r.scheduled_at = saved.scheduled_at ?? r.post?.scheduled_at;
+      } catch (err) {
+        r.note = `Import fehlgeschlagen: ${err.message}`;
+        r.action = "error";
+      }
+    }
+    writeFileSync(MARKERS, JSON.stringify(markers, null, 2));
+  }
+
+  // ---- report ----
+  const label = { new: "neu", update: "geändert", link: "schon im Cockpit (verknüpft)", same: "unverändert", locked: "gesperrt", conflict: "nicht überschrieben", deleted: "gelöscht", past: "verpasst", error: "Fehler" };
+  const show = (r) => {
+    const when = r.scheduled_at ?? r.post?.scheduled_at ?? r.suggested_time;
+    const st = r.status ?? r.post?.status;
+    console.log(`\n${r.done ? "✓" : "·"} ${r.folder}  [${label[r.action]}${st ? ` · ${STATUS[st] ?? st}` : ""}]`);
+    console.log(`    ${formatZurich(when) || "ohne Zeit"} · ${KINDS[r.pkg.kind]} · ${handle(r.account_id)} · ${r.items.length} Datei${r.items.length === 1 ? "" : "en"}`);
+    if (firstLine(r.caption)) console.log(`    «${firstLine(r.caption)}»`);
+    if (r.note) console.log(`    → ${r.note}`);
+    if (["new", "update"].includes(r.action) || (r.done && EDITABLE.has(st))) for (const l of checks(r, when)) console.log(l);
+  };
+
+  const interesting = rows.filter((r) => r.action !== "same" || only.size);
+  for (const r of interesting) show(r);
+  for (const b of broken) console.log(`\n✗ ${b.folder}  [ungültig]\n    → ${b.note}`);
+
+  const count = (act) => rows.filter((r) => r.action === act).length;
+  console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
+    `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
+  if (cmd === "status" && todo.length) console.log("Importieren mit: npm run social -- import");
+  if (cmd === "import" && todo.some((r) => r.done)) console.log("Als Entwürfe im Cockpit: https://cockpit.setqnh.ch/#social – freigeben machst nur du.");
+}
+
+await main();

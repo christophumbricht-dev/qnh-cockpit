@@ -11,7 +11,7 @@ const PLATFORM = { instagram: "Instagram", facebook: "Facebook" };
 const LOCKED = ["approved", "publishing", "published"];
 
 export function createSocial({ S, render, toast, errorText, appName }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null };
   let unsubscribe = null;
   let reloadTimer;
 
@@ -79,6 +79,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       `<button class="chip${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}">${l}</button>`).join("");
     return `<div class="toolbar"><div class="chips">${modes}<span class="chip-sep"></span>${chips}</div>
         <div class="row-right">
+          ${reviewQueue().length ? `<button class="btn" data-action="soc-review">Freigabe-Runde (${reviewQueue().length})</button>` : ""}
           <button class="btn ghost" data-action="soc-pick-package">Paket importieren</button>
           <button class="btn" data-action="soc-new"${accounts().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
@@ -197,6 +198,24 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     return `${local.slice(0, 10)}T18:00`;
   }
 
+  // ---------- review round: drafts one after another, oldest date first ----------
+  // review = { skipped: Set<id>, done: n } while the round runs
+  function reviewQueue() {
+    const st = S.social;
+    return posts()
+      .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter))
+      .sort((a, b) => (a.scheduled_at ?? "9").localeCompare(b.scheduled_at ?? "9"));
+  }
+  function nextInReview(currentId) {
+    const st = S.social;
+    const next = reviewQueue().find((p) => p.id !== currentId && !st.review.skipped.has(p.id));
+    if (next) return openEditor(next);
+    toast(`Freigabe-Runde fertig: ${st.review.done} freigegeben${st.review.skipped.size ? `, ${st.review.skipped.size} übersprungen` : ""}.`);
+    st.review = null;
+    st.editor = null;
+    render();
+  }
+
   function openEditor(post, { duplicate = false } = {}) {
     const fallback = accounts().find((a) => S.social.filter === "all" || a.app_id === S.social.filter) ?? accounts()[0];
     const items = (post?.media ?? []).map((m) => (duplicate ? { ...m, copyFrom: m.path, path: null } : { ...m }));
@@ -263,7 +282,13 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     if (!ed.isNew) actions.push(`<button class="btn ghost" data-action="soc-duplicate" data-id="${ed.id}">Duplizieren</button>`);
     if (ed.permalink) actions.push(`<a class="btn ghost" href="${esc(ed.permalink)}" target="_blank" rel="noopener">Auf Instagram öffnen</a>`);
 
-    return `<div class="toolbar"><button class="link" data-action="soc-close">← Zurück zur Liste</button>
+    const rv = S.social.review;
+    const rvBar = rv && !ed.isNew ? (() => {
+      const queue = reviewQueue().filter((p) => !rv.skipped.has(p.id));
+      return `<div class="review-bar"><b>Freigabe-Runde</b><span class="muted">${rv.done} freigegeben · noch ${queue.length} Entw${queue.length === 1 ? "urf" : "ürfe"}</span>
+        <span class="row-right"><button class="btn ghost" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Überspringen ›</button></span></div>`;
+    })() : "";
+    return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : "← Zurück zur Liste"}</button>
         <span class="muted">${ed.isNew ? (ed.source === "duplicate" ? "Duplikat" : "Neuer Beitrag") : `${STATUS[ed.status] ?? ed.status}`}${ro ? " · zum Ändern zuerst zurückziehen oder duplizieren" : ""}</span></div>
       <section class="soc-editor">
         <div class="soc-form card">
@@ -448,7 +473,18 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       case "soc-duplicate": openEditor(posts().find((p) => p.id === id) ?? (ed && { ...ed, media: ed.items, scheduled_at: zurichToUtc(ed.scheduledLocal), cover_path: ed.cover?.path }), { duplicate: true }); return true;
       case "soc-close":
         if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
-        st.editor = null; render(); load(true); return true;
+        st.editor = null; st.review = null; render(); load(true); return true;
+      case "soc-review": {
+        st.review = { skipped: new Set(), done: 0 };
+        const first = reviewQueue()[0];
+        if (first) openEditor(first); else st.review = null;
+        return true;
+      }
+      case "soc-review-skip":
+        if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
+        st.review.skipped.add(ed.id);
+        nextInReview(ed.id);
+        return true;
       case "soc-kind":
         if (ed && !readonly(ed)) { ed.kind = el.dataset.value; if (ed.kind !== "carousel") ed.items = ed.items.slice(0, 1); ed.dirty = true; render(); }
         return true;
@@ -468,9 +504,10 @@ export function createSocial({ S, render, toast, errorText, appName }) {
         await busy(ed, async () => {
           await persist(ed);
           await data.setStatus(ed.id, "approved", zurichToUtc(ed.scheduledLocal));
-          toast("Freigegeben");
+          toast(`Freigegeben für ${formatZurich(zurichToUtc(ed.scheduledLocal))}`);
           st.editor = null;
           await load(true);
+          if (st.review) { st.review.done++; nextInReview(ed.id); }
         });
         render();
         return true;

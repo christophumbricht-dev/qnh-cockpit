@@ -527,3 +527,7 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .store-reviews { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .store-reviews p { margin: 4px 0; }
 .store-errors { margin: 0 0 14px; padding: 10px 14px 10px 30px; border-radius: 12px; background: var(--alert-soft); color: var(--alert); font-size: 14px; }
+
+/* ---- social review round ---- */
+.review-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; margin-bottom: 12px; border-radius: 14px; background: var(--brand-soft); color: var(--brand); }
+.review-bar .row-right { margin-left: auto; }

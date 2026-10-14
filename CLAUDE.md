@@ -31,9 +31,13 @@ Edge Function `supabase/functions/store-status/` in QNH Core (admin JWT, `is_qnh
 Migration `20261014100000_roadmap_hangar.sql`: `roadmap_items` (scope qnh/downwind/secondseat, status idea/next/doing/done, due, source cockpit/claude; realtime) and `hangar_links` (quick links, seeded). Cockpit: `src/qnh/` – board per app (tab "Roadmap") and for all (`#roadmap`), due items on "Heute"; Hangar `#hangar`. File storage is Infomaniak kDrive (linked in the Hangar, no files in the cockpit).
 
 **Roadmap sync with Claude sessions** – Christoph adds items in the cockpit; Claude keeps it up to date from conversations:
-- At the start of a session in this repo run `npm.cmd run roadmap -- pull` and read `roadmap-local/ROADMAP.md` (local mirror, gitignored – the repo is public). Mention new items from Christoph.
+- At the start of a session in this repo run `npm.cmd run roadmap -- pull` and `npm.cmd run social` and read `roadmap-local/ROADMAP.md` (local mirror, gitignored – the repo is public). Mention new items from Christoph.
 - When a conversation decides something to do: `npm.cmd run roadmap -- add --scope downwind --status next --title "…" [--body "…"] [--due YYYY-MM-DD]`; when done: `npm.cmd run roadmap -- set <id> --status done`. Keep titles short and German; no secrets or personal data in items.
 - If the session expired: Christoph runs `npm.cmd run roadmap -- login` (paste the link address from the e-mail, do not click it).
+
+## Social packages → cockpit (automatic)
+
+`npm.cmd run social` (status) / `npm.cmd run social -- import [folder…]`: reads `pakete/<folder>/` (format `docs/social-paket.md`, same parser and checks as the cockpit), uploads to bucket `social-media` and inserts DRAFTS with `scheduled_at` = `suggested_time` (session from `scripts/qnh-session.mjs`). State in `pakete/.imported.json` (folder → post id, content hash, updated_at). Changed packages update the draft only if it is still draft/failed and unedited in the cockpit; deleted posts are not re-created; hand-imported twins are linked by caption. Logic in `scripts/social-lib.mjs`, tests `tests/social-import.test.mjs`. **Whenever packages were added or re-rendered, run the import and tell Christoph which drafts wait in Social → «Freigabe-Runde».** Never approve or publish.
 
 ## Social calendar
 
