@@ -2,7 +2,7 @@
 // Nothing is ever approved automatically – only the "Freigeben" button (and the database checks that too).
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
-import { KINDS, LIMITS, aspectLabel, countHashtags, formatZurich, formatZurichDate, utcToZurichLocal, validatePost, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, aspectLabel, countHashtags, formatZurich, formatZurichDate, parseTagList, utcToZurichLocal, validatePost, zurichToUtc } from "./validate.js";
 import { readPackage } from "./package.js";
 
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
@@ -188,7 +188,8 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       <div>
         <div class="meta"><b>${esc(accountLabel(a))}</b><span>${KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
-          ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}</div>
+          ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
+          ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
         ${todoBox(p.todo)}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
@@ -275,7 +276,8 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const itemsHtml = ed.items.map((it, i) => `<li class="soc-file">
         ${thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "thumb small")}
         <div><span class="small muted">${/^video\//.test(it.type) ? "Video" : "Bild"} · ${aspectLabel(it.width, it.height)}${it.width ? ` · ${it.width}×${it.height}` : ""}${it.duration ? ` · ${Math.round(it.duration)} s` : ""}${it.size ? ` · ${(it.size / 1048576).toFixed(1)} MB` : ""}</span>
-          ${/^video\//.test(it.type) ? "" : `<input name="soc-alt-${i}" placeholder="Alternativtext (für Screenreader)" value="${esc(it.alt ?? "")}" maxlength="${LIMITS.alt}"${dis}>`}</div>
+          ${/^video\//.test(it.type) ? "" : `<input name="soc-alt-${i}" placeholder="Alternativtext (für Screenreader)" value="${esc(it.alt ?? "")}" maxlength="${LIMITS.alt}"${dis}>
+          ${ed.kind === "image" || ed.kind === "carousel" ? `<label class="tag-field">Markieren <input name="soc-tags-${i}" placeholder="@benutzername, …" value="${esc((it.user_tags ?? []).map((t) => "@" + t.username).join(", "))}"${dis}></label>` : ""}`}</div>
         ${ro ? "" : `<button class="link" data-action="soc-remove" data-value="${i}">Entfernen</button>`}
       </li>`).join("");
     const actions = [];
@@ -392,7 +394,8 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       let path = it.path;
       if (it.file) path = await data.uploadFile(ed.id, it.file, i);
       else if (it.copyFrom) path = await data.copyFile(it.copyFrom, ed.id, it.type, i);
-      media.push({ path, type: it.type, alt: it.alt ?? "", width: it.width ?? null, height: it.height ?? null, duration: it.duration ?? null });
+      media.push({ path, type: it.type, alt: it.alt ?? "", width: it.width ?? null, height: it.height ?? null, duration: it.duration ?? null,
+        ...(it.user_tags?.length && !/^video\//.test(it.type) ? { user_tags: it.user_tags } : {}) });
       Object.assign(it, { path, file: undefined, copyFrom: undefined });
     }
     let cover_path = null;
@@ -569,6 +572,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
     else if (name === "soc-time") ed.scheduledLocal = e.target.value;
     else if (name.startsWith("soc-alt-")) ed.items[Number(name.slice(8))].alt = e.target.value;
+    else if (name.startsWith("soc-tags-")) { const it = ed.items[Number(name.slice(9))]; it.user_tags = parseTagList(e.target.value, it.user_tags); }
     else return false;
     ed.dirty = true;
     refreshBits();
@@ -639,7 +643,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
         caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
-        items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "" }))),
+        items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };
       await persist(ed); // saved as a draft – a package is never approved

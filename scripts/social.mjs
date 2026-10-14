@@ -47,7 +47,7 @@ async function readFolder(folder, accounts) {
     folder, pkg,
     account_id: pkg.account.id, caption: pkg.kind === "story" ? "" : pkg.caption, suggested_time: pkg.suggested_time,
     hash: packageHash(used.map((n) => [n, raw.get(n)])),
-    items: pkg.files.map((f, i) => ({ ...item(f), alt: pkg.alt[i] ?? "" })),
+    items: pkg.files.map((f, i) => ({ ...item(f), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] })),
     cover: pkg.cover ? item(pkg.cover) : null,
   };
 }
@@ -62,7 +62,8 @@ async function upload(sb, postId, it, i) {
 async function save(sb, p, id, isNew) {
   const media = [];
   for (const [i, it] of p.items.entries()) {
-    media.push({ path: await upload(sb, id, it, i), type: it.type, alt: it.alt, width: it.width ?? null, height: it.height ?? null, duration: null });
+    media.push({ path: await upload(sb, id, it, i), type: it.type, alt: it.alt, width: it.width ?? null, height: it.height ?? null, duration: null,
+      ...(it.user_tags?.length ? { user_tags: it.user_tags } : {}) });
   }
   const cover_path = p.pkg.kind === "reel" && p.cover ? await upload(sb, id, p.cover, "cover") : null;
   const row = {

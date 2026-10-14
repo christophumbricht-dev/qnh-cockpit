@@ -68,3 +68,10 @@ test("todo: optional hand-work note, text or list of lines, max 2000 characters"
   assert.equal((await parsePackage(entries({ ...POST, todo: ["Story", "Standort"] }), ACCOUNTS)).todo, "Story\nStandort");
   await assert.rejects(parsePackage(entries({ ...POST, todo: "x".repeat(2001) }), ACCOUNTS), /todo/);
 });
+
+test("user_tags: per file, @ removed, default position bottom centre, index checked", async () => {
+  const p = await parsePackage(entries({ ...POST, user_tags: [{ media: 2, username: "@exploring_the_skies" }, { username: "pilot.one", x: 0.2, y: 0.3 }] }), ACCOUNTS);
+  assert.deepEqual(p.tags, [[{ username: "pilot.one", x: 0.2, y: 0.3 }], [{ username: "exploring_the_skies", x: 0.5, y: 0.9 }]]);
+  assert.deepEqual((await parsePackage(entries(), ACCOUNTS)).tags, [[], []]);
+  await assert.rejects(parsePackage(entries({ ...POST, user_tags: [{ media: 3, username: "x" }] }), ACCOUNTS), /user_tags/);
+});

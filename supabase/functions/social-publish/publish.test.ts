@@ -251,3 +251,27 @@ Deno.test("cleanup deletes files of posts published more than 14 days ago", asyn
   assert(old.media_deleted_at);
   assert(!fresh.media_deleted_at);
 });
+
+Deno.test("user_tags go to the image containers (single image and carousel images), never to videos", async () => {
+  const tag = [{ username: "exploring_the_skies", x: 0.5, y: 0.9 }];
+  const posts = [
+    post({ id: "p1", media: [{ path: "a/1.jpg", type: "image/jpeg", user_tags: tag }] }),
+    post({ id: "p2", kind: "carousel", media: [{ path: "a/2.jpg", type: "image/jpeg", user_tags: [...tag, { username: "bad name!", x: 0.1, y: 0.1 }] }, { path: "a/3.mp4", type: "video/mp4", user_tags: tag }] }),
+  ];
+  const { store } = fakeStore(posts);
+  let n = 0;
+  const g = mockGraph({
+    "GET IG1/content_publishing_limit": LIMIT_OK,
+    "POST IG1/media": () => ({ id: `K${++n}` }),
+    "GET K1": { status_code: "FINISHED" }, "GET K2": { status_code: "FINISHED" }, "GET K3": { status_code: "FINISHED" }, "GET K4": { status_code: "FINISHED" },
+    "POST IG1/media_publish": () => ({ id: `M${n}` }),
+    "GET M1": {}, "GET M4": {},
+    "POST M1/comments": { id: "C1" }, "POST M4/comments": { id: "C4" },
+  });
+  await publishDue(deps(store, g.fetchFn));
+  const creates = g.calls.filter((c) => c.path === "IG1/media" && c.method === "POST");
+  assertEquals(creates[0].params.user_tags, JSON.stringify(tag));
+  assertEquals(creates[1].params.user_tags, JSON.stringify(tag)); // invalid name dropped
+  assertEquals(creates[2].params.user_tags, undefined); // video
+  assertEquals(creates[3].params.user_tags, undefined); // carousel container
+});

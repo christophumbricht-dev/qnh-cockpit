@@ -9,7 +9,17 @@ import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, type FetchF
 
 export const MAX_ATTEMPTS = 3;
 
-export type MediaItem = { path: string; type: string; alt?: string };
+export type UserTag = { username: string; x: number; y: number };
+export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[] };
+
+// Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
+export function userTags(m: MediaItem): string | undefined {
+  const tags = (m.user_tags ?? [])
+    .filter((t) => /^[A-Za-z0-9._]{1,30}$/.test(t?.username ?? "") && t.x >= 0 && t.x <= 1 && t.y >= 0 && t.y <= 1)
+    .slice(0, 20)
+    .map((t) => ({ username: t.username, x: t.x, y: t.y }));
+  return tags.length ? JSON.stringify(tags) : undefined;
+}
 export type Post = {
   id: string;
   account_id: string;
@@ -119,7 +129,7 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
   if (!first) throw new FinalError("Der Beitrag hat keine Bilder oder Videos.");
 
   if (post.kind === "image") {
-    return (await g.post(`${ig}/media`, { image_url: url(first), caption: post.caption, alt_text: first.alt || undefined })).id;
+    return (await g.post(`${ig}/media`, { image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first) })).id;
   }
   if (post.kind === "story") {
     return (await g.post(`${ig}/media`, isVideo(first)
@@ -141,7 +151,7 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
   for (const m of post.media) {
     children.push((await g.post(`${ig}/media`, isVideo(m)
       ? { media_type: "VIDEO", video_url: url(m), is_carousel_item: true }
-      : { image_url: url(m), is_carousel_item: true, alt_text: m.alt || undefined })).id);
+      : { image_url: url(m), is_carousel_item: true, alt_text: m.alt || undefined, user_tags: userTags(m) })).id);
   }
   for (const child of children) if (!(await waitUntilFinished(deps, g, child))) throw new Error("Instagram verarbeitet ein Karussell-Video noch.");
   return (await g.post(`${ig}/media`, { media_type: "CAROUSEL", children: children.join(","), caption: post.caption })).id;

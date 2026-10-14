@@ -71,3 +71,14 @@ test("Swiss time ↔ UTC, including both DST switches", () => {
   for (const local of ["2026-01-15T08:05", "2026-06-30T23:59", "2026-11-02T18:30"]) assert.equal(utcToZurichLocal(zurichToUtc(local)), local);
   assert.equal(zurichToUtc("nonsense"), null);
 });
+
+import { parseTagList, validateItem as vItem } from "../src/social/validate.js";
+test("user_tags: only feed images, valid usernames and positions; editing keeps positions", () => {
+  const img = { type: "image/jpeg", width: 1080, height: 1350, size: 1000 };
+  assert.deepEqual(vItem("image", { ...img, user_tags: [{ username: "exploring_the_skies", x: 0.5, y: 0.9 }] }).errors, []);
+  assert.match(vItem("story", { ...img, width: 1080, height: 1920, user_tags: [{ username: "a", x: 0.5, y: 0.5 }] }).errors.join(), /nur bei Bildern/);
+  assert.match(vItem("image", { ...img, user_tags: [{ username: "not ok!", x: 0.5, y: 0.5 }] }).errors.join(), /Benutzername/);
+  assert.match(vItem("image", { ...img, user_tags: [{ username: "a", x: 2, y: 0.5 }] }).errors.join(), /zwischen 0 und 1/);
+  assert.deepEqual(parseTagList("@exploring_the_skies, pilot.one", [{ username: "exploring_the_skies", x: 0.1, y: 0.2 }]),
+    [{ username: "exploring_the_skies", x: 0.1, y: 0.2 }, { username: "pilot.one", x: 0.5, y: 0.9 }]);
+});

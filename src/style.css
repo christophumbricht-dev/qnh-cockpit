@@ -538,3 +538,6 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .soc-todo p { margin: 2px 0 0; white-space: pre-line; }
 .soc-todo-field { padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--warn) 9%, transparent); border-left: 3px solid var(--warn); }
 .soc-todo-field .btn { justify-self: start; margin-top: 6px; }
+
+.tag-field { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.tag-field input { flex: 1; min-width: 0; }

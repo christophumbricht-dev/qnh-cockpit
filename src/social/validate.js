@@ -34,6 +34,16 @@ export function countHashtags(text) {
 const mb = (b) => `${(b / 1024 / 1024).toFixed(1)} MB`;
 const isVideo = (item) => /^video\//.test(item.type);
 
+// People tagged on an image (Instagram user_tags): username + position 0..1 (default: bottom centre)
+export const TAG_DEFAULT = { x: 0.5, y: 0.9 };
+const USERNAME = /^[A-Za-z0-9._]{1,30}$/;
+export const cleanUsername = (u) => String(u ?? "").trim().replace(/^@/, "");
+export function parseTagList(text, previous = []) {
+  // "exploring_the_skies, @someone" → tags; keeps the position of names that were already tagged
+  return String(text ?? "").split(/[,\s]+/).map(cleanUsername).filter(Boolean)
+    .map((username) => previous.find((t) => t.username === username) ?? { username, ...TAG_DEFAULT });
+}
+
 // item: { type, size, width, height, duration? }
 export function validateItem(kind, item, index = 0) {
   const errors = [], warnings = [];
@@ -63,6 +73,15 @@ export function validateItem(kind, item, index = 0) {
     if (ratio && kind === "carousel") {
       const [lo, hi] = LIMITS.feedRatio;
       if (ratio < lo * (1 - TOL) || ratio > hi * (1 + TOL)) errors.push(`${n}Seitenverhältnis ${aspectLabel(item.width, item.height)}: erlaubt sind 4:5 bis 1.91:1.`);
+    }
+  }
+  const tags = item.user_tags ?? [];
+  if (tags.length) {
+    if (isVideo(item) || kind === "story" || kind === "reel") errors.push(`${n}Personen markieren geht nur bei Bildern im Feed.`);
+    if (tags.length > 20) errors.push(`${n}Höchstens 20 markierte Personen pro Bild.`);
+    for (const t of tags) {
+      if (!USERNAME.test(t.username ?? "")) errors.push(`${n}«${t.username}» ist kein Instagram-Benutzername.`);
+      if (!(t.x >= 0 && t.x <= 1 && t.y >= 0 && t.y <= 1)) errors.push(`${n}Position für @${t.username} muss zwischen 0 und 1 liegen.`);
     }
   }
   if (item.size > LIMITS.fileBytes) errors.push(`${n}Datei ist ${mb(item.size)} gross, höchstens 50 MB (Supabase Gratis-Plan).`);

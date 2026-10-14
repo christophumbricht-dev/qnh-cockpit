@@ -2,7 +2,7 @@
 // A package always becomes a DRAFT – approving stays a separate, manual step.
 // Format: docs/social-paket.md
 import { unzipSync } from "fflate";
-import { KINDS, zurichToUtc } from "./validate.js";
+import { KINDS, TAG_DEFAULT, cleanUsername, zurichToUtc } from "./validate.js";
 
 const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", mp4: "video/mp4", mov: "video/quicktime" };
 const MAX_TOTAL = 200 * 1024 * 1024;
@@ -76,6 +76,17 @@ export async function parsePackage(entries, accounts) {
   const todo = post.todo == null ? "" : Array.isArray(post.todo) ? post.todo.map(String).join("\n") : String(post.todo);
   if (todo.length > 2000) throw new PackageError("post.json: «todo» höchstens 2000 Zeichen.");
 
+  // "user_tags": [{ "media": 1, "username": "exploring_the_skies", "x": 0.5, "y": 0.9 }] → one list per file
+  const tags = names.map(() => []);
+  if (post.user_tags != null) {
+    if (!Array.isArray(post.user_tags)) throw new PackageError("post.json: «user_tags» muss eine Liste sein.");
+    for (const t of post.user_tags) {
+      const i = Number(t?.media ?? 1) - 1;
+      if (!Number.isInteger(i) || !tags[i]) throw new PackageError(`post.json: user_tags «media: ${t?.media}» – es gibt nur ${names.length} Datei(en).`);
+      tags[i].push({ username: cleanUsername(t.username), x: Number(t.x ?? TAG_DEFAULT.x), y: Number(t.y ?? TAG_DEFAULT.y) });
+    }
+  }
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
@@ -85,6 +96,7 @@ export async function parsePackage(entries, accounts) {
     alt,
     suggested_time: suggested,
     todo,
+    tags,
     files,
     cover,
   };
