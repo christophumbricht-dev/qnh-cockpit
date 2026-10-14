@@ -18,6 +18,9 @@ import { KINDS, formatZurich, validatePost, zurichToUtc } from "../src/social/va
 const DIR = join(ROOT, "pakete");
 const MARKERS = join(DIR, ".imported.json");
 const BUCKET = "social-media";
+// story images named in to-dos ("Bild s1-beta"): looked up in the package folder, then in the Downwind render output
+const ASSET_DIRS = [join(ROOT, "..", "downwind", "docs", "instagram", "out", "jpg")];
+const ASSET_NAME = /\bBild ([a-z]\d{0,2}-[a-z0-9-]+)/gi;
 const STATUS = { draft: "Entwurf", approved: "freigegeben", publishing: "wird veröffentlicht", published: "veröffentlicht", failed: "Fehler", cancelled: "abgebrochen" };
 const ext = (type) => (type === "image/jpeg" ? "jpg" : type === "video/quicktime" ? "mov" : "mp4");
 
@@ -153,6 +156,23 @@ async function main() {
       r.noteDone = true;
       // keep "edited in the cockpit" detection for conflicts; otherwise the post still equals the package
       if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+    }
+    {
+      const done = markers[".assets"] ?? {};
+      const names = new Map();
+      for (const r of rows) for (const [, n] of (r.pkg.todo ?? "").matchAll(ASSET_NAME)) names.set(n.toLowerCase(), r.folder);
+      for (const [name, folder] of names) {
+        const file = [join(DIR, folder, `${name}.jpg`), ...ASSET_DIRS.map((d) => join(d, `${name}.jpg`))].find((f) => existsSync(f));
+        if (!file) { console.log(`\n! Story-Bild ${name}.jpg nicht gefunden (gesucht in pakete/${folder} und downwind/docs/instagram/out/jpg)`); continue; }
+        const bytes = readFileSync(file);
+        const hash = packageHash([[name, bytes]]);
+        if (done[name] === hash) continue;
+        const { error } = await sb.storage.from(BUCKET).upload(`assets/${name}.jpg`, bytes, { contentType: "image/jpeg", upsert: true });
+        if (error) { console.log(`\n! Story-Bild ${name}: ${error.message}`); continue; }
+        done[name] = hash;
+        console.log(`\n⤓ Story-Bild ${name}.jpg hochgeladen`);
+      }
+      markers[".assets"] = done;
     }
     writeFileSync(MARKERS, JSON.stringify(markers, null, 2));
   }

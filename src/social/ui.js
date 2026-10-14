@@ -169,7 +169,13 @@ export function createSocial({ S, render, toast, errorText, appName }) {
 
   // "what Christoph still does by hand in Instagram" – shown unless it says there is nothing to do
   const todoOpen = (t) => Boolean(t?.trim()) && !/^nichts\b/i.test(t.trim());
-  const todoBox = (t) => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in Instagram erledigen</b><p>${esc(t.trim())}</p></div>` : "");
+  // "Bild s1-beta" → link to the story image (save it on the phone); web addresses → link + copy button for link stickers
+  function todoHtml(t) {
+    return esc(t.trim())
+      .replace(/https?:\/\/[^\s<«»]+[^\s<«».,;:!?)]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a> <button class="link copy" data-action="soc-copy" data-value="${u}">kopieren</button>`)
+      .replace(/\bBild ([a-z]\d{0,2}-[a-z0-9-]+)/gi, (m, name) => `<a class="asset" href="${esc(data.assetUrl(name.toLowerCase()))}" target="_blank" rel="noopener">Bild ${esc(name)} ⤓</a>`);
+  }
+  const todoBox = (t) => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in Instagram erledigen</b><p>${todoHtml(t)}</p></div>` : "");
 
   function postItem(p) {
     const a = account(p.account_id);
@@ -319,6 +325,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
           ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in Instagram erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
+            ${todoOpen(ed.todo) ? `<p class="soc-todo-preview">${todoHtml(ed.todo)}</p>` : ""}
             <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
             ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
@@ -486,6 +493,10 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       case "soc-close":
         if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
         st.editor = null; st.review = null; render(); load(true); return true;
+      case "soc-copy":
+        try { await navigator.clipboard.writeText(el.dataset.value); toast("Link kopiert – im Story-Editor beim Link-Sticker einfügen"); }
+        catch { prompt("Link kopieren:", el.dataset.value); }
+        return true;
       case "soc-save-todo":
         await busy(ed, async () => { await data.setTodo(ed.id, ed.todo ?? ""); ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
         return true;

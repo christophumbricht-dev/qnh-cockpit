@@ -21,6 +21,8 @@ export async function loadSocial() {
   return { accounts: must(accounts, "accounts"), posts: rows };
 }
 
+// story images named in a to-do ("Bild s1-beta") – uploaded by `npm run social -- import` to assets/<name>.jpg
+export const assetUrl = (name) => mediaUrl(`assets/${name}.jpg`);
 export const mediaUrl = (path) => (DEMO ? demo.url(path) : sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
 
 const ext = (type) => (type === "image/jpeg" ? "jpg" : type === "video/quicktime" ? "mov" : "mp4");
