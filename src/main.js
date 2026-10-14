@@ -2,16 +2,18 @@ import "./style.css";
 import { APPS, QNH, appById } from "./apps.js";
 import * as api from "./api.js";
 import { esc, relTime, shortDate, num, sourceLabel, errorText } from "./format.js";
-import { bucket, chartSvg, periodLabel } from "./charts.js";
+import { bucket, chartSvg, periodLabel, sparkSvg } from "./charts.js";
+import { search, greeting, firstName } from "./search.js";
 import { createSocial } from "./social/ui.js";
 import { socialConfigured } from "./social/data.js";
+import { formatZurich } from "./social/validate.js";
 
 const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365, "1 Jahr"]];
-const TAB_LABELS = { overview: "Übersicht", social: "Social", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
+const TAB_LABELS = { overview: "Übersicht", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
 const ERROR_DAYS = [1, 7, 30];
 
 const S = {
-  tab: "overview",
+  tab: "today", // today | social | overview | <app tab>
   appId: APPS.find((a) => a.tabs?.length)?.id,
   users: {}, // appId -> user | null
   login: {}, // appId -> { step, email, busy, error }
@@ -26,12 +28,29 @@ const S = {
   betaFilter: "new",
   toast: "",
   lastLoad: 0,
+  search: { open: false, q: "", sel: 0 },
+  theme: readTheme(), // "light" | "dark" | null (= follow the system)
 };
 
 const root = document.getElementById("app");
 const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
+const isAppPage = () => S.tab !== "today" && S.tab !== "social";
+
+// ---------------------------------------------------------------------------
+// Theme (per browser; a convenience only)
+// ---------------------------------------------------------------------------
+
+function readTheme() {
+  try { return localStorage.getItem("qnh-theme"); } catch { return null; }
+}
+function applyTheme() {
+  if (S.theme) document.documentElement.dataset.theme = S.theme;
+  else delete document.documentElement.dataset.theme;
+}
+const darkNow = () => S.theme === "dark" || (!S.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+applyTheme();
 
 // ---------------------------------------------------------------------------
 // Data loading
@@ -54,34 +73,35 @@ async function load(a, kind, fn, force = false) {
 function ensureData(force = false) {
   S.lastLoad = Date.now();
   for (const a of APPS) {
-    if (!live(a) || !S.users[a.id] || (S.tab !== "overview" && a.id !== S.appId)) continue;
+    if (!live(a) || !S.users[a.id]) continue;
+    // small and cheap: feed the sidebar badges and "Heute" on every page
     load(a, "stats", () => api.stats(a), force);
-    // small lists that feed overview tiles and tab badges
     if (a.tabs.includes("verify")) load(a, "verify", () => api.verificationQueue(a), force);
     if (a.tabs.includes("reports")) load(a, "reports", () => api.reports(a), force);
+    if (S.tab === "today" || (S.tab === "overview" && a.id === S.appId)) load(a, "trend30", () => api.timeseries(a, 30), force);
   }
-  if (socialConfigured() && (S.tab === "overview" || S.tab === "social") && (api.DEMO || S.users[QNH.id])) social.load(force);
+  if (socialConfigured() && (api.DEMO || S.users[QNH.id])) social.load(force);
   const a = app();
-  if (!a || !S.users[a.id]) return;
+  if (!isAppPage() || !a || !S.users[a.id]) return;
   if (S.tab === "trend") load(a, `trend${S.trendDays}`, () => api.timeseries(a, S.trendDays), force);
   if (S.tab === "feedback") load(a, "feedback", () => api.feedback(a), force);
   if (S.tab === "errors") load(a, `errors${S.errorDays}`, () => api.errors(a, S.errorDays), force);
   if (S.tab === "beta") load(a, "beta", () => api.betaSignups(a), force);
 }
 
+// #  #social  #downwind  #downwind/feedback
 function route() {
-  const [appId, tab] = location.hash.replace(/^#\/?/, "").split("/");
-  const a = appById(appId);
-  if (appId === "social") {
-    S.tab = "social";
-  } else if (a?.tabs?.includes(tab)) {
+  const [first, second] = location.hash.replace(/^#\/?/, "").split("/");
+  const a = first && first !== QNH.id ? appById(first) : null;
+  if (first === "social") S.tab = "social";
+  else if (a) {
     S.appId = a.id;
-    S.tab = tab;
-  } else {
-    S.tab = "overview";
-  }
+    S.tab = a.tabs?.includes(second) ? second : "overview";
+  } else S.tab = "today";
+  closeSearch(false);
   ensureData();
   render();
+  document.querySelector(".main-col")?.scrollTo?.(0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -100,32 +120,75 @@ function render() {
   const focused = document.activeElement?.name;
   const gate = gateApp();
   root.innerHTML = gate && !S.users[gate.id]
-    ? `<main class="gate"><section class="card gate-card">${logo()}<h1>QNH Cockpit – intern</h1>${loginForm(gate, true)}</section></main>`
-    : `${header()}<main>${view()}</main>${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ""}`;
+    ? `<main class="gate"><section class="gate-card">${logo()}<h1>QNH Cockpit</h1><p class="muted">intern</p>${loginForm(gate, true)}</section></main>`
+    : shell();
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
 }
 
-function header() {
-  const a = app();
-  const tabs = ["overview", ...(socialConfigured() ? ["social"] : []), ...(a?.tabs ?? [])];
-  const stats = a && S.data[`${a.id}:stats`]?.value;
-  const nav = tabs.map((t) => {
-    const href = t === "overview" ? "#" : t === "social" ? "#social" : `#${a.id}/${t}`;
-    const n = t === "overview" ? 0 : t === "social" ? social.badge() : badge(a, t, stats);
-    return `<a href="${href}" class="tab${S.tab === t ? " on" : ""}">${TAB_LABELS[t]}${n ? `<span class="badge">${n}</span>` : ""}</a>`;
-  }).join("");
-  const appsWithTabs = APPS.filter((x) => x.tabs?.length);
-  const picker = appsWithTabs.length > 1
-    ? `<select class="app-pick" data-action="pick-app">${appsWithTabs.map((x) => `<option value="${x.id}"${x.id === S.appId ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`
-    : "";
-  return `<header>
-    <div class="bar">
-      <a href="#" class="brand" aria-label="QNH Cockpit">${logo()}<span>QNH <b>Cockpit</b></span></a>
-      ${api.DEMO ? `<span class="demo">Demo-Daten</span>` : ""}
-      <button class="icon-btn" data-action="refresh" title="Aktualisieren" aria-label="Aktualisieren">${refreshIcon()}</button>
-      ${!api.DEMO && S.users[QNH.id] ? `<button class="link head-out" data-action="sign-out" data-app="${QNH.id}">Abmelden</button>` : ""}
+function shell() {
+  const todoCount = allTodos().length;
+  const navItem = (href, on, iconHtml, label, n, extra = "") =>
+    `<a href="${href}" class="nav-item${on ? " on" : ""}"${extra}>${iconHtml}<span class="nav-label">${esc(label)}</span>${n ? `<span class="badge">${n}</span>` : ""}</a>`;
+  const appItems = APPS.map((a) => navItem(`#${a.id}`, isAppPage() && S.appId === a.id, appBadge(a), a.name, todos(a).length, ` style="--app:${esc(a.color)}"`)).join("");
+  return `<div class="shell">
+    <aside class="side" aria-label="Navigation">
+      <a href="#" class="brand" aria-label="QNH Cockpit – Heute">${logo()}<span>QNH <b>Cockpit</b></span></a>
+      <button class="search-btn" data-action="search-open">${icon("search")}<span>Suchen</span><kbd>Ctrl K</kbd></button>
+      <nav class="side-nav">
+        ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount)}
+        <p class="side-label">Apps</p>
+        ${appItems}
+        ${socialConfigured() ? `<p class="side-label">QNH</p>${navItem("#social", S.tab === "social", icon("social"), "Social", social.badge())}` : ""}
+        <button class="nav-item nav-search" data-action="search-open">${icon("search")}<span class="nav-label">Suchen</span></button>
+      </nav>
+      <div class="side-foot">
+        ${api.DEMO ? `<span class="demo">Demo-Daten</span>` : ""}
+        <button class="icon-btn" data-action="theme" title="${darkNow() ? "Hell" : "Dunkel"}" aria-label="Farbschema wechseln">${icon(darkNow() ? "sun" : "moon")}</button>
+        <button class="icon-btn" data-action="refresh" title="Aktualisieren" aria-label="Aktualisieren">${icon("refresh")}</button>
+        ${!api.DEMO && S.users[QNH.id] ? `<button class="icon-btn" data-action="sign-out" data-app="${QNH.id}" title="Abmelden" aria-label="Abmelden">${icon("logout")}</button>` : ""}
+      </div>
+    </aside>
+    <div class="main-col">
+      <div class="mobile-top">
+        <a href="#" class="brand">${logo()}<span>QNH <b>Cockpit</b></span></a>
+        ${api.DEMO ? `<span class="demo">Demo</span>` : ""}
+        <button class="icon-btn" data-action="theme" aria-label="Farbschema wechseln">${icon(darkNow() ? "sun" : "moon")}</button>
+        <button class="icon-btn" data-action="refresh" aria-label="Aktualisieren">${icon("refresh")}</button>
+      </div>
+      ${pageHead()}
+      <main class="page">${view()}</main>
     </div>
-    <nav>${picker}${nav}</nav>
+  </div>
+  ${S.search.open ? palette() : ""}
+  ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ""}`;
+}
+
+function pageHead() {
+  if (S.tab === "today") {
+    const user = S.users[QNH.id] ?? Object.values(S.users).find(Boolean) ?? (api.DEMO ? { email: "christoph@setqnh.ch" } : null);
+    const name = firstName(user?.email);
+    const date = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "long", day: "numeric", month: "long" }).format(new Date());
+    const n = allTodos().length;
+    return `<header class="page-head hello">
+      <p class="eyebrow">${esc(date)}</p>
+      <h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}.</h1>
+      <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>
+    </header>`;
+  }
+  if (S.tab === "social") {
+    return `<header class="page-head"><div class="ph-title">${icon("social", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram-Beiträge aller Apps – du gibst jeden frei.</p></div></div></header>`;
+  }
+  const a = app();
+  const stats = S.data[`${a.id}:stats`]?.value;
+  const user = S.users[a.id];
+  const tabs = ["overview", ...(a.tabs ?? [])];
+  return `<header class="page-head" style="--app:${esc(a.color)}">
+    <div class="ph-title">${appBadge(a, "lg")}<div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.tagline ?? "")}</p></div>
+      ${user ? `<div class="who"><span class="muted">${esc(user.email ?? "")}</span><button class="link" data-action="sign-out" data-app="${a.id}">Abmelden</button></div>` : ""}</div>
+    ${a.offline ? "" : `<nav class="subtabs">${tabs.map((t) => {
+      const n = t === "overview" ? 0 : badge(a, t, stats);
+      return `<a href="#${a.id}${t === "overview" ? "" : `/${t}`}" class="subtab${S.tab === t ? " on" : ""}">${TAB_LABELS[t]}${n ? `<span class="badge">${n}</span>` : ""}</a>`;
+    }).join("")}</nav>`}
   </header>`;
 }
 
@@ -144,10 +207,13 @@ function tileValue(a, t, stats) {
 }
 
 function view() {
-  if (S.tab === "overview") return overview();
+  if (S.tab === "today") return todayView();
   if (S.tab === "social") return social.view();
   const a = app();
-  if (!S.users[a.id]) return `<section class="card">${cardHead(a)}${loginForm(a)}</section>`;
+  if (a.offline) return `<section class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Offline-App</h2><p class="muted">${esc(a.note)}</p></div></section>`;
+  if (!api.configured(a)) return `<p class="note">Supabase-Adresse und Schlüssel fehlen in <code>.env</code>.</p>`;
+  if (!S.users[a.id]) return `<section class="card">${loginForm(a)}</section>`;
+  if (S.tab === "overview") return appOverview(a);
   if (S.tab === "trend") return trendView(a);
   if (S.tab === "feedback") return feedbackView(a);
   if (S.tab === "errors") return errorsView(a);
@@ -157,36 +223,224 @@ function view() {
   return "";
 }
 
-// ---- overview ---------------------------------------------------------------
+// ---- "Heute": what needs you, then the numbers ---------------------------------
 
-function overview() {
-  return `<div class="cards">${APPS.map((a) => `<section class="card">${cardHead(a)}${cardBody(a)}</section>`).join("")}${social.overviewCard()}</div>`;
+function todos(a) {
+  if (!live(a)) return [];
+  if (!S.users[a.id]) return [{ app: a, tone: "info", label: `Bei ${a.name} anmelden`, href: `#${a.id}` }];
+  const s = S.data[`${a.id}:stats`]?.value;
+  const out = [];
+  const add = (n, one, many, tab, tone = "alert") => { if (n > 0) out.push({ app: a, tone, n, label: `${n} ${n === 1 ? one : many}`, href: `#${a.id}/${tab}` }); };
+  if (s) {
+    add(s.feedback_new, "neues Feedback", "neue Feedbacks", "feedback");
+    add(s.errors_24h, "Fehler in den letzten 24 h", "Fehler in den letzten 24 h", "errors");
+    add(s.beta_new, "neue Beta-Anmeldung", "neue Beta-Anmeldungen", "beta", "info");
+  }
+  for (const t of a.stats ?? []) {
+    if (!t.list) continue;
+    const v = tileValue(a, t, s);
+    if (v > 0) out.push({ app: a, tone: "alert", n: v, label: `${v} ${v === 1 && t.one ? t.one : t.label}`, href: `#${a.id}/${t.tab}` });
+  }
+  return out;
 }
 
-function cardHead(a) {
-  const user = S.users[a.id];
-  return `<div class="card-head">
-    <span class="dot" style="background:${esc(a.color)}"></span>
-    <div><h2>${esc(a.name)}</h2><p class="muted">${esc(a.tagline ?? "")}</p></div>
-    ${user ? `<div class="who"><span class="muted">${esc(user.email ?? "")}</span><button class="link" data-action="sign-out" data-app="${a.id}">Abmelden</button></div>` : ""}
+function socialTodos() {
+  const v = S.social?.value;
+  if (!v) return [];
+  const out = [];
+  const failed = v.posts.filter((p) => p.status === "failed").length;
+  const drafts = v.posts.filter((p) => p.status === "draft").length;
+  if (failed) out.push({ tone: "alert", label: `${failed} Beitrag${failed === 1 ? "" : "e"} mit Fehler`, href: "#social", where: "Social" });
+  if (drafts) out.push({ tone: "info", label: `${drafts} Entw${drafts === 1 ? "urf wartet" : "ürfe warten"} auf Freigabe`, href: "#social", where: "Social" });
+  for (const acc of v.accounts) {
+    const days = acc.token_expires_at ? Math.floor((new Date(acc.token_expires_at) - Date.now()) / 864e5) : null;
+    if (acc.active && days !== null && days < 14) out.push({ tone: "alert", label: `Instagram-Token @${acc.handle} läuft in ${Math.max(days, 0)} Tagen ab`, href: "#social", where: "Social" });
+  }
+  return out;
+}
+
+const allTodos = () => [...APPS.flatMap(todos), ...socialTodos()];
+
+function todayView() {
+  const items = allTodos();
+  const todoList = items.length
+    ? `<ul class="todo">${items.map((t) => `<li><a class="todo-item ${t.tone}" href="${t.href}">
+        <span class="todo-dot"></span><span class="todo-label">${esc(t.label)}</span>
+        <span class="todo-where"${t.app ? ` style="--app:${esc(t.app.color)}"` : ""}>${esc(t.app?.name ?? t.where ?? "")}</span>${icon("arrow", "todo-arrow")}</a></li>`).join("")}</ul>`
+    : `<div class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Ruhiger Flug</h2><p class="muted">Kein neues Feedback, keine Fehler, nichts offen. Zeit zum Fliegen.</p></div></div>`;
+  return `<section class="block"><h2 class="section-title">Braucht dich${items.length ? ` <span class="count-chip">${items.length}</span>` : ""}</h2>${todoList}</section>
+    <section class="block"><h2 class="section-title">Apps</h2><div class="app-cards">${APPS.map(appCard).join("")}</div></section>
+    ${socialConfigured() ? `<section class="block"><h2 class="section-title">Social</h2>${socialSnapshot()}</section>` : ""}`;
+}
+
+function sparkFor(a, key, kind) {
+  const rows = S.data[`${a.id}:trend30`]?.value;
+  return rows?.length ? sparkSvg(rows.map((r) => r[key]), kind) : "";
+}
+
+function goalBar(a, s, big = false) {
+  const g = a.goal;
+  if (!g || !s) return "";
+  const v = Number(s[g.key]) || 0;
+  const pct = Math.min(100, Math.round((v / g.target) * 100));
+  const done = v >= g.target;
+  return `<div class="goal${big ? " big" : ""}${done ? " done" : ""}">
+    <div class="goal-top"><span class="goal-label">${esc(g.label)}</span><span class="goal-num"><b>${num(v)}</b> / ${num(g.target)} ${esc(g.unit)}</span></div>
+    <div class="goal-track" role="progressbar" aria-valuenow="${v}" aria-valuemin="0" aria-valuemax="${g.target}" aria-label="${esc(g.label)}"><span style="width:${pct}%"></span></div>
+    <p class="goal-sub">${done ? "Ziel erreicht – Zeit für ein neues. 🎉" : `${pct} % · noch ${num(g.target - v)} bis zum Ziel`}</p>
   </div>`;
 }
 
-function cardBody(a) {
-  if (a.offline) return `<p class="note">${esc(a.note)}</p>`;
-  if (!api.configured(a)) return `<p class="note">Supabase-Adresse und Schlüssel fehlen in <code>.env</code>.</p>`;
-  if (!S.users[a.id]) return loginForm(a);
-  return block(`${a.id}:stats`, (s) => `<div class="tiles">${a.stats.map((t) => tile(a, t, s)).join("")}</div>`);
+function appCard(a) {
+  const style = ` style="--app:${esc(a.color)}"`;
+  const head = `<div class="ac-head">${appBadge(a)}<div><b>${esc(a.name)}</b><span class="muted">${esc(a.tagline ?? "")}</span></div>${icon("arrow", "ac-arrow")}</div>`;
+  if (a.offline) return `<a class="app-card quiet" href="#${a.id}"${style}>${head}<p class="muted small">${esc(a.note)}</p></a>`;
+  if (!S.users[a.id]) return `<a class="app-card quiet" href="#${a.id}"${style}>${head}<p class="muted small">Noch nicht angemeldet.</p></a>`;
+  const s = S.data[`${a.id}:stats`]?.value;
+  const kpi = (label, value, sub, spark) => `<div class="kpi"><span class="kpi-label">${esc(label)}</span><span class="kpi-num">${num(value)}</span>${spark}${sub ? `<span class="kpi-sub">${esc(sub)}</span>` : ""}</div>`;
+  return `<a class="app-card" href="#${a.id}"${style}>${head}
+    ${s ? `<div class="kpis">
+      ${kpi("Piloten", s.pilots, `+${s.pilots_7d ?? 0} in 7 Tagen`, sparkFor(a, "pilots_total", "line"))}
+      ${kpi("Flüge (7 Tage)", s.flights_7d, `${num(s.flights)} total`, sparkFor(a, "flights", "bar"))}
+    </div>${goalBar(a, s)}` : `<p class="muted loading">Lädt …</p>`}
+  </a>`;
+}
+
+function socialSnapshot() {
+  const v = S.social?.value;
+  if (!v) return `<div class="card"><p class="muted loading">${S.social?.error ? esc(errorText(S.social.error)) : "Lädt …"}</p></div>`;
+  const handle = (id) => v.accounts.find((x) => x.id === id)?.handle ?? "";
+  const planned = v.posts.filter((p) => p.status === "approved").sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)).slice(0, 3);
+  const count = (st) => v.posts.filter((p) => p.status === st).length;
+  return `<div class="card social-snap">
+    <div class="snap-stats">
+      <a href="#social"><b>${count("approved")}</b><span>geplant</span></a>
+      <a href="#social"><b>${count("draft")}</b><span>Entwürfe</span></a>
+      <a href="#social"><b>${count("published")}</b><span>veröffentlicht</span></a>
+      <button class="btn" data-action="go-new-post">${icon("plus")} Neuer Beitrag</button>
+    </div>
+    ${planned.length ? `<ul class="snap-list">${planned.map((p) => `<li><a href="#social">${icon("clock")}<span class="snap-when">${esc(formatZurich(p.scheduled_at))}</span><span class="snap-what">@${esc(handle(p.account_id))} · ${esc(String(p.caption || "Story").split("\n")[0].slice(0, 70))}</span></a></li>`).join("")}</ul>`
+      : `<p class="muted small">Nichts geplant. Ein Paket aus dem Chat «Corporate Identity» oder ein neuer Beitrag füllt den Kalender.</p>`}
+  </div>`;
+}
+
+// ---- app page ------------------------------------------------------------------
+
+function appOverview(a) {
+  return block(`${a.id}:stats`, (s) => `${goalBar(a, s, true)}
+    <div class="tiles">${a.stats.map((t) => tile(a, t, s)).join("")}</div>
+    <p class="hint">Kurven: letzte 30 Tage. Mehr im Reiter <a href="#${a.id}/trend">Verlauf</a>.</p>`);
 }
 
 function tile(a, t, s) {
   const value = tileValue(a, t, s);
   const inner = `<span class="tile-label">${esc(t.label)}</span>
-    <span class="tile-num">${num(value)}</span>
+    <span class="tile-row"><span class="tile-num">${num(value)}</span>${t.spark ? sparkFor(a, ...t.spark) : ""}</span>
     ${t.sub ? `<span class="tile-sub">${esc(t.sub(s))}</span>` : ""}`;
   const alert = t.list ? value > 0 : t.alert?.(s);
   const cls = `tile${alert ? " alert" : ""}`;
   return t.tab ? `<a class="${cls}" href="#${a.id}/${t.tab}">${inner}</a>` : `<div class="${cls}">${inner}</div>`;
+}
+
+// ---- search palette (Ctrl+K) -----------------------------------------------------
+
+let paletteResults = [];
+
+function searchGroups() {
+  const pages = [{ label: "Heute", sub: "Start", href: "#" }];
+  for (const a of APPS) {
+    pages.push({ label: a.name, sub: "Übersicht", href: `#${a.id}` });
+    for (const t of a.tabs ?? []) pages.push({ label: `${a.name} · ${TAB_LABELS[t]}`, href: `#${a.id}/${t}` });
+  }
+  if (socialConfigured()) {
+    pages.push({ label: "Social", sub: "Beiträge", href: "#social" });
+    pages.push({ label: "Neuer Beitrag", sub: "Social", action: "go-new-post" });
+  }
+  pages.push({ label: darkNow() ? "Helles Farbschema" : "Dunkles Farbschema", sub: "Darstellung", action: "theme" });
+  const groups = [{ title: "Springen zu", items: pages }];
+  for (const a of APPS) {
+    const beta = S.data[`${a.id}:beta`]?.value ?? [];
+    if (beta.length) groups.push({ title: `${a.name} · Beta`, items: beta.map((r) => ({ label: `${r.first_name} ${r.last_name}`, sub: `${r.email} · ${r.status === "new" ? "neu" : r.status === "invited" ? "eingeladen" : "abgelehnt"}`, text: r.note, href: `#${a.id}/beta` })) });
+    const fb = S.data[`${a.id}:feedback`]?.value ?? [];
+    if (fb.length) groups.push({ title: `${a.name} · Feedback`, items: fb.map((r) => ({ label: r.text.slice(0, 90), sub: `${r.pilot} · ${relTime(r.created_at)}`, text: r.text, href: `#${a.id}/feedback` })) });
+    const errs = S.data[`${a.id}:errors7`]?.value ?? [];
+    if (errs.length) groups.push({ title: `${a.name} · Fehler`, items: errs.map((r) => ({ label: r.message.slice(0, 90), sub: `${r.n}× · zuletzt ${relTime(r.last_at)}`, href: `#${a.id}/errors` })) });
+  }
+  const sv = S.social?.value;
+  if (sv?.posts.length) {
+    const handle = (id) => sv.accounts.find((x) => x.id === id)?.handle ?? "";
+    groups.push({ title: "Social-Beiträge", items: sv.posts.map((p) => ({ label: String(p.caption || "Story ohne Text").split("\n")[0].slice(0, 90), sub: `@${handle(p.account_id)} · ${p.status}`, text: p.caption, href: "#social", post: p.id })) });
+  }
+  return groups;
+}
+
+function paletteResultsHtml() {
+  const groups = search(S.search.q, searchGroups());
+  paletteResults = groups.flatMap((g) => g.items);
+  S.search.sel = Math.min(S.search.sel, Math.max(0, paletteResults.length - 1));
+  if (!paletteResults.length) return `<p class="pal-empty">Nichts gefunden für «${esc(S.search.q)}».</p>`;
+  let i = 0;
+  return groups.map((g) => `<p class="pal-group">${esc(g.title)}</p>${g.items.map((it) => {
+    const idx = i++;
+    return `<button class="pal-item${idx === S.search.sel ? " on" : ""}" data-action="pal-go" data-i="${idx}"><span class="pal-label">${esc(it.label)}</span>${it.sub ? `<span class="pal-sub">${esc(it.sub)}</span>` : ""}</button>`;
+  }).join("")}`).join("");
+}
+
+function palette() {
+  return `<div class="pal-backdrop" data-action="search-close">
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Suchen" data-action="noop">
+      <div class="pal-input">${icon("search")}<input name="search-q" placeholder="Seiten, Beta, Feedback, Fehler, Beiträge …" value="${esc(S.search.q)}" autocomplete="off" spellcheck="false"></div>
+      <div class="pal-results" id="pal-results">${paletteResultsHtml()}</div>
+      <p class="pal-foot"><kbd>↑</kbd><kbd>↓</kbd> wählen · <kbd>Enter</kbd> öffnen · <kbd>Esc</kbd> schliessen</p>
+    </div>
+  </div>`;
+}
+
+function openSearch() {
+  S.search = { open: true, q: "", sel: 0 };
+  // load what the search can find (each loads only once)
+  for (const a of APPS) {
+    if (!live(a) || !S.users[a.id]) continue;
+    load(a, "beta", () => api.betaSignups(a));
+    load(a, "feedback", () => api.feedback(a));
+    load(a, "errors7", () => api.errors(a, 7));
+  }
+  render();
+  root.querySelector('[name="search-q"]')?.focus();
+}
+
+function closeSearch(rerender = true) {
+  if (!S.search.open) return;
+  S.search.open = false;
+  if (rerender) render();
+}
+
+function refreshPalette() {
+  const el = document.getElementById("pal-results");
+  if (el) el.innerHTML = paletteResultsHtml();
+  el?.querySelector(".pal-item.on")?.scrollIntoView({ block: "nearest" });
+}
+
+function activate(item) {
+  if (!item) return;
+  closeSearch(false);
+  if (item.action === "theme") return toggleTheme();
+  if (item.action === "go-new-post") return goNewPost();
+  if (location.hash === item.href || (item.href === "#" && !location.hash)) route();
+  else location.hash = item.href;
+  if (item.post) setTimeout(() => social.onClick("soc-open", { dataset: { id: item.post } }), 50);
+}
+
+function toggleTheme() {
+  S.theme = darkNow() ? "light" : "dark";
+  try { localStorage.setItem("qnh-theme", S.theme); } catch { /* private mode */ }
+  applyTheme();
+  render();
+}
+
+function goNewPost() {
+  if (location.hash !== "#social") location.hash = "#social";
+  setTimeout(() => social.onClick("soc-new", { dataset: {} }), 50);
 }
 
 function loginForm(a, neutral = false) {
@@ -421,14 +675,27 @@ function chips(action, options, current) {
 const empty = (text) => `<p class="empty">${esc(text)}</p>`;
 
 function logo() {
-  return `<svg viewBox="40 44 90 122" aria-hidden="true"><g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+  return `<svg class="logo" viewBox="40 44 90 122" aria-hidden="true"><g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="50,155 85,120 120,155" stroke="#99E9F2"/><polyline points="50,122 85,87 120,122" stroke="#22B8CF"/>
     <polyline points="50,89 85,54 120,89" stroke="#0B7285"/></g></svg>`;
 }
 
-function refreshIcon() {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-}
+const appBadge = (a, size = "") => `<span class="app-badge${size ? ` ${size}` : ""}" style="--app:${esc(a.color)}" aria-hidden="true">${esc(a.name[0])}</span>`;
+
+const ICONS = {
+  home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  social: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.6" fill="currentColor"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>',
+  logout: '<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/>',
+  arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  plane: '<path d="M2 13l8-2 4-7h2l-2 7 6 1 2-2h1l-1 4 1 4h-1l-2-2-6 1 2 7h-2l-4-7-8-2z"/>',
+};
+const icon = (name, cls = "") => `<svg class="ico${cls ? ` ${cls}` : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
 let toastTimer;
 function toast(text) {
@@ -437,6 +704,7 @@ function toast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { S.toast = ""; render(); }, 2500);
 }
+
 
 // ---------------------------------------------------------------------------
 // Events
@@ -471,21 +739,53 @@ root.addEventListener("submit", async (e) => {
   render();
 });
 
-root.addEventListener("input", (e) => social.onInput(e));
+root.addEventListener("input", (e) => {
+  if (e.target.name === "search-q") {
+    S.search.q = e.target.value;
+    S.search.sel = 0;
+    return refreshPalette();
+  }
+  social.onInput(e);
+});
 root.addEventListener("dragover", (e) => social.onDragOver(e));
 root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop]")?.classList.remove("over"));
 root.addEventListener("drop", (e) => social.onDrop(e));
 
 root.addEventListener("change", async (e) => {
-  if (await social.onChange(e)) return;
-  if (e.target.dataset.action === "pick-app") location.hash = `#${e.target.value}/${appById(e.target.value).tabs[0]}`;
+  await social.onChange(e);
+});
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    return S.search.open ? closeSearch() : openSearch();
+  }
+  if (!S.search.open) return;
+  if (e.key === "Escape") return closeSearch();
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const n = paletteResults.length;
+    if (!n) return;
+    S.search.sel = (S.search.sel + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+    return refreshPalette();
+  }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    activate(paletteResults[S.search.sel]);
+  }
 });
 
 root.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-action]");
   if (!el || el.tagName === "SELECT") return;
   const { action, id, status, value } = el.dataset;
+  if (action === "noop") return;
   if (action.startsWith("soc-")) return social.onClick(action, el);
+  if (action === "search-open") return openSearch();
+  if (action === "search-close") return closeSearch();
+  if (action === "pal-go") return activate(paletteResults[Number(el.dataset.i)]);
+  if (action === "theme") return toggleTheme();
+  if (action === "go-new-post") return goNewPost();
   const a = el.dataset.app ? appById(el.dataset.app) : app();
 
   switch (action) {
@@ -626,6 +926,7 @@ window.addEventListener("hashchange", route);
 window.addEventListener("focus", () => {
   if (Date.now() - S.lastLoad > 60_000) ensureData(true);
 });
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (!S.theme) render(); });
 
 // ---------------------------------------------------------------------------
 // Start

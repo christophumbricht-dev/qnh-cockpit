@@ -9,7 +9,7 @@ const clone = (v) => structuredClone(v);
 const wait = (ms = 150) => new Promise((r) => setTimeout(r, ms));
 
 const accounts = [
-  { id: "acc-dw", app_id: "downwind", platform: "instagram", handle: "flydownwind", active: true, token_expires_at: at(41, 0) },
+  { id: "acc-dw", app_id: "downwind", platform: "instagram", handle: "fly_downwind", active: true, token_expires_at: at(41, 0) },
   { id: "acc-ss", app_id: "secondseat", platform: "instagram", handle: "secondseat.app", active: true, token_expires_at: at(9, 0) },
 ];
 const img = (path) => ({ path, type: "image/jpeg", alt: "Demo-Bild", width: 1080, height: 1350 });
