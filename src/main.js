@@ -12,6 +12,17 @@ const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365
 const TAB_LABELS = { overview: "Übersicht", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
 const ERROR_DAYS = [1, 7, 30];
 
+// Photos by Jürg Umbricht (@exploring_the_skies), retouched and published on flydownwind.ch with his OK.
+// Loaded from there (not copied into this public repo); credit on every use.
+const PHOTO_BASE = "https://flydownwind.ch/assets/photos/";
+const PHOTOS = ["band", "hero-wide", "map", "wingmen"]; // the ones that work as a wide banner
+const photoOfDay = () => {
+  const d = new Date();
+  const day = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 864e5);
+  return PHOTO_BASE + PHOTOS[day % PHOTOS.length] + ".webp";
+};
+const photoCredit = () => `<a class="credit" href="https://www.instagram.com/exploring_the_skies" target="_blank" rel="noopener">Foto: Jürg Umbricht · @exploring_the_skies</a>`;
+
 const S = {
   tab: "today", // today | social | overview | <app tab>
   appId: APPS.find((a) => a.tabs?.length)?.id,
@@ -120,7 +131,7 @@ function render() {
   const focused = document.activeElement?.name;
   const gate = gateApp();
   root.innerHTML = gate && !S.users[gate.id]
-    ? `<main class="gate"><section class="gate-card">${logo()}<h1>QNH Cockpit</h1><p class="muted">intern</p>${loginForm(gate, true)}</section></main>`
+    ? `<main class="gate" style="--photo:url('${PHOTO_BASE}band.webp')"><section class="gate-card">${logo()}<h1>QNH Cockpit</h1><p class="muted">intern</p>${loginForm(gate, true)}</section>${photoCredit()}</main>`
     : shell();
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
 }
@@ -170,9 +181,12 @@ function pageHead() {
     const date = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "long", day: "numeric", month: "long" }).format(new Date());
     const n = allTodos().length;
     return `<header class="page-head hello">
-      <p class="eyebrow">${esc(date)}</p>
-      <h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}.</h1>
-      <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>
+      <div class="hero" style="--photo:url('${photoOfDay()}')">
+        <p class="eyebrow">${esc(date)}</p>
+        <h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}.</h1>
+        <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>
+        ${photoCredit()}
+      </div>
     </header>`;
   }
   if (S.tab === "social") {

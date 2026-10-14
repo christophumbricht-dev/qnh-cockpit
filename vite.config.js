@@ -12,7 +12,7 @@ function csp(env) {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob: ${supabase.join(" ")}`,
+    `img-src 'self' data: blob: https://flydownwind.ch ${supabase.join(" ")}`,
     `media-src 'self' blob: ${supabase.join(" ")}`,
     `connect-src 'self' ${[...supabase, ...ws].join(" ")}`,
     "font-src 'self'",
