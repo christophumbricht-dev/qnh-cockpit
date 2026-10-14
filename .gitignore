@@ -4,3 +4,5 @@ dist/
 .env.*
 !.env.example
 pakete/
+.qnh-session.json
+roadmap-local/

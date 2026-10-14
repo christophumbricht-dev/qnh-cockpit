@@ -14,7 +14,8 @@
     "test": "node --test \"tests/*.test.mjs\"",
     "check:secrets": "node scripts/check-secrets.mjs",
     "test:functions": "npx -y deno@2 test --no-check=remote supabase/functions/",
-    "test:all": "npm test && npm run test:functions && npm run check:secrets"
+    "test:all": "npm test && npm run test:functions && npm run check:secrets",
+    "roadmap": "node scripts/roadmap.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",
