@@ -12,6 +12,8 @@ export const APPS = [
     tabs: ["trend", "feedback", "errors", "beta", "verify", "reports"],
     // progress bar on "Heute" and the app page
     goal: { key: "pilots", target: 50, label: "Beta-Ziel", unit: "Piloten" },
+    // tab "Store & Builds": App Store Connect (bundle ID) and Codemagic (part of the Codemagic app name)
+    store: { bundleId: "ch.umbricht.downwind", codemagic: "downwind" },
     // tab "Verlauf": columns of admin_timeseries(); "line" = running total, "bar" = count per day/week
     trend: [
       { key: "pilots_total", kind: "line", label: "Piloten total" },

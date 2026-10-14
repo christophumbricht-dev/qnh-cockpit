@@ -417,3 +417,7 @@ enabled = true
 # Called by pg_cron (shared secret header) and by the cockpit (admin JWT, checked inside the function).
 [functions.social-publish]
 verify_jwt = false
+
+# Called by the cockpit (admin JWT, checked inside the function with is_qnh_admin()).
+[functions.store-status]
+verify_jwt = false

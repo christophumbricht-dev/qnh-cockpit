@@ -19,12 +19,25 @@ Internal dashboard of QNH GmbH (owner: Christoph Umbricht) for all its apps. Tal
 ## Apps
 
 - **Downwind** (`C:\Projects\downwind`): uses `admin_stats()`, `admin_feedback()`, `set_feedback_status()`, `admin_errors()`, table `beta_signups`, bucket `feedback` (signed URLs). Defined in Downwind's migration `20261107100000_admin_inbox.sql`. Verification tab: `verification_queue()`, `review_verification()`, bucket `verification-docs`, `clear_verification_doc()`, then the `push` function (same steps as the app's admin screen). Reports tab: Edge Function `moderate` (`op: list | act`, moderators only — table `moderators`). Trend tab ("Verlauf"): `admin_timeseries(p_days)` from Downwind's migration `20261122100000_admin_timeseries.sql` (daily counts, Swiss time); `src/charts.js` buckets ≤31 days daily, longer ranges by ISO week, and draws small multiples (one series each, colour `#1098AD`, validated for light and dark). If Downwind changes these, update the cockpit.
-- **SecondSeat** (`C:\Projects\SecondSeat`): offline app without a server — shown as a note only.
+- **SecondSeat** (`C:\Projects\SecondSeat`): offline app without a server — shown as a note plus its roadmap. Add `store` in `src/apps.js` once it is in App Store Connect (planned bundle ID `ch.setqnh.secondseat`).
 - New app with an account: give it the same admin functions (ideally via QNH Core, `C:\Users\cu89\Desktop\Christoph\Fliegen\Website Flying\QNH Core`), then add it to `src/apps.js` and `.env`.
 
-## Planned (version 2+)
+## Store & Builds (tab per app with `store` in `src/apps.js`)
 
-App Store Connect (TestFlight/Store status, ratings, downloads), Codemagic build status, RevenueCat revenue. These need secret API keys, so they need a small server part (e.g. a Supabase Edge Function in a QNH project) — never keys in the browser. The secrets would live in the QNH Core project (see Social below).
+Edge Function `supabase/functions/store-status/` in QNH Core (admin JWT, `is_qnh_admin()`; read-only). App Store Connect API (ES256 JWT signed with WebCrypto in `status.ts`): versions, TestFlight builds + beta state, customer reviews, tester count; public rating via iTunes lookup; Codemagic `/builds`. Secrets `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_PRIVATE_KEY`, `CODEMAGIC_TOKEN` (all optional, entered by Christoph). Deno tests `status.test.ts`. Cockpit: `src/store/` (cached 10 min, todos for failed builds/rejections/new reviews). Setup: `docs/store-setup.md`. Later: downloads (sales reports), RevenueCat.
+
+## Roadmap & Hangar (QNH Core)
+
+Migration `20261014100000_roadmap_hangar.sql`: `roadmap_items` (scope qnh/downwind/secondseat, status idea/next/doing/done, due, source cockpit/claude; realtime) and `hangar_links` (quick links, seeded). Cockpit: `src/qnh/` – board per app (tab "Roadmap") and for all (`#roadmap`), due items on "Heute"; Hangar `#hangar`. File storage is Infomaniak kDrive (linked in the Hangar, no files in the cockpit).
+
+**Roadmap sync with Claude sessions** – Christoph adds items in the cockpit; Claude keeps it up to date from conversations:
+- At the start of a session in this repo run `npm.cmd run roadmap -- pull` and read `roadmap-local/ROADMAP.md` (local mirror, gitignored – the repo is public). Mention new items from Christoph.
+- When a conversation decides something to do: `npm.cmd run roadmap -- add --scope downwind --status next --title "…" [--body "…"] [--due YYYY-MM-DD]`; when done: `npm.cmd run roadmap -- set <id> --status done`. Keep titles short and German; no secrets or personal data in items.
+- If the session expired: Christoph runs `npm.cmd run roadmap -- login` (paste the link address from the e-mail, do not click it).
+
+## Social calendar
+
+`src/social/ui.js`: list/calendar toggle (localStorage `qnh-social-mode`), month grid in Swiss time; dragging a draft/approved post to another day keeps its time (approved posts: draft → approved again with the new time, as the guard trigger requires).
 
 ## Hosting (cockpit.setqnh.ch)
 

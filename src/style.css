@@ -503,3 +503,27 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
   .cal-post { font-size: 10px; padding: 1px 3px; border-left-width: 2px; }
   .cal-add { display: none; }
 }
+
+/* ---- store & builds ---- */
+.store-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin-bottom: 16px; }
+.store-card h3, .store-grid + .card h3 { margin: 0 0 10px; }
+.store-big { font: 600 26px/1.1 var(--display); margin: 0 0 8px; }
+.st-pill { display: inline-block; font: 600 12px/1 var(--body); padding: 5px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.st-pill.ok { background: var(--ok-soft); color: var(--ok); }
+.st-pill.info { background: var(--brand-soft); color: var(--brand); }
+.st-pill.alert { background: var(--alert-soft); color: var(--alert); }
+.store-facts { display: grid; gap: 8px; margin: 14px 0 0; }
+.store-facts div { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+.store-facts dt { color: var(--muted); }
+.store-facts dd { margin: 0; text-align: right; }
+.stars { color: #f59f00; letter-spacing: 1px; }
+.store-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.store-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); min-width: 0; }
+.store-list li:first-child { border-top: 0; padding-top: 0; }
+.store-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.store-list a { color: inherit; text-decoration: none; }
+.store-list a:hover { color: var(--brand); }
+.store-list li.faded { opacity: 0.55; }
+.store-reviews { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.store-reviews p { margin: 4px 0; }
+.store-errors { margin: 0 0 14px; padding: 10px 14px 10px 30px; border-radius: 12px; background: var(--alert-soft); color: var(--alert); font-size: 14px; }

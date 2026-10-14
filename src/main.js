@@ -9,9 +9,10 @@ import { socialConfigured } from "./social/data.js";
 import { formatZurich } from "./social/validate.js";
 import { createQnh } from "./qnh/ui.js";
 import { qnhReady } from "./qnh/data.js";
+import { createStore } from "./store/ui.js";
 
 const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365, "1 Jahr"]];
-const TAB_LABELS = { overview: "Übersicht", roadmap: "Roadmap", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
+const TAB_LABELS = { overview: "Übersicht", store: "Store & Builds", roadmap: "Roadmap", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
 const ERROR_DAYS = [1, 7, 30];
 
 // Photos by Jürg Umbricht (@exploring_the_skies), retouched and published on flydownwind.ch with his OK.
@@ -48,12 +49,13 @@ const S = {
 const root = document.getElementById("app");
 const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...APPS.map((a) => ({ id: a.id, name: a.name, color: a.color }))];
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
+const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
 const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar"];
 const isAppPage = () => !GLOBAL_TABS.includes(S.tab);
-const appTabs = (a) => (a.offline ? ["overview", "roadmap"] : ["overview", ...(a.tabs ?? []), "roadmap"]);
+const appTabs = (a) => ["overview", ...(a.offline ? [] : a.tabs ?? []), ...(a.store ? ["store"] : []), "roadmap"];
 
 // ---------------------------------------------------------------------------
 // Theme (per browser; a convenience only)
@@ -98,7 +100,10 @@ function ensureData(force = false) {
     if (S.tab === "today" || (S.tab === "overview" && a.id === S.appId)) load(a, "trend30", () => api.timeseries(a, 30), force);
   }
   if (socialConfigured() && (api.DEMO || S.users[QNH.id])) social.load(force);
-  if (qnhReady() && (api.DEMO || S.users[QNH.id])) qnh.load(force);
+  if (qnhReady() && (api.DEMO || S.users[QNH.id])) {
+    qnh.load(force);
+    store.load(APPS, force);
+  }
   const a = app();
   if (!isAppPage() || !a || !S.users[a.id]) return;
   if (S.tab === "trend") load(a, `trend${S.trendDays}`, () => api.timeseries(a, S.trendDays), force);
@@ -245,6 +250,7 @@ function view() {
   if (S.tab === "hangar") return qnh.hangarView();
   const a = app();
   if (S.tab === "roadmap") return qnh.roadmapView(a.id);
+  if (S.tab === "store") return api.DEMO || S.users[QNH.id] ? store.view(a) : `<p class="note">Für Store & Builds bei QNH Core anmelden (Seite «Heute»).</p>`;
   if (a.offline) return `<section class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Offline-App</h2><p class="muted">${esc(a.note)}</p></div></section>`;
   if (!api.configured(a)) return `<p class="note">Supabase-Adresse und Schlüssel fehlen in <code>.env</code>.</p>`;
   if (!S.users[a.id]) return `<section class="card">${loginForm(a)}</section>`;
@@ -302,7 +308,7 @@ function roadmapTodos() {
   });
 }
 
-const allTodos = () => [...APPS.flatMap(todos), ...socialTodos(), ...roadmapTodos()];
+const allTodos = () => [...APPS.flatMap(todos), ...store.todos(APPS), ...socialTodos(), ...roadmapTodos()];
 
 function todayView() {
   const items = allTodos();
@@ -393,7 +399,7 @@ function searchGroups() {
   const pages = [{ label: "Heute", sub: "Start", href: "#" }];
   for (const a of APPS) {
     pages.push({ label: a.name, sub: "Übersicht", href: `#${a.id}` });
-    for (const t of a.tabs ?? []) pages.push({ label: `${a.name} · ${TAB_LABELS[t]}`, href: `#${a.id}/${t}` });
+    for (const t of appTabs(a).slice(1)) pages.push({ label: `${a.name} · ${TAB_LABELS[t]}`, href: `#${a.id}/${t}` });
   }
   if (socialConfigured()) {
     pages.push({ label: "Social", sub: "Beiträge", href: "#social" });
@@ -837,6 +843,7 @@ root.addEventListener("click", async (e) => {
   if (action === "noop") return;
   if (action.startsWith("soc-")) return social.onClick(action, el);
   if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
+  if (action.startsWith("store-")) return store.onClick(el, APPS);
   if (action === "search-open") return openSearch();
   if (action === "search-close") return closeSearch();
   if (action === "pal-go") return activate(paletteResults[Number(el.dataset.i)]);
