@@ -80,6 +80,10 @@ async function login(email) {
   } else {
     let u;
     try { u = new URL(answer); } catch { fail("Das ist weder ein Link noch ein Code."); }
+    // Outlook "Safe Links" (and similar) wrap the real link in ?url=…
+    for (let i = 0; i < 3 && !u.searchParams.has("token") && u.searchParams.has("url"); i++) {
+      try { u = new URL(u.searchParams.get("url")); } catch { break; }
+    }
     const token = u.searchParams.get("token") ?? u.searchParams.get("token_hash");
     if (!token) fail("Im Link fehlt der Token – bitte die Link-Adresse aus der E-Mail kopieren.");
     result = await sb.auth.verifyOtp({ token_hash: token, type: u.searchParams.get("type") === "signup" ? "signup" : "magiclink" });
