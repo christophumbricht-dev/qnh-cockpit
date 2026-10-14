@@ -73,6 +73,9 @@ export async function parsePackage(entries, accounts) {
     suggested = suggested.toISOString();
   }
 
+  const todo = post.todo == null ? "" : Array.isArray(post.todo) ? post.todo.map(String).join("\n") : String(post.todo);
+  if (todo.length > 2000) throw new PackageError("post.json: «todo» höchstens 2000 Zeichen.");
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
@@ -81,6 +84,7 @@ export async function parsePackage(entries, accounts) {
     first_comment: String(post.first_comment ?? ""),
     alt,
     suggested_time: suggested,
+    todo,
     files,
     cover,
   };

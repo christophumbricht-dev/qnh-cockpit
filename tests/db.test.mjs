@@ -7,6 +7,7 @@ import { PGlite } from "@electric-sql/pglite";
 
 const SQL = readFileSync(new URL("../supabase/migrations/20261013100000_social.sql", import.meta.url), "utf8");
 const SQL2 = readFileSync(new URL("../supabase/migrations/20261014100000_roadmap_hangar.sql", import.meta.url), "utf8");
+const SQL3 = readFileSync(new URL("../supabase/migrations/20261014120000_social_todo.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -32,6 +33,8 @@ await db.exec(SQL);
 await db.exec(SQL); // Christoph may paste it twice
 await db.exec(SQL2);
 await db.exec(SQL2);
+await db.exec(SQL3);
+await db.exec(SQL3);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -151,4 +154,17 @@ test("hangar: seeded once, admins only, only http(s) links", async () => {
   assert.ok(n >= 10);
   assert.equal((await as(OTHER, "select count(*)::int n from hangar_links")).rows[0].n, 0);
   await assert.rejects(as(ADMIN, "insert into hangar_links (title, url) values ('x', 'javascript:alert(1)')"));
+});
+
+test("todo note: editable in every status, everything else stays locked after publishing", async () => {
+  const id = await newPost();
+  await as(ADMIN, `update social_posts set todo='Story am Vortag' where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await as(ADMIN, `update social_posts set todo='Story am Vortag ✓' where id='${id}'`);
+  await as("service", `update social_posts set status='published', published_at=now() where id='${id}'`);
+  await as(ADMIN, `update social_posts set todo='Jürg markieren' where id='${id}'`);
+  assert.equal((await as(ADMIN, `select todo from social_posts where id='${id}'`)).rows[0].todo, "Jürg markieren");
+  await assert.rejects(as(ADMIN, `update social_posts set caption='x', todo='y' where id='${id}'`), /veröffentlicht/);
+  await assert.rejects(as(ADMIN, `update social_posts set status='draft', todo='y' where id='${id}'`), /veröffentlicht/);
+  await assert.rejects(as(ADMIN, `update social_posts set todo=repeat('x', 2001) where id='${id}'`));
 });

@@ -68,6 +68,7 @@ async function save(sb, p, id, isNew) {
   const row = {
     account_id: p.account_id, kind: p.pkg.kind, caption: p.caption, first_comment: p.pkg.kind === "story" ? "" : p.pkg.first_comment,
     media, cover_path, scheduled_at: p.suggested_time ?? tomorrow18(),
+    ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
   };
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
@@ -99,9 +100,11 @@ async function main() {
   const sb = await signedIn();
   const [{ data: accounts, error: e1 }, { data: posts, error: e2 }] = await Promise.all([
     sb.from("social_accounts").select("id, app_id, platform, handle, active"),
-    sb.from("social_posts").select("id, status, account_id, caption, source, scheduled_at, updated_at, media").neq("status", "cancelled"),
+    sb.from("social_posts").select("*").neq("status", "cancelled"),
   ]);
   if (e1 || e2) fail((e1 ?? e2).message);
+  // column "todo" exists after migration 20261014120000_social_todo.sql
+  const hasTodo = posts.length ? "todo" in posts[0] : true;
 
   const folders = readdirSync(DIR).filter((f) => existsSync(join(DIR, f, "post.json")) && (!only.size || only.has(f))).sort();
   for (const f of only) if (!folders.includes(f)) fail(`Kein Paket «${f}» in pakete/`);
@@ -119,7 +122,10 @@ async function main() {
   const markers = readMarkers();
   const rows = plan(pkgs, markers, posts).map((r) => (r.action === "past" && only.has(r.folder) ? { ...r, action: "new" } : r));
   const handle = (id) => `@${accounts.find((x) => x.id === id)?.handle ?? "?"}`;
+  for (const r of rows) r.hasTodo = hasTodo;
   const todo = rows.filter((r) => ["new", "update", "link"].includes(r.action));
+  // a to-do note from the package reaches existing posts too – but only where the post has none yet
+  const notes = hasTodo ? rows.filter((r) => r.post && r.pkg.todo && !r.post.todo && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
 
   if (cmd === "import") {
     for (const r of todo) {
@@ -140,6 +146,13 @@ async function main() {
         r.action = "error";
       }
     }
+    for (const r of notes) {
+      const { data, error } = await sb.from("social_posts").update({ todo: r.pkg.todo }).eq("id", r.post.id).select("updated_at").single();
+      if (error) { r.note = `To-do nicht übernommen: ${error.message}`; continue; }
+      r.noteDone = true;
+      // keep "edited in the cockpit" detection for conflicts; otherwise the post still equals the package
+      if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+    }
     writeFileSync(MARKERS, JSON.stringify(markers, null, 2));
   }
 
@@ -152,17 +165,20 @@ async function main() {
     console.log(`    ${formatZurich(when) || "ohne Zeit"} · ${KINDS[r.pkg.kind]} · ${handle(r.account_id)} · ${r.items.length} Datei${r.items.length === 1 ? "" : "en"}`);
     if (firstLine(r.caption)) console.log(`    «${firstLine(r.caption)}»`);
     if (r.note) console.log(`    → ${r.note}`);
+    if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
+    if (r.pkg.todo && !/^nichts\b/i.test(r.pkg.todo.trim()) && (r.done || r.noteDone)) console.log(`    ✋ ${r.pkg.todo.trim().split("\n").join("\n       ")}`);
     if (["new", "update"].includes(r.action) || (r.done && EDITABLE.has(st))) for (const l of checks(r, when)) console.log(l);
   };
 
-  const interesting = rows.filter((r) => r.action !== "same" || only.size);
+  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || only.size);
   for (const r of interesting) show(r);
   for (const b of broken) console.log(`\n✗ ${b.folder}  [ungültig]\n    → ${b.note}`);
 
   const count = (act) => rows.filter((r) => r.action === act).length;
   console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
     `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
-  if (cmd === "status" && todo.length) console.log("Importieren mit: npm run social -- import");
+  if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
+  if (cmd === "status" && (todo.length || notes.length)) console.log("Importieren mit: npm run social -- import");
   if (cmd === "import" && todo.some((r) => r.done)) console.log("Als Entwürfe im Cockpit: https://cockpit.setqnh.ch/#social – freigeben machst nur du.");
 }
 

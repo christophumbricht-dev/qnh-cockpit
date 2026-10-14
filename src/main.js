@@ -296,6 +296,11 @@ function socialTodos() {
   const drafts = v.posts.filter((p) => p.status === "draft").length;
   if (failed) out.push({ tone: "alert", label: `${failed} Beitrag${failed === 1 ? "" : "e"} mit Fehler`, href: "#social", where: "Social" });
   if (drafts) out.push({ tone: "info", label: `${drafts} Entw${drafts === 1 ? "urf wartet" : "ürfe warten"} auf Freigabe`, href: "#social", where: "Social" });
+  const soon = Date.now() + 2 * 864e5;
+  for (const p of v.posts) {
+    if (!["draft", "approved"].includes(p.status) || !p.scheduled_at || !social.todoOpen(p.todo) || new Date(p.scheduled_at) > soon) continue;
+    out.push({ tone: "info", label: `Von Hand auf Instagram (${formatZurich(p.scheduled_at)}): ${p.todo.trim().split("\n")[0].slice(0, 90)}`, href: "#social", where: "Social" });
+  }
   for (const acc of v.accounts) {
     const days = acc.token_expires_at ? Math.floor((new Date(acc.token_expires_at) - Date.now()) / 864e5) : null;
     if (acc.active && days !== null && days < 14) out.push({ tone: "alert", label: `Instagram-Token @${acc.handle} läuft in ${Math.max(days, 0)} Tagen ab`, href: "#social", where: "Social" });

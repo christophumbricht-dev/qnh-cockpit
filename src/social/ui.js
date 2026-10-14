@@ -121,7 +121,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
         const a = account(p.account_id);
         const movable = ["draft", "failed", "approved"].includes(p.status);
         const time = utcToZurichLocal(p.published_at ?? p.scheduled_at).slice(11, 16);
-        return `<button class="cal-post ${p.status}" data-action="soc-open" data-id="${p.id}"${movable ? ` draggable="true" data-cal-post="${p.id}"` : ""} title="${esc(firstLines(p.caption, 1) || KINDS[p.kind])}"><b>${esc(time)}</b> ${esc(KINDS[p.kind])} · @${esc(a?.handle ?? "")}</button>`;
+        return `<button class="cal-post ${p.status}" data-action="soc-open" data-id="${p.id}"${movable ? ` draggable="true" data-cal-post="${p.id}"` : ""} title="${esc((firstLines(p.caption, 1) || KINDS[p.kind]) + (todoOpen(p.todo) ? `\n\nVon Hand: ${p.todo}` : ""))}"><b>${esc(time)}</b>${todoOpen(p.todo) ? " ✋" : ""} ${esc(KINDS[p.kind])} · @${esc(a?.handle ?? "")}</button>`;
       }).join("");
       const cls = `cal-day${k.slice(0, 7) !== month ? " other" : ""}${k === today ? " today" : ""}${k < today ? " past" : ""}`;
       const add = k >= today ? `<button class="cal-add" data-action="soc-new-on" data-value="${k}" aria-label="Neuer Beitrag am ${k}">+</button>` : "";
@@ -167,6 +167,10 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       : `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy">`;
   }
 
+  // "what Christoph still does by hand in Instagram" – shown unless it says there is nothing to do
+  const todoOpen = (t) => Boolean(t?.trim()) && !/^nichts\b/i.test(t.trim());
+  const todoBox = (t) => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in Instagram erledigen</b><p>${esc(t.trim())}</p></div>` : "");
+
   function postItem(p) {
     const a = account(p.account_id);
     const when = p.status === "published" ? p.published_at : p.scheduled_at;
@@ -186,6 +190,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}</div>
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
+        ${todoBox(p.todo)}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
         <div class="actions">${actions.join("")}</div>
       </div>
@@ -210,7 +215,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const st = S.social;
     const next = reviewQueue().find((p) => p.id !== currentId && !st.review.skipped.has(p.id));
     if (next) return openEditor(next);
-    toast(`Freigabe-Runde fertig: ${st.review.done} freigegeben${st.review.skipped.size ? `, ${st.review.skipped.size} übersprungen` : ""}.`);
+    toast(`Freigabe-Runde fertig: ${st.review.done} freigegeben${st.review.skipped.size ? `, ${st.review.skipped.size} für später` : ""}.`);
     st.review = null;
     st.editor = null;
     render();
@@ -227,6 +232,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       kind: post?.kind ?? "image",
       caption: post?.caption ?? "",
       first_comment: post?.first_comment ?? "",
+      todo: duplicate ? "" : post?.todo ?? "",
       scheduledLocal: post?.scheduled_at ? utcToZurichLocal(post.scheduled_at) : tomorrowAt18(),
       items,
       cover: post?.cover_path ? (duplicate ? { copyFrom: post.cover_path, type: "image/jpeg" } : { path: post.cover_path, type: "image/jpeg" }) : null,
@@ -286,7 +292,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const rvBar = rv && !ed.isNew ? (() => {
       const queue = reviewQueue().filter((p) => !rv.skipped.has(p.id));
       return `<div class="review-bar"><b>Freigabe-Runde</b><span class="muted">${rv.done} freigegeben · noch ${queue.length} Entw${queue.length === 1 ? "urf" : "ürfe"}</span>
-        <span class="row-right"><button class="btn ghost" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Überspringen ›</button></span></div>`;
+        <span class="row-right"><button class="btn ghost" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Später freigeben ›</button></span></div>`;
     })() : "";
     return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : "← Zurück zur Liste"}</button>
         <span class="muted">${ed.isNew ? (ed.source === "duplicate" ? "Duplikat" : "Neuer Beitrag") : `${STATUS[ed.status] ?? ed.status}`}${ro ? " · zum Ändern zuerst zurückziehen oder duplizieren" : ""}</span></div>
@@ -310,6 +316,9 @@ export function createSocial({ S, render, toast, errorText, appName }) {
             <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>`}
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
+          ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in Instagram erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
+            <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
+            ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
           <div class="actions">${actions.join("")}</div>
         </div>
@@ -396,7 +405,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const row = {
       account_id: ed.account_id, kind: ed.kind, caption: ed.kind === "story" ? "" : ed.caption,
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path,
-      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source,
+      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "",
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row);
     ed.isNew = false;
@@ -474,6 +483,9 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       case "soc-close":
         if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
         st.editor = null; st.review = null; render(); load(true); return true;
+      case "soc-save-todo":
+        await busy(ed, async () => { await data.setTodo(ed.id, ed.todo ?? ""); ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
+        return true;
       case "soc-review": {
         st.review = { skipped: new Set(), done: 0 };
         const first = reviewQueue()[0];
@@ -554,6 +566,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     if (!ed || !name.startsWith("soc-")) return false;
     if (name === "soc-caption") ed.caption = e.target.value;
     else if (name === "soc-comment") ed.first_comment = e.target.value;
+    else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
     else if (name === "soc-time") ed.scheduledLocal = e.target.value;
     else if (name.startsWith("soc-alt-")) ed.items[Number(name.slice(8))].alt = e.target.value;
     else return false;
@@ -625,7 +638,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        caption: pkg.caption, first_comment: pkg.first_comment, scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "" }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };
@@ -638,5 +651,5 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     }
   }
 
-  return { load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart };
+  return { todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart };
 }

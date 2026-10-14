@@ -25,7 +25,9 @@ mein-beitrag/
   "first_comment": "#ppl #flugbuch #generalaviation",
   "alt": ["Startseite von Downwind", "Das Flugbuch mit 90-Tage-Anzeige"],
   "suggested_time": "2026-10-30T18:00",
-  "media": ["1.jpg", "2.jpg"]
+  "media": ["1.jpg", "2.jpg"],
+  "todo": "Am Vortag: Story mit Umfrage-Sticker
+Nach dem Posten: @exploring_the_skies markieren"
 }
 ```
 
@@ -39,6 +41,8 @@ mein-beitrag/
 | `suggested_time` | nein | Vorschlag für den Zeitpunkt. `2026-10-30T18:00` = **Schweizer Zeit**; mit Zeitzone (`2026-10-30T18:00:00+01:00`) wird diese genommen. Ohne Angabe: morgen 18:00. |
 | `media` | ja | Dateinamen im Paket, in der gewünschten Reihenfolge. |
 | `cover` | nein | Nur bei `reel`: Titelbild (JPEG) im Paket. |
+| `todo` | nein | Was du selbst in der Instagram-App erledigen musst (Story mit Sticker, Personen markieren, Standort, Werbung …), Zeilen mit `
+`. Wird nicht veröffentlicht; im Cockpit als Kasten «Selbst in Instagram erledigen» gezeigt und dort änderbar – auch nach dem Freigeben/Veröffentlichen. Beiträge der nächsten 2 Tage erscheinen damit unter «Heute». «Nichts – fertig.» blendet den Kasten aus. |
 
 ### Dateien
 
@@ -69,7 +73,7 @@ npm.cmd run social -- import       neue Pakete als Entwürfe anlegen, geänderte
 npm.cmd run social -- import 2026-10-16-launch    nur dieses Paket (auch wenn der Zeitpunkt vorbei ist)
 ```
 
-- Zeitpunkt = `suggested_time` aus dem Paket. Alles wird **Entwurf** – freigeben machst nur du (Social → **Freigabe-Runde**: ein Entwurf nach dem anderen prüfen, freigeben oder überspringen).
-- Was schon importiert ist, merkt sich `pakete/.imported.json` (nur lokal). Wird ein Paket später neu erstellt (z. B. besseres Bild), wird der Entwurf nachgeführt – aber **nicht**, wenn du ihn im Cockpit schon bearbeitet, freigegeben oder gelöscht hast.
+- Zeitpunkt = `suggested_time` aus dem Paket. Alles wird **Entwurf** – freigeben machst nur du (Social → **Freigabe-Runde**: ein Entwurf nach dem anderen prüfen, freigeben oder «Später freigeben»).
+- Was schon importiert ist, merkt sich `pakete/.imported.json` (nur lokal). Eine `todo`-Notiz aus dem Paket kommt auch zu schon importierten (oder freigegebenen) Beiträgen, solange dort noch keine Notiz steht. Wird ein Paket später neu erstellt (z. B. besseres Bild), wird der Entwurf nachgeführt – aber **nicht**, wenn du ihn im Cockpit schon bearbeitet, freigegeben oder gelöscht hast.
 - Pakete, die du früher von Hand importiert hast, werden am gleichen Text erkannt und nicht doppelt angelegt.
 - Braucht die Anmeldung von `npm.cmd run roadmap -- login`.

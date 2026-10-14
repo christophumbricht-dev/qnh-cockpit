@@ -531,3 +531,10 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 /* ---- social review round ---- */
 .review-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; margin-bottom: 12px; border-radius: 14px; background: var(--brand-soft); color: var(--brand); }
 .review-bar .row-right { margin-left: auto; }
+
+/* ---- social: hand work in Instagram ---- */
+.soc-todo { margin: 6px 0 8px; padding: 8px 12px; border-left: 3px solid var(--warn); border-radius: 8px; background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 14px; }
+.soc-todo b { color: var(--warn); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.soc-todo p { margin: 2px 0 0; white-space: pre-line; }
+.soc-todo-field { padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--warn) 9%, transparent); border-left: 3px solid var(--warn); }
+.soc-todo-field .btn { justify-self: start; margin-top: 6px; }

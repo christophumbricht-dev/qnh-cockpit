@@ -61,3 +61,10 @@ test("files picked from a folder work like a zip", async () => {
   const p = await readPackage(files, ACCOUNTS);
   assert.equal(p.files.length, 2);
 });
+
+test("todo: optional hand-work note, text or list of lines, max 2000 characters", async () => {
+  assert.equal((await parsePackage(entries(), ACCOUNTS)).todo, "");
+  assert.equal((await parsePackage(entries({ ...POST, todo: "Story am Vortag\nJürg markieren" }), ACCOUNTS)).todo, "Story am Vortag\nJürg markieren");
+  assert.equal((await parsePackage(entries({ ...POST, todo: ["Story", "Standort"] }), ACCOUNTS)).todo, "Story\nStandort");
+  await assert.rejects(parsePackage(entries({ ...POST, todo: "x".repeat(2001) }), ACCOUNTS), /todo/);
+});

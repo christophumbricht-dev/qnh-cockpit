@@ -16,7 +16,9 @@ export async function loadSocial() {
     sb().from("social_accounts").select("id, app_id, platform, handle, active, token_expires_at").order("app_id"),
     sb().from("social_posts").select("*").neq("status", "cancelled").order("created_at", { ascending: false }).limit(300),
   ]);
-  return { accounts: must(accounts, "accounts"), posts: must(posts, "posts") };
+  const rows = must(posts, "posts");
+  if (rows.length) hasTodo = "todo" in rows[0];
+  return { accounts: must(accounts, "accounts"), posts: rows };
 }
 
 export const mediaUrl = (path) => (DEMO ? demo.url(path) : sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
@@ -39,8 +41,11 @@ export async function copyFile(fromPath, postId, type, i) {
   return path;
 }
 
-const FIELDS = ["account_id", "kind", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source"];
-const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post).map((k) => [k, post[k]]));
+const FIELDS = ["account_id", "kind", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo"];
+// "todo" exists after migration 20261014120000_social_todo.sql; until then it is left out
+let hasTodo = DEMO;
+export const todoSupported = () => hasTodo;
+const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo)).map((k) => [k, post[k]]));
 
 export async function insertPost(id, post) {
   if (DEMO) return demo.insert({ id, ...pick(post) });
@@ -56,6 +61,12 @@ export async function setStatus(id, status, scheduledAt) {
   const patch = scheduledAt === undefined ? { status } : { status, scheduled_at: scheduledAt };
   if (DEMO) return demo.update(id, patch);
   return must(await sb().from("social_posts").update(patch).eq("id", id).select().single(), "status");
+}
+
+// the to-do note may change in every status (also approved/published)
+export async function setTodo(id, todo) {
+  if (DEMO) return demo.update(id, { todo });
+  return must(await sb().from("social_posts").update({ todo }).eq("id", id).select().single(), "todo");
 }
 
 export async function deletePost(id) {
