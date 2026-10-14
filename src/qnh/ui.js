@@ -7,7 +7,7 @@ const STATUS = Object.fromEntries(COLUMNS);
 const ORDER = COLUMNS.map(([k]) => k);
 
 export function createQnh({ S, render, toast, errorText, scopes }) {
-  S.qnh = { items: null, links: null, error: null, loading: false, editing: null, linkEdit: false, editLink: null, scopeFilter: "all", showDone: false };
+  S.qnh = { items: null, links: null, error: null, loading: false, editing: null, linkEdit: false, editLink: null, scopeFilter: "all", showDone: false, focus: null };
   let unsubscribe = null;
   const scopeOf = (id) => scopes.find((s) => s.id === id) ?? { id, name: id, color: "#627d98" };
 
@@ -34,17 +34,81 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     return (S.qnh.items ?? []).filter((i) => i.status !== "done" && i.due && new Date(`${i.due}T23:59:59`).getTime() <= soon);
   }
 
+  // ---------- focus: one open task at a time ----------
+  // open = "In Arbeit" or "Als Nächstes"; order: due date (overdue first), in progress before next, board order
+  function focusQueue(scope = null) {
+    return (S.qnh.items ?? [])
+      .filter((i) => (i.status === "doing" || i.status === "next") && (!scope || scope === "all" || i.scope === scope))
+      .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.status === "doing" ? 0 : 1) - (b.status === "doing" ? 0 : 1)
+        || a.sort - b.sort || String(a.created_at).localeCompare(String(b.created_at)));
+  }
+  const nextTask = (scope = null) => focusQueue(scope)[0] ?? null;
+
+  function startFocus(scope) {
+    S.qnh.focus = { scope, skipped: new Set(), done: 0, id: null };
+    advanceFocus();
+  }
+  function advanceFocus() {
+    const f = S.qnh.focus;
+    const next = focusQueue(f.scope).find((i) => !f.skipped.has(i.id));
+    if (next) { f.id = next.id; return; }
+    toast(`Fokus-Runde fertig: ${f.done} erledigt${f.skipped.size ? `, ${f.skipped.size} auf später` : ""}.`);
+    S.qnh.focus = null;
+  }
+
+  // body text: links clickable, lines starting with "-", "•" or "[ ]" become a checklist
+  function richBody(text) {
+    const link = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+    const out = [];
+    let list = [];
+    const flush = () => { if (list.length) out.push(`<ul class="focus-list">${list.join("")}</ul>`); list = []; };
+    for (const line of String(text ?? "").split("\n")) {
+      const m = line.match(/^\s*(?:[-•*]|\[[ x]?\])\s+(.*)$/i);
+      if (m) list.push(`<li>${link(m[1])}</li>`);
+      else { flush(); if (line.trim()) out.push(`<p>${link(line)}</p>`); }
+    }
+    flush();
+    return out.join("");
+  }
+
+  function focusView() {
+    const f = S.qnh.focus;
+    const i = (S.qnh.items ?? []).find((x) => x.id === f.id);
+    if (!i) { advanceFocus(); return f && S.qnh.focus ? focusView() : roadmapView(f?.scope === "all" ? null : f?.scope); }
+    const sc = scopeOf(i.scope);
+    const left = focusQueue(f.scope).filter((x) => !f.skipped.has(x.id)).length;
+    const overdue = i.due && new Date(`${i.due}T23:59:59`) < new Date();
+    return `<div class="review-bar"><b>Fokus</b><span class="muted">${f.done} erledigt · noch ${left} offen</span>
+        <span class="row-right"><button class="link" data-action="rm-focus-close">Schliessen</button></span></div>
+      <article class="card focus-card" style="--app:${esc(sc.color)}">
+        <div class="focus-meta"><span class="rm-scope">${esc(sc.name)}</span><span class="pill">${STATUS[i.status]}</span>
+          ${i.due ? `<span class="rm-due${overdue ? " late" : ""}">${overdue ? "überfällig seit " : "fällig "}${esc(new Date(`${i.due}T12:00:00`).toLocaleDateString("de-CH"))}</span>` : ""}
+          ${i.source === "claude" ? `<span class="rm-src">von Claude</span>` : ""}</div>
+        <h2 class="focus-title">${esc(i.title)}</h2>
+        <div class="focus-body">${i.body ? richBody(i.body) : `<p class="muted">Keine Details. Mit «Bearbeiten» Schritte oder Links ergänzen.</p>`}</div>
+        <div class="actions">
+          <button class="btn" data-action="rm-focus-done" data-id="${i.id}">Erledigt ✓</button>
+          ${i.status === "next" ? `<button class="btn ghost" data-action="rm-focus-doing" data-id="${i.id}">Ich fange an</button>` : ""}
+          <button class="btn ghost" data-action="rm-focus-skip" data-id="${i.id}">Später ›</button>
+          <button class="btn ghost" data-action="rm-focus-edit" data-id="${i.id}">Bearbeiten</button>
+        </div>
+      </article>`;
+  }
+
   // ---------- roadmap ----------
   function roadmapView(scope = null) {
     const st = S.qnh;
     if (!data.qnhReady()) return `<p class="note">QNH Core ist noch nicht eingerichtet.</p>`;
     if (!st.items) return st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : `<p class="muted loading">Lädt …</p>`;
+    if (st.focus) return focusView();
     const filter = scope ?? st.scopeFilter;
+    const open = focusQueue(filter).length;
+    const focusBtn = open ? `<button class="btn focus-btn" data-action="rm-focus" data-value="${esc(filter)}">Fokus: nächster Task <span class="count-chip">${open} offen</span></button>` : "";
     const items = st.items.filter((i) => filter === "all" || i.scope === filter);
     const scopeSelect = (name, value) => `<select name="${name}">${scopes.map((s) => `<option value="${s.id}"${s.id === value ? " selected" : ""}>${esc(s.name)}</option>`).join("")}</select>`;
     const chips = scope ? "" : `<div class="chips">${[["all", "Alle"], ...scopes.map((s) => [s.id, s.name])].map(([v, l]) =>
       `<button class="chip${filter === v ? " on" : ""}" data-action="rm-filter" data-value="${v}">${esc(l)}</button>`).join("")}</div>`;
-    return `<form class="rm-add card" data-form="rm-add">
+    return `${focusBtn}<form class="rm-add card" data-form="rm-add">
         <input name="rm-title" placeholder="Neue Idee oder Aufgabe …" maxlength="200" required autocomplete="off">
         ${scope ? `<input type="hidden" name="rm-scope" value="${esc(scope)}">` : scopeSelect("rm-scope", filter === "all" ? "qnh" : filter)}
         <select name="rm-status">${COLUMNS.slice(0, 3).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
@@ -167,6 +231,15 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     const id = el.dataset.id;
     switch (action) {
       case "rm-filter": st.scopeFilter = el.dataset.value; break;
+      case "rm-focus": startFocus(el.dataset.value || "all"); break;
+      case "rm-focus-close": st.focus = null; break;
+      case "rm-focus-skip": st.focus.skipped.add(id); advanceFocus(); break;
+      case "rm-focus-doing": await update(id, { status: "doing" }); return true;
+      case "rm-focus-done":
+        await update(id, { status: "done" });
+        if (st.focus) { st.focus.done++; toast("Erledigt ✓"); advanceFocus(); }
+        break;
+      case "rm-focus-edit": st.focus = null; st.editing = id; break;
       case "rm-show-done": st.showDone = true; break;
       case "rm-edit": st.editing = id; break;
       case "rm-cancel": st.editing = null; break;
@@ -218,5 +291,5 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     return true;
   }
 
-  return { load, roadmapView, hangarView, dueSoon, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
+  return { nextTask, startFocus, load, roadmapView, hangarView, dueSoon, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
 }

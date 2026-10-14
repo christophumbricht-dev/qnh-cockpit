@@ -318,6 +318,18 @@ function roadmapTodos() {
 
 const allTodos = () => [...APPS.flatMap(todos), ...store.todos(APPS), ...socialTodos(), ...roadmapTodos()];
 
+// "Als Nächstes": the first task of the focus order, one click into focus mode
+function nextCard() {
+  const t = qnh.nextTask();
+  if (!t) return "";
+  const sc = qnh.scopeOf(t.scope);
+  const late = t.due && new Date(`${t.due}T23:59:59`) < new Date();
+  return `<section class="block"><h2 class="section-title">Als Nächstes</h2>
+    <div class="card next-card" style="--app:${esc(sc.color)}"><span class="rm-scope">${esc(sc.name)}</span>
+      <span class="next-title">${esc(t.title)}${t.due ? ` <span class="rm-due${late ? " late" : ""}">${late ? "überfällig" : "bis " + esc(new Date(`${t.due}T12:00:00`).toLocaleDateString("de-CH"))}</span>` : ""}</span>
+      <button class="btn" data-action="go-focus">Fokus starten</button></div></section>`;
+}
+
 function todayView() {
   const items = allTodos();
   const todoList = items.length
@@ -326,6 +338,7 @@ function todayView() {
         <span class="todo-where"${t.app ? ` style="--app:${esc(t.app.color)}"` : ""}>${esc(t.app?.name ?? t.where ?? "")}</span>${icon("arrow", "todo-arrow")}</a></li>`).join("")}</ul>`
     : `<div class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Ruhiger Flug</h2><p class="muted">Kein neues Feedback, keine Fehler, nichts offen. Zeit zum Fliegen.</p></div></div>`;
   return `<section class="block"><h2 class="section-title">Braucht dich${items.length ? ` <span class="count-chip">${items.length}</span>` : ""}</h2>${todoList}</section>
+    ${nextCard()}
     <section class="block"><h2 class="section-title">Apps</h2><div class="app-cards">${APPS.map(appCard).join("")}</div></section>
     ${socialConfigured() ? `<section class="block"><h2 class="section-title">Social</h2>${socialSnapshot()}</section>` : ""}`;
 }
@@ -850,6 +863,7 @@ root.addEventListener("click", async (e) => {
   const { action, id, status, value } = el.dataset;
   if (action === "noop") return;
   if (action.startsWith("soc-")) return social.onClick(action, el);
+  if (action === "go-focus") { qnh.startFocus("all"); if (location.hash === "#roadmap") render(); else location.hash = "#roadmap"; return; }
   if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
   if (action.startsWith("store-")) return store.onClick(el, APPS);
   if (action === "search-open") return openSearch();

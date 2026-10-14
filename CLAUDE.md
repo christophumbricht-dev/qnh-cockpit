@@ -30,6 +30,8 @@ Edge Function `supabase/functions/store-status/` in QNH Core (admin JWT, `is_qnh
 
 Migration `20261014100000_roadmap_hangar.sql`: `roadmap_items` (scope qnh/downwind/secondseat, status idea/next/doing/done, due, source cockpit/claude; realtime) and `hangar_links` (quick links, seeded). Cockpit: `src/qnh/` – board per app (tab "Roadmap") and for all (`#roadmap`), due items on "Heute"; Hangar `#hangar`. File storage is Infomaniak kDrive (linked in the Hangar, no files in the cockpit).
 
+Focus mode (`rm-focus`): one open task at a time (status doing/next; order: due date, doing before next, board order), «Erledigt ✓» / «Später ›»; «Als Nächstes» card on «Heute». Lines starting with `-`/`•`/`[ ]` in a body render as a checklist, URLs as links – write task bodies that way.
+
 **Roadmap sync with Claude sessions** – Christoph adds items in the cockpit; Claude keeps it up to date from conversations:
 - At the start of a session in this repo run `npm.cmd run roadmap -- pull` and `npm.cmd run social` and read `roadmap-local/ROADMAP.md` (local mirror, gitignored – the repo is public). Mention new items from Christoph.
 - When a conversation decides something to do: `npm.cmd run roadmap -- add --scope downwind --status next --title "…" [--body "…"] [--due YYYY-MM-DD]`; when done: `npm.cmd run roadmap -- set <id> --status done`. Keep titles short and German; no secrets or personal data in items.

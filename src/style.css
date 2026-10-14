@@ -541,3 +541,17 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 
 .tag-field { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--muted); }
 .tag-field input { flex: 1; min-width: 0; }
+
+/* ---- roadmap focus ---- */
+.focus-btn { margin-bottom: 14px; }
+.focus-btn .count-chip { margin-left: 6px; background: rgba(255, 255, 255, 0.2); color: inherit; }
+.focus-card { border-left: 4px solid var(--app); padding: 24px 26px; }
+.focus-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.focus-title { font: 600 28px/1.2 var(--display); margin: 14px 0 10px; }
+.focus-body { font-size: 16px; line-height: 1.55; max-width: 70ch; }
+.focus-body p { margin: 0 0 8px; }
+.focus-list { margin: 4px 0 12px; padding-left: 22px; }
+.focus-list li { margin: 4px 0; }
+.focus-card .actions { margin-top: 18px; }
+.next-card { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.next-card .next-title { font: 600 18px/1.3 var(--display); flex: 1; min-width: 200px; }
