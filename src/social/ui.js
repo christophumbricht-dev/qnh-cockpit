@@ -77,7 +77,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     }).join("");
     return `<div class="toolbar"><div class="chips">${chips}</div>
         <div class="row-right">
-          <label class="btn ghost file-btn">Paket importieren<input type="file" name="soc-package" accept=".zip,application/zip,.json,image/jpeg,video/mp4" multiple hidden></label>
+          <button class="btn ghost" data-action="soc-pick-package">Paket importieren</button>
           <button class="btn" data-action="soc-new"${accounts().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
       ${accounts().length ? `<ul class="accounts">${accountRows}</ul>` : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
@@ -203,14 +203,13 @@ export function createSocial({ S, render, toast, errorText, appName }) {
             <select name="soc-account"${dis}>${accounts().map((a) => `<option value="${a.id}"${a.id === ed.account_id ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}</select></label>
           <div class="field">Art<div class="chips">${kinds}</div></div>
           ${ed.mediaDeleted ? `<p class="note">Die Dateien wurden 14 Tage nach der Veröffentlichung gelöscht.</p>` : ""}
-          ${ro ? "" : `<label class="dropzone" data-drop="files">
-              <input type="file" name="soc-files" accept="${accept}" ${ed.kind === "carousel" ? "multiple" : ""} hidden>
+          ${ro ? "" : `<div class="dropzone" data-drop="files" data-action="soc-pick-files" role="button" tabindex="0">
               <b>${ed.kind === "carousel" ? "Bilder oder Videos" : ed.kind === "reel" ? "Video" : ed.kind === "story" ? "Bild oder Video" : "Bild"} hierher ziehen</b> oder klicken
-              <span class="small muted">${ed.kind === "reel" || ed.kind === "story" ? "Hochformat 9:16" : "JPEG, 4:5 / 1:1 / 1.91:1"} · Videos als MP4 (H.264)</span></label>`}
+              <span class="small muted">${ed.kind === "reel" || ed.kind === "story" ? "Hochformat 9:16" : "JPEG, 4:5 / 1:1 / 1.91:1"} · Videos als MP4 (H.264)</span></div>`}
           <ul class="soc-files">${itemsHtml}</ul>
           ${ed.kind === "reel" ? `<div class="field">Titelbild (optional, JPEG)
             ${ed.cover ? `<div class="soc-file">${thumb({ ...ed.cover, url: ed.cover.url ?? data.mediaUrl(ed.cover.path ?? ed.cover.copyFrom) }, "thumb small")}${ro ? "" : `<button class="link" data-action="soc-remove-cover">Entfernen</button>`}</div>`
-              : ro ? `<span class="muted small">keines</span>` : `<input type="file" name="soc-cover" accept=".jpg,.jpeg,image/jpeg">`}</div>` : ""}
+              : ro ? `<span class="muted small">keines</span>` : `<button class="btn ghost" data-action="soc-pick-cover">Titelbild wählen</button>`}</div>` : ""}
           ${ed.kind === "story" ? "" : `<label class="field">Text <span class="counter" id="soc-counter">${counterHtml(ed)}</span>
             <textarea name="soc-caption" rows="7" maxlength="2400"${dis}>${esc(ed.caption)}</textarea></label>
           <label class="field">Erster Kommentar (optional, z. B. Hashtags)
@@ -416,6 +415,23 @@ export function createSocial({ S, render, toast, errorText, appName }) {
         try { await data.deletePost(id); toast("Gelöscht"); await load(true); } catch (err) { toast(errorText(err)); }
         return true;
       case "soc-publish-now": await publishNow(id); return true;
+      case "soc-pick-package": {
+        const files = await pickFiles(".zip,application/zip,.json,image/jpeg,video/mp4,video/quicktime", true);
+        if (files.length) await importPackage(files);
+        return true;
+      }
+      case "soc-pick-files": {
+        if (!ed || readonly(ed)) return true;
+        const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,video/mp4,video/quicktime";
+        const files = await pickFiles(accept, ed.kind === "carousel");
+        if (files.length) await addFiles(files);
+        return true;
+      }
+      case "soc-pick-cover": {
+        const [file] = await pickFiles(".jpg,.jpeg,image/jpeg", false);
+        if (file && S.social.editor) { S.social.editor.cover = await probe(file); S.social.editor.dirty = true; render(); }
+        return true;
+      }
     }
     return false;
   }
@@ -438,9 +454,6 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const name = e.target.name ?? "";
     const ed = S.social.editor;
     if (name === "soc-account" && ed) { ed.account_id = e.target.value; ed.dirty = true; refreshBits(); return true; }
-    if (name === "soc-files") { await addFiles(e.target.files); return true; }
-    if (name === "soc-cover" && ed && e.target.files[0]) { ed.cover = await probe(e.target.files[0]); ed.dirty = true; render(); return true; }
-    if (name === "soc-package") { await importPackage(e.target.files); e.target.value = ""; return true; }
     return false;
   }
 
@@ -458,6 +471,19 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     e.preventDefault();
     zone.classList.add("over");
     return true;
+  }
+
+  // File dialogs use a fresh input outside the rendered page: the page may re-render while the dialog is open
+  // (e.g. a data refresh when the window gets focus back), and a replaced input would lose the selection.
+  function pickFiles(accept, multiple) {
+    return new Promise((resolve) => {
+      const input = Object.assign(document.createElement("input"), { type: "file", accept, multiple, hidden: true });
+      const done = (files) => { input.remove(); resolve(files); };
+      input.addEventListener("change", () => done([...input.files]), { once: true });
+      input.addEventListener("cancel", () => done([]), { once: true });
+      document.body.appendChild(input);
+      input.click();
+    });
   }
 
   // ---------- post packages (S4) ----------
