@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 
 const SQL = readFileSync(new URL("../supabase/migrations/20261013100000_social.sql", import.meta.url), "utf8");
+const SQL2 = readFileSync(new URL("../supabase/migrations/20261014100000_roadmap_hangar.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -29,6 +30,8 @@ insert into auth.users values ('${ADMIN}', 'admin@qnh.test'), ('${OTHER}', 'othe
 `);
 await db.exec(SQL);
 await db.exec(SQL); // Christoph may paste it twice
+await db.exec(SQL2);
+await db.exec(SQL2);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -130,4 +133,22 @@ test("storage: only admins upload to social-media", async () => {
   await as(ADMIN, "insert into storage.objects (bucket_id, name) values ('social-media', 'x/1.jpg')");
   await assert.rejects(as(OTHER, "insert into storage.objects (bucket_id, name) values ('social-media', 'x/2.jpg')"));
   assert.equal((await db.query("select public from storage.buckets where id='social-media'")).rows[0].public, true);
+});
+
+test("roadmap: only admins; done_at follows the status; Claude items marked", async () => {
+  await assert.rejects(as(OTHER, "insert into roadmap_items (title) values ('x')"));
+  assert.equal((await as(OTHER, "select count(*)::int n from roadmap_items")).rows[0].n, 0);
+  const id = (await as(ADMIN, "insert into roadmap_items (scope, title, source) values ('downwind', 'Bundle-ID umstellen', 'claude') returning id")).rows[0].id;
+  await as(ADMIN, `update roadmap_items set status='done' where id='${id}'`);
+  assert.ok((await as(ADMIN, `select done_at from roadmap_items where id='${id}'`)).rows[0].done_at);
+  await as(ADMIN, `update roadmap_items set status='next' where id='${id}'`);
+  assert.equal((await as(ADMIN, `select done_at from roadmap_items where id='${id}'`)).rows[0].done_at, null);
+  await assert.rejects(as(ADMIN, "insert into roadmap_items (scope, title) values ('Bad Scope!', 'x')"));
+});
+
+test("hangar: seeded once, admins only, only http(s) links", async () => {
+  const n = (await as(ADMIN, "select count(*)::int n from hangar_links")).rows[0].n;
+  assert.ok(n >= 10);
+  assert.equal((await as(OTHER, "select count(*)::int n from hangar_links")).rows[0].n, 0);
+  await assert.rejects(as(ADMIN, "insert into hangar_links (title, url) values ('x', 'javascript:alert(1)')"));
 });

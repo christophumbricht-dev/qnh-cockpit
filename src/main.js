@@ -7,9 +7,11 @@ import { search, greeting, firstName } from "./search.js";
 import { createSocial } from "./social/ui.js";
 import { socialConfigured } from "./social/data.js";
 import { formatZurich } from "./social/validate.js";
+import { createQnh } from "./qnh/ui.js";
+import { qnhReady } from "./qnh/data.js";
 
 const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365, "1 Jahr"]];
-const TAB_LABELS = { overview: "Übersicht", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
+const TAB_LABELS = { overview: "Übersicht", roadmap: "Roadmap", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
 const ERROR_DAYS = [1, 7, 30];
 
 // Photos by Jürg Umbricht (@exploring_the_skies), retouched and published on flydownwind.ch with his OK.
@@ -44,10 +46,14 @@ const S = {
 };
 
 const root = document.getElementById("app");
+const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...APPS.map((a) => ({ id: a.id, name: a.name, color: a.color }))];
+const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
-const isAppPage = () => S.tab !== "today" && S.tab !== "social";
+const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar"];
+const isAppPage = () => !GLOBAL_TABS.includes(S.tab);
+const appTabs = (a) => (a.offline ? ["overview", "roadmap"] : ["overview", ...(a.tabs ?? []), "roadmap"]);
 
 // ---------------------------------------------------------------------------
 // Theme (per browser; a convenience only)
@@ -92,6 +98,7 @@ function ensureData(force = false) {
     if (S.tab === "today" || (S.tab === "overview" && a.id === S.appId)) load(a, "trend30", () => api.timeseries(a, 30), force);
   }
   if (socialConfigured() && (api.DEMO || S.users[QNH.id])) social.load(force);
+  if (qnhReady() && (api.DEMO || S.users[QNH.id])) qnh.load(force);
   const a = app();
   if (!isAppPage() || !a || !S.users[a.id]) return;
   if (S.tab === "trend") load(a, `trend${S.trendDays}`, () => api.timeseries(a, S.trendDays), force);
@@ -105,9 +112,11 @@ function route() {
   const [first, second] = location.hash.replace(/^#\/?/, "").split("/");
   const a = first && first !== QNH.id ? appById(first) : null;
   if (first === "social") S.tab = "social";
+  else if (first === "roadmap") S.tab = "roadmap-all";
+  else if (first === "hangar") S.tab = "hangar";
   else if (a) {
     S.appId = a.id;
-    S.tab = a.tabs?.includes(second) ? second : "overview";
+    S.tab = appTabs(a).includes(second) ? second : "overview";
   } else S.tab = "today";
   closeSearch(false);
   ensureData();
@@ -149,7 +158,10 @@ function shell() {
         ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount)}
         <p class="side-label">Apps</p>
         ${appItems}
-        ${socialConfigured() ? `<p class="side-label">QNH</p>${navItem("#social", S.tab === "social", icon("social"), "Social", social.badge())}` : ""}
+        ${qnhReady() ? `<p class="side-label">QNH</p>
+          ${socialConfigured() ? navItem("#social", S.tab === "social", icon("social"), "Social", social.badge()) : ""}
+          ${navItem("#roadmap", S.tab === "roadmap-all", icon("flag"), "Roadmap", 0)}
+          ${navItem("#hangar", S.tab === "hangar", icon("grid"), "Hangar", 0)}` : ""}
         <button class="nav-item nav-search" data-action="search-open">${icon("search")}<span class="nav-label">Suchen</span></button>
       </nav>
       <div class="side-foot">
@@ -189,17 +201,23 @@ function pageHead() {
       </div>
     </header>`;
   }
+  if (S.tab === "roadmap-all") {
+    return `<header class="page-head"><div class="ph-title">${icon("flag", "ph-icon")}<div><h1>Roadmap</h1><p class="muted">Ideen und nächste Schritte – für QNH und alle Apps.</p></div></div></header>`;
+  }
+  if (S.tab === "hangar") {
+    return `<header class="page-head"><div class="ph-title">${icon("grid", "ph-icon")}<div><h1>Hangar</h1><p class="muted">Alle Werkzeuge und deine Ablage – ein Klick entfernt.</p></div></div></header>`;
+  }
   if (S.tab === "social") {
     return `<header class="page-head"><div class="ph-title">${icon("social", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram-Beiträge aller Apps – du gibst jeden frei.</p></div></div></header>`;
   }
   const a = app();
   const stats = S.data[`${a.id}:stats`]?.value;
   const user = S.users[a.id];
-  const tabs = ["overview", ...(a.tabs ?? [])];
+  const tabs = appTabs(a);
   return `<header class="page-head" style="--app:${esc(a.color)}">
     <div class="ph-title">${appBadge(a, "lg")}<div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.tagline ?? "")}</p></div>
       ${user ? `<div class="who"><span class="muted">${esc(user.email ?? "")}</span><button class="link" data-action="sign-out" data-app="${a.id}">Abmelden</button></div>` : ""}</div>
-    ${a.offline ? "" : `<nav class="subtabs">${tabs.map((t) => {
+    ${`<nav class="subtabs">${tabs.map((t) => {
       const n = t === "overview" ? 0 : badge(a, t, stats);
       return `<a href="#${a.id}${t === "overview" ? "" : `/${t}`}" class="subtab${S.tab === t ? " on" : ""}">${TAB_LABELS[t]}${n ? `<span class="badge">${n}</span>` : ""}</a>`;
     }).join("")}</nav>`}
@@ -223,7 +241,10 @@ function tileValue(a, t, stats) {
 function view() {
   if (S.tab === "today") return todayView();
   if (S.tab === "social") return social.view();
+  if (S.tab === "roadmap-all") return qnh.roadmapView(null);
+  if (S.tab === "hangar") return qnh.hangarView();
   const a = app();
+  if (S.tab === "roadmap") return qnh.roadmapView(a.id);
   if (a.offline) return `<section class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Offline-App</h2><p class="muted">${esc(a.note)}</p></div></section>`;
   if (!api.configured(a)) return `<p class="note">Supabase-Adresse und Schlüssel fehlen in <code>.env</code>.</p>`;
   if (!S.users[a.id]) return `<section class="card">${loginForm(a)}</section>`;
@@ -273,7 +294,15 @@ function socialTodos() {
   return out;
 }
 
-const allTodos = () => [...APPS.flatMap(todos), ...socialTodos()];
+function roadmapTodos() {
+  return qnh.dueSoon().map((i) => {
+    const sc = qnh.scopeOf(i.scope);
+    const late = new Date(`${i.due}T23:59:59`) < new Date();
+    return { tone: late ? "alert" : "info", label: `${late ? "Überfällig" : "Bald fällig"}: ${i.title}`, href: i.scope === "qnh" ? "#roadmap" : `#${i.scope}/roadmap`, where: sc.name, app: i.scope === "qnh" ? null : appById(i.scope) };
+  });
+}
+
+const allTodos = () => [...APPS.flatMap(todos), ...socialTodos(), ...roadmapTodos()];
 
 function todayView() {
   const items = allTodos();
@@ -370,6 +399,11 @@ function searchGroups() {
     pages.push({ label: "Social", sub: "Beiträge", href: "#social" });
     pages.push({ label: "Neuer Beitrag", sub: "Social", action: "go-new-post" });
   }
+  if (qnhReady()) {
+    pages.push({ label: "Roadmap", sub: "QNH und alle Apps", href: "#roadmap" });
+    pages.push({ label: "Hangar", sub: "Links und Ablage", href: "#hangar" });
+    for (const l of S.qnh?.links ?? []) pages.push({ label: l.title, sub: `Hangar · ${l.grp}`, text: l.note + " " + l.url, external: l.url });
+  }
   pages.push({ label: darkNow() ? "Helles Farbschema" : "Dunkles Farbschema", sub: "Darstellung", action: "theme" });
   const groups = [{ title: "Springen zu", items: pages }];
   for (const a of APPS) {
@@ -380,6 +414,8 @@ function searchGroups() {
     const errs = S.data[`${a.id}:errors7`]?.value ?? [];
     if (errs.length) groups.push({ title: `${a.name} · Fehler`, items: errs.map((r) => ({ label: r.message.slice(0, 90), sub: `${r.n}× · zuletzt ${relTime(r.last_at)}`, href: `#${a.id}/errors` })) });
   }
+  const rm = S.qnh?.items ?? [];
+  if (rm.length) groups.push({ title: "Roadmap", items: rm.map((i) => ({ label: i.title, sub: `${qnh.scopeOf(i.scope).name} · ${qnh.STATUS[i.status]}`, text: i.body, href: i.scope === "qnh" ? "#roadmap" : `#${i.scope}/roadmap` })) });
   const sv = S.social?.value;
   if (sv?.posts.length) {
     const handle = (id) => sv.accounts.find((x) => x.id === id)?.handle ?? "";
@@ -440,6 +476,7 @@ function activate(item) {
   closeSearch(false);
   if (item.action === "theme") return toggleTheme();
   if (item.action === "go-new-post") return goNewPost();
+  if (item.external) return window.open(item.external, "_blank", "noopener");
   if (location.hash === item.href || (item.href === "#" && !location.hash)) route();
   else location.hash = item.href;
   if (item.post) setTimeout(() => social.onClick("soc-open", { dataset: { id: item.post } }), 50);
@@ -707,6 +744,8 @@ const ICONS = {
   arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   plane: '<path d="M2 13l8-2 4-7h2l-2 7 6 1 2-2h1l-1 4 1 4h-1l-2-2-6 1 2 7h-2l-4-7-8-2z"/>',
 };
 const icon = (name, cls = "") => `<svg class="ico${cls ? ` ${cls}` : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -728,6 +767,7 @@ root.addEventListener("submit", async (e) => {
   const form = e.target.closest("[data-form]");
   if (!form) return;
   e.preventDefault();
+  if (/^(rm|hg)-/.test(form.dataset.form)) return qnh.onSubmit(form);
   const a = appById(form.dataset.app);
   const l = (S.login[a.id] ??= { step: "email", email: "" });
   l.busy = true;
@@ -761,9 +801,10 @@ root.addEventListener("input", (e) => {
   }
   social.onInput(e);
 });
-root.addEventListener("dragover", (e) => social.onDragOver(e));
-root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop]")?.classList.remove("over"));
-root.addEventListener("drop", (e) => social.onDrop(e));
+root.addEventListener("dragstart", (e) => qnh.onDragStart(e));
+root.addEventListener("dragover", (e) => qnh.onDragOver(e) || social.onDragOver(e));
+root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col]")?.classList.remove("over"));
+root.addEventListener("drop", (e) => qnh.onDrop(e) || social.onDrop(e));
 
 root.addEventListener("change", async (e) => {
   await social.onChange(e);
@@ -795,6 +836,7 @@ root.addEventListener("click", async (e) => {
   const { action, id, status, value } = el.dataset;
   if (action === "noop") return;
   if (action.startsWith("soc-")) return social.onClick(action, el);
+  if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
   if (action === "search-open") return openSearch();
   if (action === "search-close") return closeSearch();
   if (action === "pal-go") return activate(paletteResults[Number(el.dataset.i)]);
