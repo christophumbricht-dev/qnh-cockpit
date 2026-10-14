@@ -18,11 +18,13 @@ const ERROR_DAYS = [1, 7, 30];
 // Photos by Jürg Umbricht (@exploring_the_skies), retouched and published on flydownwind.ch with his OK.
 // Loaded from there (not copied into this public repo); credit on every use.
 const PHOTO_BASE = "https://flydownwind.ch/assets/photos/";
-const PHOTOS = ["band", "hero-wide", "map", "wingmen"]; // the ones that work as a wide banner
+// [file, vertical focus] – the banner is a thin strip, so each photo gets the part that reads at that size
+const PHOTOS = [["band", "38%"], ["hero-wide", "72%"], ["map", "45%"]];
 const photoOfDay = () => {
   const d = new Date();
   const day = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 864e5);
-  return PHOTO_BASE + PHOTOS[day % PHOTOS.length] + ".webp";
+  const [file, pos] = PHOTOS[day % PHOTOS.length];
+  return { url: PHOTO_BASE + file + ".webp", pos };
 };
 const photoCredit = () => `<a class="credit" href="https://www.instagram.com/exploring_the_skies" target="_blank" rel="noopener">Foto: Jürg Umbricht · @exploring_the_skies</a>`;
 
@@ -197,8 +199,9 @@ function pageHead() {
     const name = firstName(user?.email);
     const date = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "long", day: "numeric", month: "long" }).format(new Date());
     const n = allTodos().length;
+    const photo = photoOfDay();
     return `<header class="page-head hello">
-      <div class="hero" style="--photo:url('${photoOfDay()}')">
+      <div class="hero" style="--photo:url('${photo.url}');--photo-pos:center ${photo.pos}">
         <p class="eyebrow">${esc(date)}</p>
         <h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}.</h1>
         <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>

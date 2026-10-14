@@ -401,7 +401,7 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
   position: relative; overflow: hidden; border-radius: 22px; min-height: 230px; padding: 30px 32px 44px; color: #fff;
   display: flex; flex-direction: column; justify-content: flex-end; box-shadow: var(--shadow-lift);
   /* dark scrim on the left keeps the text readable on any photo */
-  background: linear-gradient(90deg, rgba(8, 20, 32, 0.82) 0%, rgba(8, 20, 32, 0.45) 55%, rgba(8, 20, 32, 0.1) 100%), var(--photo) center / cover no-repeat, var(--side);
+  background: linear-gradient(90deg, rgba(8, 20, 32, 0.82) 0%, rgba(8, 20, 32, 0.45) 55%, rgba(8, 20, 32, 0.1) 100%), var(--photo) var(--photo-pos, center) / cover no-repeat, var(--side);
 }
 .hello .hero .eyebrow { color: #99e9f2; }
 .hello .hero h1 { color: #fff; text-shadow: 0 1px 12px rgba(0, 0, 0, 0.25); }
