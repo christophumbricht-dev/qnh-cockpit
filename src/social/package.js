@@ -87,6 +87,14 @@ export async function parsePackage(entries, accounts) {
     }
   }
 
+  // "location": "Flugplatz Birrfeld" (a saved place) or { "id": "<Facebook Page ID>", "name": "…" }
+  let location = null;
+  if (post.location != null && post.location !== "") {
+    location = typeof post.location === "string" ? { name: post.location.trim() } : { id: post.location.id == null ? undefined : String(post.location.id), name: String(post.location.name ?? "").trim() };
+    if (location.id && !/^[0-9]{5,25}$/.test(location.id)) throw new PackageError(`post.json: location.id «${location.id}» ist keine Facebook-Seiten-ID (nur Ziffern).`);
+    if (!location.id && !location.name) throw new PackageError("post.json: «location» braucht einen Namen oder eine ID.");
+  }
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
@@ -97,6 +105,7 @@ export async function parsePackage(entries, accounts) {
     suggested_time: suggested,
     todo,
     tags,
+    location,
     files,
     cover,
   };

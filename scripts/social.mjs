@@ -74,6 +74,7 @@ async function save(sb, p, id, isNew) {
     account_id: p.account_id, kind: p.pkg.kind, caption: p.caption, first_comment: p.pkg.kind === "story" ? "" : p.pkg.first_comment,
     media, cover_path, scheduled_at: p.suggested_time ?? tomorrow18(),
     ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
+    ...(p.hasLocation ? { location: p.pkg.kind === "story" ? null : p.place } : {}),
   };
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
@@ -103,8 +104,9 @@ async function main() {
   if (!existsSync(DIR)) fail(`Ordner fehlt: ${DIR}`);
 
   const sb = await signedIn();
-  const [{ data: accounts, error: e1 }, { data: posts, error: e2 }] = await Promise.all([
+  const [{ data: accounts, error: e1 }, { data: placeRows }, { data: posts, error: e2 }] = await Promise.all([
     sb.from("social_accounts").select("id, app_id, platform, handle, active"),
+    sb.from("social_locations").select("page_id, name"),
     sb.from("social_posts").select("*").neq("status", "cancelled"),
   ]);
   if (e1 || e2) fail((e1 ?? e2).message);
@@ -127,7 +129,19 @@ async function main() {
   const markers = readMarkers();
   const rows = plan(pkgs, markers, posts).map((r) => (r.action === "past" && only.has(r.folder) ? { ...r, action: "new" } : r));
   const handle = (id) => `@${accounts.find((x) => x.id === id)?.handle ?? "?"}`;
-  for (const r of rows) r.hasTodo = hasTodo;
+  const hasLocation = posts.length ? "location" in posts[0] : true;
+  const places = placeRows ?? [];
+  for (const r of rows) {
+    r.hasTodo = hasTodo;
+    r.hasLocation = hasLocation;
+    const loc = r.pkg.location;
+    if (loc?.id) r.place = { id: loc.id, name: loc.name || places.find((p) => p.page_id === loc.id)?.name || loc.id };
+    else if (loc?.name) {
+      const p = places.find((x) => x.name.toLowerCase() === loc.name.toLowerCase());
+      r.place = p ? { id: p.page_id, name: p.name } : null;
+      if (!p) r.placeMissing = loc.name;
+    } else r.place = null;
+  }
   // --replace: Christoph asked to take a changed package over although the post was approved or edited
   // (approval is withdrawn → draft; published posts are never touched)
   if (a.replace) for (const r of rows) {
@@ -201,6 +215,8 @@ async function main() {
     if (firstLine(r.caption)) console.log(`    «${firstLine(r.caption)}»`);
     if (r.note) console.log(`    → ${r.note}`);
     if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
+    if (r.placeMissing) console.log(`    ! Standort «${r.placeMissing}» ist nicht in der Ortsliste – im Cockpit «+ Neuen Ort hinzufügen», dann erneut importieren`);
+    else if (r.place && (r.done || r.action === "new")) console.log(`    📍 ${r.place.name}`);
     if (r.pkg.todo && !/^nichts\b/i.test(r.pkg.todo.trim()) && (r.done || r.noteDone)) console.log(`    ✋ ${r.pkg.todo.trim().split("\n").join("\n       ")}`);
     if (["new", "update"].includes(r.action) || (r.done && EDITABLE.has(st))) for (const l of checks(r, when)) console.log(l);
   };

@@ -38,6 +38,8 @@ export type Post = {
   last_error?: string | null;
   published_at?: string | null;
   media_deleted_at?: string | null;
+  location?: { id: string; name?: string } | null;
+  location_dropped?: boolean; // set while publishing when Instagram refused the location
 };
 export type Account = { id: string; platform: "instagram" | "facebook"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
 
@@ -137,8 +139,22 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
     }
   }
 
+  // location (Facebook Page ID of a place): images, reels and the carousel container – not stories.
+  // If Instagram refuses it, publish without and say so (the post matters more than the pin).
+  const withLocation = async (params: Record<string, string | number | boolean | undefined>) => {
+    const id = /^[0-9]{5,25}$/.test(post.location?.id ?? "") ? post.location!.id : undefined;
+    if (!id) return (await g.post(`${ig}/media`, params)).id;
+    try {
+      return (await g.post(`${ig}/media`, { ...params, location_id: id })).id;
+    } catch (err) {
+      if (!(err instanceof GraphError) || !/location/i.test(err.message)) throw err;
+      post.location_dropped = true;
+      return (await g.post(`${ig}/media`, params)).id;
+    }
+  };
+
   if (post.kind === "image") {
-    return (await g.post(`${ig}/media`, { image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first) })).id;
+    return await withLocation({ image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first) });
   }
   if (post.kind === "story") {
     return (await g.post(`${ig}/media`, isVideo(first)
@@ -146,13 +162,13 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
       : { media_type: "STORIES", image_url: url(first) })).id;
   }
   if (post.kind === "reel") {
-    return (await g.post(`${ig}/media`, {
+    return await withLocation({
       media_type: "REELS",
       video_url: url(first),
       caption: post.caption,
       cover_url: post.cover_path ? deps.store.publicUrl(post.cover_path) : undefined,
       share_to_feed: true,
-    })).id;
+    });
   }
   // carousel: 2–10 child containers, then the carousel container
   if (post.media.length < 2 || post.media.length > 10) throw new FinalError("Ein Karussell braucht 2 bis 10 Bilder oder Videos.");
@@ -163,7 +179,7 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
       : { image_url: url(m), is_carousel_item: true, alt_text: m.alt || undefined, user_tags: userTags(m) })).id);
   }
   for (const child of children) if (!(await waitUntilFinished(deps, g, child))) throw new Error("Instagram verarbeitet ein Karussell-Video noch.");
-  return (await g.post(`${ig}/media`, { media_type: "CAROUSEL", children: children.join(","), caption: post.caption })).id;
+  return await withLocation({ media_type: "CAROUSEL", children: children.join(","), caption: post.caption });
 }
 
 const VIDEO_ERROR = "Instagram konnte die Datei nicht verarbeiten. Bitte Format prüfen (Bild: JPEG; Video: MP4, H.264, AAC) und neu hochladen.";
@@ -192,7 +208,10 @@ async function findPublishedMedia(g: ReturnType<typeof graph>, account: Account,
 }
 
 async function finish(deps: Deps, g: ReturnType<typeof graph>, post: Post, mediaId: string): Promise<Result> {
-  const patch: Record<string, unknown> = { status: "published", published_at: deps.now().toISOString(), remote_media_id: mediaId, last_error: null };
+  const patch: Record<string, unknown> = {
+    status: "published", published_at: deps.now().toISOString(), remote_media_id: mediaId,
+    last_error: post.location_dropped ? `Veröffentlicht, aber Instagram hat den Standort «${post.location?.name ?? post.location?.id}» nicht angenommen – bitte in der App ergänzen.` : null,
+  };
   try {
     patch.permalink = (await g.get(mediaId, { fields: "permalink" }))?.permalink ?? null;
   } catch { /* stories may have no permalink */ }
@@ -200,7 +219,7 @@ async function finish(deps: Deps, g: ReturnType<typeof graph>, post: Post, media
     try {
       patch.remote_comment_id = (await g.post(`${mediaId}/comments`, { message: post.first_comment })).id;
     } catch (err) {
-      patch.last_error = `Veröffentlicht, aber der erste Kommentar ging nicht: ${germanError(err)}`;
+      patch.last_error = `${patch.last_error ? `${patch.last_error} ` : ""}Veröffentlicht, aber der erste Kommentar ging nicht: ${germanError(err)}`;
     }
   }
   await deps.store.update(post.id, patch);

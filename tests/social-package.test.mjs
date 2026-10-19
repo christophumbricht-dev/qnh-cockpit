@@ -75,3 +75,10 @@ test("user_tags: per file, @ removed, default position bottom centre, index chec
   assert.deepEqual((await parsePackage(entries(), ACCOUNTS)).tags, [[], []]);
   await assert.rejects(parsePackage(entries({ ...POST, user_tags: [{ media: 3, username: "x" }] }), ACCOUNTS), /user_tags/);
 });
+
+test("location: a saved place by name, or a Facebook Page ID with name", async () => {
+  assert.equal((await parsePackage(entries(), ACCOUNTS)).location, null);
+  assert.deepEqual((await parsePackage(entries({ ...POST, location: "Flugplatz Birrfeld" }), ACCOUNTS)).location, { name: "Flugplatz Birrfeld" });
+  assert.deepEqual((await parsePackage(entries({ ...POST, location: { id: 112233445566, name: "Birrfeld" } }), ACCOUNTS)).location, { id: "112233445566", name: "Birrfeld" });
+  await assert.rejects(parsePackage(entries({ ...POST, location: { id: "birrfeld" } }), ACCOUNTS), /Facebook-Seiten-ID/);
+});

@@ -33,6 +33,14 @@ export function createSocial({ S, render, toast, errorText, appName }) {
 
   const accounts = () => S.social.value?.accounts ?? [];
   const posts = () => S.social.value?.posts ?? [];
+  const places = () => S.social.value?.locations ?? [];
+  // package location (name or id) → { id, name } of a saved place, or null
+  const resolvePlace = (loc) => {
+    if (!loc) return null;
+    if (loc.id) return { id: loc.id, name: loc.name || places().find((p) => p.page_id === loc.id)?.name || loc.id };
+    const p = places().find((x) => x.name.toLowerCase() === loc.name.toLowerCase());
+    return p ? { id: p.page_id, name: p.name } : null;
+  };
   const account = (id) => accounts().find((a) => a.id === id);
   const accountLabel = (a) => (a ? `${appName(a.app_id)} · ${PLATFORM[a.platform] ?? a.platform} @${a.handle}` : "Unbekanntes Konto");
   const daysLeft = (iso) => (iso ? Math.floor((new Date(iso) - Date.now()) / 864e5) : null);
@@ -195,6 +203,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
         <div class="meta"><b>${esc(accountLabel(a))}</b><span>${KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
+          ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
           ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
         ${todoBox(p.todo)}
@@ -240,6 +249,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       caption: post?.caption ?? "",
       first_comment: post?.first_comment ?? "",
       todo: duplicate ? "" : post?.todo ?? "",
+      location: post?.location ?? null,
       scheduledLocal: post?.scheduled_at ? utcToZurichLocal(post.scheduled_at) : tomorrowAt18(),
       items,
       cover: post?.cover_path ? (duplicate ? { copyFrom: post.cover_path, type: "image/jpeg" } : { path: post.cover_path, type: "image/jpeg" }) : null,
@@ -322,6 +332,13 @@ export function createSocial({ S, render, toast, errorText, appName }) {
             <textarea name="soc-caption" rows="7" maxlength="2400"${dis}>${esc(ed.caption)}</textarea></label>
           <label class="field">Erster Kommentar (optional, z. B. Hashtags)
             <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>`}
+          ${data.locationSupported() && ed.kind !== "story" ? `<label class="field">Standort (optional)
+            <select name="soc-location"${dis}>
+              <option value="">Kein Standort</option>
+              ${[...places().map((p) => [p.page_id, p.name]), ...(ed.location && !places().some((p) => p.page_id === ed.location.id) ? [[ed.location.id, ed.location.name || ed.location.id]] : [])]
+                .map(([v, l]) => `<option value="${esc(v)}"${ed.location?.id === v ? " selected" : ""}>${esc(l)}</option>`).join("")}
+              <option value="__new">+ Neuen Ort hinzufügen …</option>
+            </select></label>` : ""}
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
           ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in Instagram erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
@@ -458,7 +475,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const row = {
       account_id: ed.account_id, kind: ed.kind, caption: ed.kind === "story" ? "" : ed.caption,
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path,
-      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "",
+      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" ? null : ed.location ?? null,
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row);
     ed.isNew = false;
@@ -638,6 +655,23 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const name = e.target.name ?? "";
     const ed = S.social.editor;
     if (name === "soc-account" && ed) { ed.account_id = e.target.value; ed.dirty = true; refreshBits(); return true; }
+    if (name === "soc-location" && ed) {
+      const v = e.target.value;
+      if (v !== "__new") { const p = places().find((x) => x.page_id === v); ed.location = v ? { id: v, name: p?.name ?? ed.location?.name ?? v } : null; ed.dirty = true; return true; }
+      const placeName = prompt("Name des Ortes (so erscheint er in deiner Liste), z. B. «Flugplatz Birrfeld»:")?.trim();
+      const raw = placeName ? prompt("Facebook-Seiten-ID des Ortes (nur Ziffern) – oder den Link zur Facebook-Seite, wenn er «?id=…» enthält:")?.trim() : "";
+      const pageId = (raw ?? "").match(/(?:[?&]id=)?(\d{5,25})/)?.[1];
+      if (!placeName || !pageId) { if (placeName) toast("Keine gültige ID gefunden – siehe Anleitung «Standort» in docs/social-setup.md."); render(); return true; }
+      try {
+        await data.addLocation(pageId, placeName);
+        ed.location = { id: pageId, name: placeName };
+        ed.dirty = true;
+        await load(true);
+        toast(`Ort «${placeName}» gespeichert`);
+      } catch (err) { toast(errorText(err)); }
+      render();
+      return true;
+    }
     return false;
   }
 
@@ -697,7 +731,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };

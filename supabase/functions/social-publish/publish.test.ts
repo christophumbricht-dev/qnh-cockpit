@@ -288,3 +288,35 @@ Deno.test("carousel with different image formats is stopped before anything is p
   assertEquals(posts[0].status, "failed");
   assertMatch(posts[0].last_error!, /unterschiedliche Formate/);
 });
+
+Deno.test("location: sent for images (not stories); refused location → posted without, with a note", async () => {
+  const loc = { id: "112233445566", name: "Flugplatz Birrfeld" };
+  const posts = [post({ id: "p1", location: loc }), post({ id: "p2", kind: "story", location: loc })];
+  const { store } = fakeStore(posts);
+  let n = 0;
+  const g = mockGraph({
+    "GET IG1/content_publishing_limit": LIMIT_OK,
+    "POST IG1/media": () => ({ id: `K${++n}` }),
+    "GET K1": { status_code: "FINISHED" }, "GET K2": { status_code: "FINISHED" },
+    "POST IG1/media_publish": () => ({ id: `M${n}` }),
+    "GET M1": {}, "GET M2": {}, "POST M1/comments": { id: "C1" },
+  });
+  await publishDue(deps(store, g.fetchFn));
+  const creates = g.calls.filter((c) => c.path === "IG1/media" && c.method === "POST");
+  assertEquals(creates[0].params.location_id, "112233445566");
+  assertEquals(creates[1].params.location_id, undefined); // story
+
+  const refused = [post({ id: "p3", location: loc })];
+  const s2 = fakeStore(refused);
+  let tries = 0;
+  const g2 = mockGraph({
+    "GET IG1/content_publishing_limit": LIMIT_OK,
+    "POST IG1/media": (params: Record<string, string>) => (++tries, params.location_id ? { error: { message: "Invalid location_id" } } : { id: "K9" }),
+    "GET K9": { status_code: "FINISHED" },
+    "POST IG1/media_publish": { id: "M9" }, "GET M9": {}, "POST M9/comments": { id: "C9" },
+  });
+  await publishDue(deps(s2.store, g2.fetchFn));
+  assertEquals(tries, 2);
+  assertEquals(refused[0].status, "published");
+  assertMatch(refused[0].last_error!, /Standort «Flugplatz Birrfeld»/);
+});

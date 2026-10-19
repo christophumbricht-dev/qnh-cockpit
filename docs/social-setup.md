@@ -125,6 +125,13 @@ npx supabase secrets set SOCIAL_CRON_SECRET=DAS_ZUFALLSWORT --project-ref PROJEK
 
 ---
 
+## Standort (optional, pro Beitrag)
+Instagram verlangt als Standort die **ID einer Facebook-Seite eines echten Ortes** (z. B. die Seite des Flugplatzes). Gilt für Bild, Karussell und Reel – **nicht für Stories**. Suchen kann das Cockpit nicht (das erlaubt Instagram mit unserer Anbindung nicht), darum gibt es eine Ortsliste:
+1. Im Browser auf **facebook.com** den Ort suchen (z. B. «Flugplatz Birrfeld») und seine Seite öffnen.
+2. Auf der Seite **Info** (bzw. «Über») → **Seitentransparenz** → dort steht die **Seiten-ID** (nur Ziffern). Steht in der Adresszeile `…profile.php?id=123…`, ist das die ID.
+3. Im Cockpit im Beitrag → **Standort** → **+ Neuen Ort hinzufügen …** → Name und ID eingeben. Ab dann ist der Ort in der Liste.
+Nimmt Instagram einen Ort nicht an, wird der Beitrag trotzdem veröffentlicht – ohne Standort, mit Hinweis im Cockpit.
+
 ## Was das System macht (und was nicht)
 - Veröffentlicht **nur freigegebene** Beiträge, nie automatisch einen Entwurf. Die Datenbank erzwingt das zusätzlich.
 - Höchstens **3 Versuche** pro Beitrag, mit verständlicher Fehlermeldung. Kein doppeltes Posten.

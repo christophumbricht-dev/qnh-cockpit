@@ -43,6 +43,7 @@ Nach dem Posten: @exploring_the_skies markieren"
 | `cover` | nein | Nur bei `reel`: Titelbild (JPEG) im Paket. |
 | `todo` | nein | Was du selbst in der Instagram-App erledigen musst (Story mit Sticker, Personen markieren, Standort, Werbung …), Zeilen mit `
 | `user_tags` | nein | Personen auf Bildern markieren: `[{ "media": 1, "username": "exploring_the_skies", "x": 0.5, "y": 0.9 }]`. `media` = Nummer der Datei in `media` (ab 1, Standard 1), `x`/`y` = Position 0–1 (Standard 0.5 / 0.9 = unten Mitte). Nur Bilder in `image`/`carousel`, höchstens 20 pro Bild. Im Editor beim Bild unter «Markieren» änderbar. |
+| `location` | nein | Standort: Name eines Ortes aus der Ortsliste im Cockpit (`"Flugplatz Birrfeld"`) oder `{ "id": "<Facebook-Seiten-ID>", "name": "…" }`. Nur Bild, Karussell, Reel (nicht Story). Unbekannter Name → Import ohne Standort, mit Hinweis. |
 `. Wird nicht veröffentlicht; im Cockpit als Kasten «Selbst in Instagram erledigen» gezeigt und dort änderbar – auch nach dem Freigeben/Veröffentlichen. Beiträge der nächsten 2 Tage erscheinen damit unter «Heute». «Nichts – fertig.» blendet den Kasten aus. Web-Adressen werden zu Links mit «kopieren» (für Link-Sticker); «Bild s1-beta» (Muster `Bild <buchstabe><ziffern>-<name>`) wird ein Link zum Story-Bild – der Import lädt `<name>.jpg` aus dem Paketordner oder aus `downwind/docs/instagram/out/jpg/` hoch. |
 
 ### Dateien

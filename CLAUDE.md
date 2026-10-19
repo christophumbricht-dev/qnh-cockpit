@@ -41,6 +41,10 @@ Focus mode (`rm-focus`): one open task at a time (status doing/next; order: due 
 
 `npm.cmd run social` (status) / `npm.cmd run social -- import [folder…]`: reads `pakete/<folder>/` (format `docs/social-paket.md`, same parser and checks as the cockpit), uploads to bucket `social-media` and inserts DRAFTS with `scheduled_at` = `suggested_time` (session from `scripts/qnh-session.mjs`). State in `pakete/.imported.json` (folder → post id, content hash, updated_at). Changed packages update the draft only if it is still draft/failed and unedited in the cockpit; deleted posts are not re-created; hand-imported twins are linked by caption. Logic in `scripts/social-lib.mjs`, tests `tests/social-import.test.mjs`. **Whenever packages were added or re-rendered, run the import and tell Christoph which drafts wait in Social → «Freigabe-Runde».** Windows task «QNH Social-Import» runs `scripts/social-import-task.ps1` daily 07:30 + at logon (log `pakete/.import.log`). Never approve or publish. Optional `todo` (hand work in the Instagram app; column from `20261014120000_social_todo.sql`, editable in every status – the guard lets a todo-only update through even after publishing) is added to existing posts only where they have none yet.
 
+## Social location
+
+Migration `20261019100000_social_location.sql`: `social_posts.location` ({id = Facebook Page ID of a place, name}; frozen when approved) and table `social_locations` (saved places, admins). social-publish sends `location_id` for image, reel and the carousel container (never stories); if Instagram refuses it, posts without and writes a note to `last_error`. Packages: `"location": "<saved name>"` or `{id, name}`.
+
 ## Social calendar
 
 `src/social/ui.js`: list/calendar toggle (localStorage `qnh-social-mode`), month grid in Swiss time; dragging a draft/approved post to another day keeps its time (approved posts: draft → approved again with the new time, as the guard trigger requires).

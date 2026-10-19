@@ -20,7 +20,9 @@ const posts = [
   { id: "sp4", account_id: "acc-dw", kind: "image", caption: "Downwind ist in der Beta. Link in der Bio.", first_comment: "", media: [img("demo/5.jpg")], cover_path: null, status: "published", scheduled_at: at(-4, 17), published_at: at(-4, 17), permalink: "https://www.instagram.com/flydownwind/", created_at: at(-6, 9), source: "editor" },
 ];
 
-export const load = async () => { await wait(); return { accounts: clone(accounts), posts: clone(posts.filter((p) => p.status !== "cancelled")) }; };
+const locations = [{ id: "loc1", page_id: "112233445566", name: "Flugplatz Birrfeld" }, { id: "loc2", page_id: "223344556677", name: "Jungfraujoch" }];
+export const load = async () => { await wait(); return { accounts: clone(accounts), posts: clone(posts.filter((p) => p.status !== "cancelled")), locations: clone(locations) }; };
+export async function addLocation(row) { const l = { id: `loc${locations.length + 1}`, ...row }; locations.push(l); return clone(l); }
 export const url = (path) => files.get(path) ?? IMG;
 export async function upload(path, file) { files.set(path, URL.createObjectURL(file)); return path; }
 export async function copy(from, to) { files.set(to, files.get(from) ?? IMG); return to; }

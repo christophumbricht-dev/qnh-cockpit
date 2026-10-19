@@ -17,8 +17,9 @@ export async function loadSocial() {
     sb().from("social_posts").select("*").neq("status", "cancelled").order("created_at", { ascending: false }).limit(300),
   ]);
   const rows = must(posts, "posts");
-  if (rows.length) hasTodo = "todo" in rows[0];
-  return { accounts: must(accounts, "accounts"), posts: rows };
+  if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; }
+  const places = hasLocation ? await sb().from("social_locations").select("id, page_id, name").order("name") : { data: [] };
+  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [] };
 }
 
 // story images named in a to-do ("Bild s1-beta") – uploaded by `npm run social -- import` to assets/<name>.jpg
@@ -43,11 +44,14 @@ export async function copyFile(fromPath, postId, type, i) {
   return path;
 }
 
-const FIELDS = ["account_id", "kind", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo"];
+const FIELDS = ["account_id", "kind", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location"];
 // "todo" exists after migration 20261014120000_social_todo.sql; until then it is left out
 let hasTodo = DEMO;
+// "location" + table social_locations exist after migration 20261019100000_social_location.sql
+let hasLocation = DEMO;
+export const locationSupported = () => hasLocation;
 export const todoSupported = () => hasTodo;
-const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo)).map((k) => [k, post[k]]));
+const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation)).map((k) => [k, post[k]]));
 
 export async function insertPost(id, post) {
   if (DEMO) return demo.insert({ id, ...pick(post) });
@@ -69,6 +73,12 @@ export async function setStatus(id, status, scheduledAt) {
 export async function setTodo(id, todo) {
   if (DEMO) return demo.update(id, { todo });
   return must(await sb().from("social_posts").update({ todo }).eq("id", id).select().single(), "todo");
+}
+
+// saved places for the location picker (Facebook Page ID of a real place)
+export async function addLocation(page_id, name) {
+  if (DEMO) return demo.addLocation({ page_id, name });
+  return must(await sb().from("social_locations").insert({ page_id, name }).select("id, page_id, name").single(), "location");
 }
 
 export async function deletePost(id) {
