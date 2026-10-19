@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { EDITABLE, jpegSize, packageHash, plan } from "./social-lib.mjs";
 import { stats } from "./social-stats.mjs";
+import { findPublishedTwin } from "../src/social/dupes.js";
 import { PackageError, parsePackage } from "../src/social/package.js";
 import { KINDS, formatZurich, validatePost, zurichToUtc } from "../src/social/validate.js";
 
@@ -156,6 +157,14 @@ async function main() {
       r.note = r.withdraw ? "Freigabe zurückgezogen – bitte neu freigeben" : "deine Änderungen im Cockpit ersetzt";
     }
   }
+  // already on Instagram (also posted directly in the app)? then no new draft – flag it instead
+  const seen = await sb.from("social_media_stats").select("media_id, account_id, caption, posted_at, permalink").order("day", { ascending: false }).limit(500);
+  const published = [...new Map((seen.data ?? []).map((m) => [m.media_id, m])).values()];
+  for (const r of rows) {
+    if (r.action !== "new") continue;
+    const twin = findPublishedTwin({ account_id: r.account_id, caption: r.caption }, published);
+    if (twin) { r.action = "published-elsewhere"; r.note = `schon auf Instagram (${(twin.posted_at ?? "").slice(0, 10)}) – kein Entwurf angelegt. Ordner löschen oder im Plan als gepostet markieren.`; }
+  }
   const todo = rows.filter((r) => ["new", "update", "link"].includes(r.action));
   // a to-do note from the package reaches existing posts too – but only where the post has none yet
   // a place added to the list after the import: fill it into existing drafts that have no location yet
@@ -220,7 +229,7 @@ async function main() {
   }
 
   // ---- report ----
-  const label = { new: "neu", update: "geändert", link: "schon im Cockpit (verknüpft)", same: "unverändert", locked: "gesperrt", conflict: "nicht überschrieben", deleted: "gelöscht", past: "verpasst", error: "Fehler" };
+  const label = { "published-elsewhere": "schon veröffentlicht", new: "neu", update: "geändert", link: "schon im Cockpit (verknüpft)", same: "unverändert", locked: "gesperrt", conflict: "nicht überschrieben", deleted: "gelöscht", past: "verpasst", error: "Fehler" };
   const show = (r) => {
     const when = r.scheduled_at ?? r.post?.scheduled_at ?? r.suggested_time;
     const st = r.status ?? r.post?.status;

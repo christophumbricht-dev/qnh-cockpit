@@ -5,6 +5,7 @@ import * as data from "./data.js";
 import { KINDS, LIMITS, aspectLabel, countHashtags, formatZurich, formatZurichDate, parseTagList, utcToZurichLocal, validatePost, zurichToUtc } from "./validate.js";
 import { readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
+import { findPublishedTwin } from "./dupes.js";
 
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
@@ -35,6 +36,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   const accounts = () => S.social.value?.accounts ?? [];
   const posts = () => S.social.value?.posts ?? [];
   const places = () => S.social.value?.locations ?? [];
+  // not yet published post that looks like something already on Instagram → warning
+  const twinOf = (p) => (["draft", "approved", "failed"].includes(p.status) ? findPublishedTwin(p, S.social.value?.published ?? []) : null);
+  const twinHtml = (t) => (t ? `<p class="error small dupe">⚠️ Sieht aus wie schon veröffentlicht${t.posted_at ? ` am ${esc(formatZurichDate(t.posted_at))}` : ""}${t.permalink ? ` – <a href="${esc(t.permalink)}" target="_blank" rel="noopener">auf Instagram ansehen</a>` : ""}. Nicht doppelt freigeben – lieber löschen.</p>` : "");
   // package location (name or id) → { id, name } of a saved place, or null
   const resolvePlace = (loc) => {
     if (!loc) return null;
@@ -292,6 +296,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
           ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
+        ${twinHtml(twinOf(p))}
         ${todoBox(p.todo)}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
         <div class="actions">${actions.join("")}</div>
@@ -409,6 +414,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       <section class="soc-editor">
         <div class="soc-form card">
           ${ed.last_error ? `<p class="error">${esc(ed.last_error)}</p>` : ""}
+          ${ed.isNew ? "" : twinHtml(twinOf({ ...ed, remote_media_id: posts().find((p) => p.id === ed.id)?.remote_media_id }))}
           <label class="field">Konto
             <select name="soc-account"${dis}>${accounts().map((a) => `<option value="${a.id}"${a.id === ed.account_id ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}</select></label>
           <div class="field">Art<div class="chips">${kinds}</div></div>
@@ -689,6 +695,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       case "soc-approve": {
         const { errors } = checks(ed, true);
         if (errors.length) { toast(errors[0]); refreshBits(); return true; }
+        const twin = twinOf({ ...ed, remote_media_id: posts().find((p) => p.id === ed.id)?.remote_media_id });
+        if (twin && !confirm(`Achtung: Dieser Beitrag sieht aus wie einer, der schon auf Instagram ist${twin.posted_at ? ` (${formatZurichDate(twin.posted_at)})` : ""}. Trotzdem freigeben?`)) return true;
         if (!confirm(confirmText("Diesen Beitrag freigeben? Er wird zur geplanten Zeit automatisch veröffentlicht.", ed))) return true;
         await busy(ed, async () => {
           await persist(ed);

@@ -19,7 +19,10 @@ export async function loadSocial() {
   const rows = must(posts, "posts");
   if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; }
   const places = hasLocation ? await sb().from("social_locations").select("id, page_id, name").order("name") : { data: [] };
-  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [] };
+  // what is already on Instagram (from the daily statistics; empty until that is set up)
+  const seen = await sb().from("social_media_stats").select("media_id, account_id, caption, posted_at, permalink").order("day", { ascending: false }).limit(500);
+  const published = [...new Map((seen.data ?? []).map((m) => [m.media_id, m])).values()];
+  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [], published };
 }
 
 // story images named in a to-do ("Bild s1-beta") – uploaded by `npm run social -- import` to assets/<name>.jpg
