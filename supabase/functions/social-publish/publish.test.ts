@@ -275,3 +275,16 @@ Deno.test("user_tags go to the image containers (single image and carousel image
   assertEquals(creates[2].params.user_tags, undefined); // video
   assertEquals(creates[3].params.user_tags, undefined); // carousel container
 });
+
+Deno.test("carousel with different image formats is stopped before anything is posted", async () => {
+  const posts = [post({ kind: "carousel", media: [
+    { path: "a/1.jpg", type: "image/jpeg", width: 1080, height: 1080 },
+    { path: "a/2.jpg", type: "image/jpeg", width: 1080, height: 1350 },
+  ] })];
+  const { store } = fakeStore(posts);
+  const g = mockGraph({ "GET IG1/content_publishing_limit": LIMIT_OK });
+  await publishDue(deps(store, g.fetchFn));
+  assertEquals(g.calls.filter((c) => c.method === "POST").length, 0);
+  assertEquals(posts[0].status, "failed");
+  assertMatch(posts[0].last_error!, /unterschiedliche Formate/);
+});

@@ -4,6 +4,7 @@
 //   npm run social                        what is new / changed / already in the cockpit (changes nothing)
 //   npm run social -- import              import new packages, update changed drafts
 //   npm run social -- import <ordner> …   only these folders (also packages whose time has passed)
+//   npm run social -- import --replace    also take over changed packages of approved/edited posts (asks Christoph first!)
 //
 // Uses Christoph's admin session from `npm run roadmap -- login`. Remembers what was imported in
 // pakete/.imported.json (local, gitignored like the packages). Format: docs/social-paket.md
@@ -127,6 +128,15 @@ async function main() {
   const rows = plan(pkgs, markers, posts).map((r) => (r.action === "past" && only.has(r.folder) ? { ...r, action: "new" } : r));
   const handle = (id) => `@${accounts.find((x) => x.id === id)?.handle ?? "?"}`;
   for (const r of rows) r.hasTodo = hasTodo;
+  // --replace: Christoph asked to take a changed package over although the post was approved or edited
+  // (approval is withdrawn → draft; published posts are never touched)
+  if (a.replace) for (const r of rows) {
+    if (["locked", "conflict"].includes(r.action) && ["approved", "draft", "failed"].includes(r.post.status)) {
+      r.withdraw = r.post.status === "approved";
+      r.action = "update";
+      r.note = r.withdraw ? "Freigabe zurückgezogen – bitte neu freigeben" : "deine Änderungen im Cockpit ersetzt";
+    }
+  }
   const todo = rows.filter((r) => ["new", "update", "link"].includes(r.action));
   // a to-do note from the package reaches existing posts too – but only where the post has none yet
   const notes = hasTodo ? rows.filter((r) => r.post && r.pkg.todo && !r.post.todo && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
@@ -138,6 +148,10 @@ async function main() {
         if (r.action === "new") saved = await save(sb, r, crypto.randomUUID(), true);
         if (r.action === "update") {
           const old = r.post.media?.map((m) => m.path) ?? [];
+          if (r.withdraw) {
+            const { error } = await sb.from("social_posts").update({ status: "draft" }).eq("id", r.post.id);
+            if (error) throw new Error(error.message);
+          }
           saved = await save(sb, r, r.post.id, false);
           if (old.length) await sb.storage.from(BUCKET).remove(old); // best effort
         }

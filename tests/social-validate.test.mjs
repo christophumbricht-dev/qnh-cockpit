@@ -32,13 +32,13 @@ test("story and reel: 9:16 and video length", () => {
   assert.match(validateItem("reel", mp4(1080, 1920, 30, 60 * 1024 * 1024)).errors[0], /50 MB/);
 });
 
-test("carousel: 2–10 items, mixed sizes warn", () => {
+test("carousel: 2–10 items, mixed sizes block approval", () => {
   assert.match(validatePost({ kind: "carousel", items: [jpg(1080, 1080)] }).errors[0], /2 bis 10/);
   const eleven = Array.from({ length: 11 }, () => jpg(1080, 1080));
   assert.match(validatePost({ kind: "carousel", items: eleven }).errors[0], /2 bis 10/);
   const mixed = validatePost({ kind: "carousel", items: [jpg(1080, 1080), jpg(1080, 1350)] });
-  assert.deepEqual(mixed.errors, []);
-  assert.match(mixed.warnings[0], /ersten Bildes/);
+  assert.match(mixed.errors[0], /dasselbe Format/);
+  assert.deepEqual(validatePost({ kind: "carousel", items: [jpg(1080, 1350), jpg(1080, 1350)] }).errors, []);
   assert.match(validatePost({ kind: "image", items: [jpg(1080, 1080), jpg(1080, 1080)] }).errors[0], /Karussell/);
 });
 

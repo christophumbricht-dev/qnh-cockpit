@@ -10,7 +10,7 @@ import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, type FetchF
 export const MAX_ATTEMPTS = 3;
 
 export type UserTag = { username: string; x: number; y: number };
-export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[] };
+export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null };
 
 // Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
 export function userTags(m: MediaItem): string | undefined {
@@ -127,6 +127,15 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
   const ig = account.remote_id;
   const [first] = post.media;
   if (!first) throw new FinalError("Der Beitrag hat keine Bilder oder Videos.");
+
+  // carousel: every item must have the first one's shape – otherwise Instagram crops (stop instead of posting)
+  if (post.kind === "carousel") {
+    const shaped = post.media.filter((m) => m.width && m.height);
+    const r0 = shaped[0] ? shaped[0].width! / shaped[0].height! : 0;
+    if (shaped.some((m) => Math.abs(m.width! / m.height! - r0) > r0 * 0.01)) {
+      throw new FinalError("Die Bilder im Karussell haben unterschiedliche Formate – nicht veröffentlicht. Bitte alle im gleichen Format (z. B. 1080 × 1350) hochladen.");
+    }
+  }
 
   if (post.kind === "image") {
     return (await g.post(`${ig}/media`, { image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first) })).id;

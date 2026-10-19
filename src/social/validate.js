@@ -102,7 +102,7 @@ export function validatePost(post, { forApproval = false, scheduledAt = null, no
     if (items.length && (items.length < lo || items.length > hi)) errors.push(`Ein Karussell hat ${lo} bis ${hi} Bilder oder Videos (jetzt ${items.length}).`);
     const first = items[0];
     if (first?.width && items.some((i) => i.width && aspectLabel(i.width, i.height) !== aspectLabel(first.width, first.height))) {
-      warnings.push("Unterschiedliche Formate: Instagram schneidet alle auf das Format des ersten Bildes zu.");
+      errors.push("Alle Bilder im Karussell brauchen dasselbe Format – Instagram würde sonst alle auf das Format des ersten zuschneiden.");
     }
   } else if (items.length > 1) {
     errors.push(`${KINDS[kind] ?? "Dieser Beitrag"} hat genau eine Datei – für mehrere «Karussell» wählen.`);
