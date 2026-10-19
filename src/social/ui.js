@@ -183,7 +183,39 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .replace(/https?:\/\/[^\s<«»]+[^\s<«».,;:!?)]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a> <button class="link copy" data-action="soc-copy" data-value="${u}">kopieren</button>`)
       .replace(/\bBild ([a-z]\d{0,2}-[a-z0-9-]+)/gi, (m, name) => `<a class="asset" href="${esc(data.assetUrl(name.toLowerCase()))}" target="_blank" rel="noopener">Bild ${esc(name)} ⤓</a>`);
   }
-  const todoBox = (t) => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in Instagram erledigen</b><p>${todoHtml(t)}</p></div>` : "");
+  // step-by-step help for the recurring hand jobs, shown under the note when it mentions them
+  const HOWTO = [
+    [/anpinnen|anheften|pin (the )?comment/i, /kommentar/i, "Ersten Kommentar anpinnen", [
+      "Den veröffentlichten Beitrag in der Instagram-App öffnen (Profil → Beitrag antippen).",
+      "Unter dem Beitrag auf die Sprechblase 💬 tippen – die Kommentare öffnen sich.",
+      "Deinen ersten Kommentar suchen (der mit den Hashtags).",
+      "iPhone: den Kommentar nach links wischen. Android: den Kommentar gedrückt halten.",
+      "Auf die Stecknadel 📌 tippen und mit «Anpinnen» bestätigen. Er steht jetzt oben.",
+    ]],
+    [/story/i, /teilen|hinzufügen|share/i, "Beitrag in die Story teilen", [
+      "Den veröffentlichten Beitrag bzw. das Reel in der Instagram-App öffnen.",
+      "Auf den Papierflieger ✈️ (Teilen) tippen – beim Reel rechts, beim Bild unter dem Beitrag.",
+      "«Zu Story hinzufügen» wählen (manchmal «Zu deiner Story hinzufügen»).",
+      "Optional: Beitrag mit zwei Fingern grösser ziehen, Text oder Sticker ergänzen – steht im To-do, welcher.",
+      "Unten links auf «Deine Story» tippen – fertig. Wer die Story antippt, kommt direkt zum Beitrag.",
+    ]],
+    [/profil/i, /fixier|anpinn|pin/i, "Im Profil fixieren", [
+      "Den veröffentlichten Beitrag in der Instagram-App öffnen.",
+      "Auf die drei Punkte ⋯ tippen – beim Bild oben rechts, beim Reel unten rechts.",
+      "«In deinem Profil fixieren» wählen. Der Beitrag steht jetzt oben in deinem Raster (höchstens 3).",
+      "Alten fixierten Beitrag lösen: dort ⋯ → «Fixierung aufheben».",
+    ]],
+    [/highlight/i, /./, "Story ins Highlight legen", [
+      "Die Story zuerst wie oben posten.",
+      "Die eigene Story öffnen (Profilbild antippen) → unten rechts «Highlight» (Herz-Symbol).",
+      "Das genannte Highlight wählen (z. B. «Beta») – oder «Neu» und den Namen eingeben.",
+    ]],
+  ];
+  function howtoHtml(t) {
+    const found = HOWTO.filter(([a, b]) => String(t).split("\n").some((line) => a.test(line) && b.test(line)));
+    return found.map(([, , title, steps]) => `<details class="howto"><summary>So geht's: ${title}</summary><ol>${steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></details>`).join("");
+  }
+  const todoBox = (t) => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in Instagram erledigen</b><p>${todoHtml(t)}</p>${howtoHtml(t)}</div>` : "");
 
   function postItem(p) {
     const a = account(p.account_id);
@@ -348,7 +380,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
           ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in Instagram erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
-            ${todoOpen(ed.todo) ? `<p class="soc-todo-preview">${todoHtml(ed.todo)}</p>` : ""}
+            ${todoOpen(ed.todo) ? `<p class="soc-todo-preview">${todoHtml(ed.todo)}</p>${howtoHtml(ed.todo)}` : ""}
             <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
             ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
