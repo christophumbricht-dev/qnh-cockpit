@@ -153,6 +153,9 @@ async function main() {
   }
   const todo = rows.filter((r) => ["new", "update", "link"].includes(r.action));
   // a to-do note from the package reaches existing posts too – but only where the post has none yet
+  // a place added to the list after the import: fill it into existing drafts that have no location yet
+  const placeFills = hasLocation ? rows.filter((r) => r.post && r.place && !r.post.location && r.pkg.kind !== "story"
+    && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)) : [];
   const notes = hasTodo ? rows.filter((r) => r.post && r.pkg.todo && !r.post.todo && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
 
   if (cmd === "import") {
@@ -177,6 +180,12 @@ async function main() {
         r.note = `Import fehlgeschlagen: ${err.message}`;
         r.action = "error";
       }
+    }
+    for (const r of placeFills) {
+      const { data, error } = await sb.from("social_posts").update({ location: r.place }).eq("id", r.post.id).select("updated_at").single();
+      if (error) { r.note = `Standort nicht übernommen: ${error.message}`; continue; }
+      r.placeDone = true;
+      if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
     }
     for (const r of notes) {
       const { data, error } = await sb.from("social_posts").update({ todo: r.pkg.todo }).eq("id", r.post.id).select("updated_at").single();
@@ -215,13 +224,14 @@ async function main() {
     if (firstLine(r.caption)) console.log(`    «${firstLine(r.caption)}»`);
     if (r.note) console.log(`    → ${r.note}`);
     if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
-    if (r.placeMissing) console.log(`    ! Standort «${r.placeMissing}» ist nicht in der Ortsliste – im Cockpit «+ Neuen Ort hinzufügen», dann erneut importieren`);
+    if (r.placeDone) console.log(`    → Standort ergänzt: 📍 ${r.place.name}`);
+    if (r.placeMissing) console.log(`    ! Standort «${r.placeMissing}» ist noch nicht in der Ortsliste – im Cockpit «+ Neuen Ort hinzufügen»; der nächste Import (spätestens 07:30) trägt ihn nach`);
     else if (r.place && (r.done || r.action === "new")) console.log(`    📍 ${r.place.name}`);
     if (r.pkg.todo && !/^nichts\b/i.test(r.pkg.todo.trim()) && (r.done || r.noteDone)) console.log(`    ✋ ${r.pkg.todo.trim().split("\n").join("\n       ")}`);
     if (["new", "update"].includes(r.action) || (r.done && EDITABLE.has(st))) for (const l of checks(r, when)) console.log(l);
   };
 
-  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || only.size);
+  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || r.placeDone || r.placeMissing || only.size);
   for (const r of interesting) show(r);
   for (const b of broken) console.log(`\n✗ ${b.folder}  [ungültig]\n    → ${b.note}`);
 
@@ -229,7 +239,7 @@ async function main() {
   console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
     `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
   if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
-  if (cmd === "status" && (todo.length || notes.length)) console.log("Importieren mit: npm run social -- import");
+  if (cmd === "status" && (todo.length || notes.length || placeFills.length)) console.log("Importieren mit: npm run social -- import");
   if (cmd === "import" && todo.some((r) => r.done)) console.log("Als Entwürfe im Cockpit: https://cockpit.setqnh.ch/#social – freigeben machst nur du.");
 }
 

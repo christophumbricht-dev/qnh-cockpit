@@ -572,3 +572,7 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .phone-nav.next { right: 8px; }
 .phone-nav[hidden] { display: none; }
 @media (hover: none) { .phone-nav { display: none; } }
+
+.app-badge.logo { padding: 0; object-fit: cover; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+.chip-app { display: inline-flex; align-items: center; gap: 7px; padding-left: 6px; }
+.chip-app .app-badge { width: 22px; height: 22px; border-radius: 6px; font-size: 12px; }

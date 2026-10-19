@@ -52,7 +52,8 @@ const root = document.getElementById("app");
 const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...APPS.map((a) => ({ id: a.id, name: a.name, color: a.color }))];
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
-const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id });
+const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
+  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }) });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
 const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar"];
@@ -759,7 +760,10 @@ function logo() {
     <polyline points="50,89 85,54 120,89" stroke="#0B7285"/></g></svg>`;
 }
 
-const appBadge = (a, size = "") => `<span class="app-badge${size ? ` ${size}` : ""}" style="--app:${esc(a.color)}" aria-hidden="true">${esc(a.name[0])}</span>`;
+// app icon if there is one (public/logos), else the first letter on the app colour
+const appBadge = (a, size = "") => (a.logo
+  ? `<img class="app-badge logo${size ? ` ${size}` : ""}" src="${esc(a.logo)}" alt="" aria-hidden="true">`
+  : `<span class="app-badge${size ? ` ${size}` : ""}" style="--app:${esc(a.color ?? "#0B7285")}" aria-hidden="true">${esc(a.name[0].toUpperCase())}</span>`);
 
 const ICONS = {
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',

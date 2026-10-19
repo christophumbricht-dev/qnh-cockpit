@@ -10,7 +10,7 @@ const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]
 const PLATFORM = { instagram: "Instagram", facebook: "Facebook" };
 const LOCKED = ["approved", "publishing", "published"];
 
-export function createSocial({ S, render, toast, errorText, appName }) {
+export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "" }) {
   S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null };
   let unsubscribe = null;
   let reloadTimer;
@@ -77,7 +77,7 @@ export function createSocial({ S, render, toast, errorText, appName }) {
     const apps = [...new Set(accounts().map((a) => a.app_id))];
     const shown = posts().filter((p) => st.filter === "all" || account(p.account_id)?.app_id === st.filter);
     const chips = [["all", "Alle Apps"], ...apps.map((id) => [id, appName(id)])]
-      .map(([v, l]) => `<button class="chip${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}">${esc(l)}</button>`).join("");
+      .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const accountRows = accounts().map((a) => {
       const left = daysLeft(a.token_expires_at);
       const token = left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;

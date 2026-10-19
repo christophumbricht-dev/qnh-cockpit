@@ -7,6 +7,7 @@ export const APPS = [
     name: "Downwind",
     tagline: "Fly, Log, Share",
     color: "#1673BD",
+    logo: "/logos/downwind.svg", // app icon (public/logos)
     url: import.meta.env.VITE_DOWNWIND_SUPABASE_URL,
     anonKey: import.meta.env.VITE_DOWNWIND_SUPABASE_ANON_KEY,
     tabs: ["trend", "feedback", "errors", "beta", "verify", "reports"],
@@ -40,6 +41,7 @@ export const APPS = [
     name: "SecondSeat",
     tagline: "Voice checklist",
     color: "#0B1220",
+    logo: "/logos/secondseat.png",
     offline: true,
     note: "Offline-App ohne Server: In Version 1 gibt es hier keine Daten.",
   },
@@ -53,4 +55,9 @@ export const QNH = {
   anonKey: import.meta.env.VITE_QNH_SUPABASE_ANON_KEY,
 };
 
-export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id));
+// Brands that only have a social media channel (no app data in the cockpit yet)
+export const BRANDS = [
+  { id: "leesidelab", name: "Leeside Lab", tagline: "Aviation weather & PPL theory in 3D", color: "#12243D", logo: null }, // logo: public/logos/leesidelab.png once Christoph sends it
+];
+
+export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id) ?? BRANDS.find((b) => b.id === id));
