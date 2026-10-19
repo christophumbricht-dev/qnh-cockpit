@@ -95,7 +95,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
       ${st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
         const rows = shown.filter((p) => statuses.includes(p.status))
-          .sort((a, b) => (title === "Geplant" ? (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? "") : (b.published_at ?? b.created_at ?? "").localeCompare(a.published_at ?? a.created_at ?? "")));
+          .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
         return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
       }).join("")}`;
   }
@@ -221,11 +221,17 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- review round: drafts one after another, oldest date first ----------
   // review = { skipped: Set<id>, done: n } while the round runs
+  // chronological by a timestamp field (as dates, so "…Z" and "…+00:00" compare correctly); posts without one last
+  function byTime(a, b, field) {
+    const ta = a[field] ? new Date(a[field]).getTime() : Infinity, tb = b[field] ? new Date(b[field]).getTime() : Infinity;
+    return ta === tb ? String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")) : ta - tb;
+  }
+
   function reviewQueue() {
     const st = S.social;
     return posts()
       .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter))
-      .sort((a, b) => (a.scheduled_at ?? "9").localeCompare(b.scheduled_at ?? "9"));
+      .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {
     const st = S.social;
