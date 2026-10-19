@@ -13,12 +13,14 @@ export function fail(msg) {
   process.exit(1);
 }
 
-export function args(list) {
+// flags = names that never take a value (e.g. "replace"), so `--replace a b` keeps a and b as folders
+export function args(list, flags = []) {
   const out = { _: [] };
   for (let i = 0; i < list.length; i++) {
     if (list[i].startsWith("--")) {
       const next = list[i + 1];
-      out[list[i].slice(2)] = next === undefined || next.startsWith("--") ? true : list[++i];
+      const name = list[i].slice(2);
+      out[name] = flags.includes(name) || next === undefined || next.startsWith("--") ? true : list[++i];
     } else out._.push(list[i]);
   }
   return out;

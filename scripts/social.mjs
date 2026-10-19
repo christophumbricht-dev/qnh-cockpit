@@ -99,7 +99,7 @@ const firstLine = (t) => String(t ?? "").split("\n").find(Boolean)?.slice(0, 70)
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
   if (!["status", "import"].includes(cmd)) fail("Befehle: status | import [ordner …]");
-  const a = args(rest);
+  const a = args(rest, ["replace"]);
   const only = new Set(a._);
   if (!existsSync(DIR)) fail(`Ordner fehlt: ${DIR}`);
 
