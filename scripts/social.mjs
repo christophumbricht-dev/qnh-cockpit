@@ -44,8 +44,10 @@ async function readFolder(folder, accounts) {
   const used = ["post.json", ...pkg.files.map((f) => f.name), ...(pkg.cover ? [pkg.cover.name] : [])];
   const item = (f) => {
     const bytes = raw.get(f.name);
-    const size = f.type === "image/jpeg" ? jpegSize(bytes) : null;
-    return { file: f, bytes, type: f.type, size: bytes.length, width: size?.width, height: size?.height };
+    const size = /\.jpe?g$/i.test(f.name) ? jpegSize(bytes) : null;
+    // the cover comes straight from the folder without a type – derive it from the file name
+    const type = f.type || (/\.jpe?g$/i.test(f.name) ? "image/jpeg" : /\.mp4$/i.test(f.name) ? "video/mp4" : /\.mov$/i.test(f.name) ? "video/quicktime" : "");
+    return { file: f, bytes, type, size: bytes.length, width: size?.width, height: size?.height };
   };
   return {
     folder, pkg,
