@@ -81,6 +81,23 @@ export async function addLocation(page_id, name) {
   return must(await sb().from("social_locations").insert({ page_id, name }).select("id, page_id, name").single(), "location");
 }
 
+// Instagram statistics (daily snapshots written by social-publish, op "stats")
+export async function loadStats(days) {
+  if (DEMO) return demo.stats(days);
+  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+  const [acc, media] = await Promise.all([
+    sb().from("social_account_stats").select("account_id, day, metrics").gte("day", since).order("day"),
+    sb().from("social_media_stats").select("media_id, account_id, day, kind, permalink, caption, posted_at, metrics").gte("day", since).order("day"),
+  ]);
+  return { accountDays: must(acc, "stats"), mediaDays: must(media, "stats") };
+}
+export async function refreshStats() {
+  if (DEMO) return [];
+  const { data, error } = await sb().functions.invoke("social-publish", { body: { op: "stats" } });
+  if (error) throw new Error((await error.context?.json?.().catch(() => null))?.error ?? error.message);
+  return data?.results ?? [];
+}
+
 export async function deletePost(id) {
   if (DEMO) return demo.remove(id);
   must(await sb().from("social_posts").delete().eq("id", id), "delete");

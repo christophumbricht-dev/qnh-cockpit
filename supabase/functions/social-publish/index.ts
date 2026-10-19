@@ -3,6 +3,7 @@
 // POST { op: "publish", post_id? }   publish due approved posts (post_id: only this one, cockpit button)
 // POST { op: "refresh-tokens" }      refresh Instagram tokens that expire within 20 days (weekly cron)
 // POST { op: "cleanup" }             delete files of posts published > 14 days ago (daily cron)
+// POST { op: "stats" }               Instagram statistics per account and media item (daily cron, or the CLI)
 //
 // Allowed callers: pg_cron with header x-cron-secret = SOCIAL_CRON_SECRET, or a signed-in QNH admin
 // (cockpit; checked with is_qnh_admin()). verify_jwt is off in config.toml because cron has no JWT.
@@ -13,6 +14,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { cleanup, publishDue, refreshTokens, type Deps } from "./publish.ts";
 import { supabaseStore } from "./store.ts";
+import { collectStats } from "./stats.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -64,6 +66,7 @@ Deno.serve(async (req) => {
     }
     if (op === "refresh-tokens") return json({ results: await refreshTokens(deps) });
     if (op === "cleanup") return json({ results: await cleanup(deps) });
+    if (op === "stats") return json({ results: await collectStats({ store: deps.store as ReturnType<typeof supabaseStore>, fetch, now: deps.now }) });
     return json({ error: "unknown_op" }, 400);
   } catch (err) {
     console.error("social-publish", op, err);

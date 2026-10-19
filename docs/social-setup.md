@@ -32,6 +32,7 @@ In der App unter **Instagram → API setup with Instagram login → Permissions*
 | `instagram_business_basic` | Konto-ID, Benutzername |
 | `instagram_business_content_publish` | Beiträge, Karussells, Reels, Stories veröffentlichen |
 | `instagram_business_manage_comments` | den **ersten Kommentar** schreiben (ohne diese Berechtigung klappt alles andere, nur der Kommentar nicht) |
+| `instagram_business_manage_insights` | **Statistik** (Reichweite, Views, Speicherungen …, docs/social-statistik.md). Nach dem Hinzufügen pro Konto einen **neuen Token** erzeugen und mit `vault.update_secret` eintragen (Schritt 8). |
 
 ## 4. Instagram-Konto mit der App verbinden und Token erzeugen (10 Min., pro App-Konto)
 1. In der App → **App Roles** → **Roles** → **Add People** → **Instagram Tester** → Instagram-Benutzername (z. B. `fly_downwind`).

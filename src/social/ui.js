@@ -4,6 +4,7 @@ import { esc, num } from "../format.js";
 import * as data from "./data.js";
 import { KINDS, LIMITS, aspectLabel, countHashtags, formatZurich, formatZurichDate, parseTagList, utcToZurichLocal, validatePost, zurichToUtc } from "./validate.js";
 import { readPackage } from "./package.js";
+import { sparkSvg } from "../charts.js";
 
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
@@ -11,7 +12,7 @@ const PLATFORM = { instagram: "Instagram", facebook: "Facebook" };
 const LOCKED = ["approved", "publishing", "published"];
 
 export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "" }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views" };
   let unsubscribe = null;
   let reloadTimer;
 
@@ -83,7 +84,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const token = left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
       return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span></li>`;
     }).join("");
-    const modes = [["list", "Liste"], ["calendar", "Kalender"]].map(([v, l]) =>
+    const modes = [["list", "Liste"], ["calendar", "Kalender"], ["stats", "Statistik"]].map(([v, l]) =>
       `<button class="chip${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}">${l}</button>`).join("");
     return `<div class="toolbar"><div class="chips">${modes}<span class="chip-sep"></span>${chips}</div>
         <div class="row-right">
@@ -93,16 +94,69 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         </div></div>
       ${accounts().length ? `<ul class="accounts">${accountRows}</ul>` : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
-      ${st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
+      ${st.mode === "stats" ? statsView() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
         const rows = shown.filter((p) => statuses.includes(p.status))
           .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
         return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
       }).join("")}`;
   }
 
+  // ---------- statistics ----------
+  const STAT_COLS = [["views", "Views"], ["reach", "Reichweite"], ["likes", "Likes"], ["comments", "Kommentare"], ["saved", "Gespeichert"], ["shares", "Geteilt"], ["follows", "Neue Follower"]];
+  const KIND_LABEL = { FEED: "Bild", CAROUSEL: "Karussell", REELS: "Reel", STORY: "Story" };
+  async function loadStats(force = false) {
+    const st = S.social;
+    if (st.stats?.loading || (st.stats?.value && !force && st.stats.days === st.statsDays)) return;
+    st.stats = { loading: true, value: st.stats?.value, days: st.statsDays };
+    render();
+    try { st.stats = { value: await data.loadStats(st.statsDays), days: st.statsDays }; }
+    catch (err) { st.stats = { error: err, days: st.statsDays }; }
+    render();
+  }
+  function statsView() {
+    const st = S.social;
+    if (!st.stats || st.stats.days !== st.statsDays) { setTimeout(() => loadStats(), 0); return `<p class="muted loading">Lädt Statistik …</p>`; }
+    if (st.stats.error) {
+      const missing = /does not exist|could not find/i.test(errorText(st.stats.error));
+      return `<p class="${missing ? "note" : "error"}">${missing ? "Die Statistik ist noch nicht eingerichtet (Migration 20261019120000_social_stats.sql)." : esc(errorText(st.stats.error))}</p>`;
+    }
+    if (!st.stats.value) return `<p class="muted loading">Lädt Statistik …</p>`;
+    const { accountDays, mediaDays } = st.stats.value;
+    const accs = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
+    const daysChips = [[7, "7 Tage"], [28, "28 Tage"], [90, "90 Tage"]].map(([d, l]) => `<button class="chip${st.statsDays === d ? " on" : ""}" data-action="soc-stats-days" data-value="${d}">${l}</button>`).join("");
+    const head = `<div class="cal-head"><div class="chips">${daysChips}</div>
+      <button class="btn ghost" data-action="soc-stats-refresh"${st.stats.loading ? " disabled" : ""}>${st.stats.loading ? "Holt Zahlen …" : "Jetzt aktualisieren"}</button></div>`;
+    const blocks = accs.map((acc) => {
+      const series = accountDays.filter((d) => d.account_id === acc.id);
+      const last = series.at(-1)?.metrics ?? {}, first = series[0]?.metrics ?? {};
+      const sum = (k) => series.reduce((s, d) => s + (Number(d.metrics[k]) || 0), 0);
+      const latest = new Map();
+      for (const m of mediaDays.filter((x) => x.account_id === acc.id)) latest.set(m.media_id, m);
+      const since = new Date(Date.now() - st.statsDays * 864e5).toISOString();
+      const media = [...latest.values()].filter((m) => !m.posted_at || m.posted_at >= since)
+        .sort((a, b) => (Number(b.metrics[st.statsSort]) || 0) - (Number(a.metrics[st.statsSort]) || 0));
+      const delta = last.followers_count != null && first.followers_count != null ? last.followers_count - first.followers_count : null;
+      const followerSeries = series.map((d) => d.metrics.followers_count).filter((v) => v != null);
+      const tile = (label, value, sub = "") => `<div class="stat-tile"><span class="muted small">${label}</span><b>${value}</b>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>`;
+      if (!series.length && !media.length) return `<section class="card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)}</h3><p class="muted">Noch keine Zahlen. Sie werden täglich um ca. 06:23 abgeholt – oder jetzt mit «Jetzt aktualisieren».</p></section>`;
+      return `<section class="card stats-card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)}</h3>
+        <div class="stat-tiles">
+          ${tile("Follower", last.followers_count ?? "–", delta != null ? `${delta >= 0 ? "+" : ""}${delta} in ${st.statsDays} Tagen` : "")}
+          ${tile("Reichweite", num(sum("reach")), "erreichte Konten, Summe")}
+          ${tile("Views", num(sum("views")))}
+          ${tile("Interaktionen", num(sum("total_interactions")), `${num(sum("profile_links_taps"))} Link-Taps`)}
+        </div>
+        ${followerSeries.length > 1 ? `<div class="stats-spark"><span class="muted small">Follower-Verlauf</span>${sparkSvg(followerSeries, "line")}</div>` : `<p class="muted small">Follower-Verlauf erscheint ab dem zweiten Tag. Manche Werte liefert Instagram erst ab 100 Followern.</p>`}
+        ${media.length ? `<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Beitrag</th>${STAT_COLS.map(([k, l]) => `<th><button class="link${st.statsSort === k ? " on" : ""}" data-action="soc-stats-sort" data-value="${k}">${l}${st.statsSort === k ? " ▾" : ""}</button></th>`).join("")}</tr></thead>
+          <tbody>${media.map((m) => `<tr><td><a href="${esc(m.permalink ?? "#")}" target="_blank" rel="noopener">${esc(m.caption.split("\n")[0].slice(0, 60) || "(ohne Text)")}</a><br><span class="muted small">${esc(KIND_LABEL[m.kind] ?? m.kind)} · ${m.posted_at ? esc(formatZurichDate(m.posted_at)) : ""}</span></td>${STAT_COLS.map(([k]) => `<td>${m.metrics[k] == null ? "–" : num(m.metrics[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">Keine Beiträge in diesem Zeitraum.</p>`}
+      </section>`;
+    }).join("");
+    return `${head}${blocks}<p class="hint">Zahlen von Instagram, einmal täglich abgeholt (Verzögerung bis 48 h). Nach einer Spalte sortieren: Spaltentitel antippen.</p>`;
+  }
+
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { return localStorage.getItem("qnh-social-mode") === "calendar" ? "calendar" : "list"; } catch { return "list"; }
+    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "stats"].includes(m) ? m : "list"; } catch { return "list"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -579,6 +633,16 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const id = el.dataset.id;
     switch (action) {
       case "soc-filter": st.filter = el.dataset.value; render(); return true;
+      case "soc-stats-days": st.statsDays = Number(el.dataset.value); render(); return true;
+      case "soc-stats-sort": st.statsSort = el.dataset.value; render(); return true;
+      case "soc-stats-refresh":
+        st.stats = { ...st.stats, loading: true }; render();
+        try {
+          const res = await data.refreshStats();
+          const bad = res.filter((r) => r.status !== "ok");
+          toast(bad.length ? `@${bad[0].account}: ${bad[0].error}` : "Statistik aktualisiert");
+        } catch (err) { toast(errorText(err)); }
+        st.stats = null; await loadStats(true); return true;
       case "soc-mode": st.mode = el.dataset.value; try { localStorage.setItem("qnh-social-mode", st.mode); } catch {} render(); return true;
       case "soc-month": st.month = el.dataset.value; render(); return true;
       case "soc-new-on":

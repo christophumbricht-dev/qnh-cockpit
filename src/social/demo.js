@@ -22,6 +22,17 @@ const posts = [
 
 const locations = [{ id: "loc1", page_id: "112233445566", name: "Flugplatz Birrfeld" }, { id: "loc2", page_id: "223344556677", name: "Jungfraujoch" }];
 export const load = async () => { await wait(); return { accounts: clone(accounts), posts: clone(posts.filter((p) => p.status !== "cancelled")), locations: clone(locations) }; };
+export async function stats(days) {
+  await wait();
+  const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const accountDays = Array.from({ length: Math.min(days, 28) }, (_, i) => ({ account_id: "acc-dw", day: day(27 - i), metrics: { followers_count: 120 + i * 2 + (i % 3), reach: 80 + (i * 37) % 90, views: 150 + (i * 53) % 160, total_interactions: 12 + (i * 7) % 15, profile_links_taps: i % 4 } }));
+  const m = (id, d, kind, caption, metrics) => ({ media_id: id, account_id: "acc-dw", day: day(0), kind, permalink: "https://www.instagram.com/", caption, posted_at: new Date(Date.now() - d * 864e5).toISOString(), metrics });
+  return { accountDays, mediaDays: [
+    m("1790001", 3, "CAROUSEL", "Your logbook flies with you now. ✈️", { views: 1480, reach: 920, likes: 64, comments: 9, saved: 31, shares: 12, follows: 6 }),
+    m("1790002", 8, "REELS", "Take off. Record. Share.", { views: 3210, reach: 2400, likes: 118, comments: 14, saved: 22, shares: 40, ig_reels_avg_watch_time: 6200 }),
+    m("1790003", 12, "FEED", "Fly. 🛩️", { views: 610, reach: 430, likes: 41, comments: 3, saved: 4, shares: 2 }),
+  ] };
+}
 export async function addLocation(row) { const l = { id: `loc${locations.length + 1}`, ...row }; locations.push(l); return clone(l); }
 export const url = (path) => files.get(path) ?? IMG;
 export async function upload(path, file) { files.set(path, URL.createObjectURL(file)); return path; }

@@ -45,6 +45,10 @@ Focus mode (`rm-focus`): one open task at a time (status doing/next; order: due 
 
 Migration `20261019100000_social_location.sql`: `social_posts.location` ({id = Facebook Page ID of a place, name}; frozen when approved) and table `social_locations` (saved places, admins). social-publish sends `location_id` for image, reel and the carousel container (never stories); if Instagram refuses it, posts without and writes a note to `last_error`. Packages: `"location": "<saved name>"` or `{id, name}`.
 
+## Social statistics
+
+social-publish op `stats` (`functions/social-publish/stats.ts`, daily cron `social-stats` 04:23 UTC): per account (`social_account_stats`: followers_count + 24 h insights) and per Instagram media item, also non-cockpit posts (`social_media_stats`: lifetime metrics snapshot per day). Metrics as jsonb, fetched tolerantly (refused metrics are dropped). Cockpit: Social → «Statistik». CLI for analysis: `npm.cmd run social -- stats [--app] [--days] [--json] [--refresh]`. Docs `docs/social-statistik.md`.
+
 ## Social calendar
 
 `src/social/ui.js`: list/calendar toggle (localStorage `qnh-social-mode`), month grid in Swiss time; dragging a draft/approved post to another day keeps its time (approved posts: draft → approved again with the new time, as the guard trigger requires).

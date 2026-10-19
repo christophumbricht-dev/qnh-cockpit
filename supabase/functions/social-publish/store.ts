@@ -1,6 +1,7 @@
 // Store implementation on Supabase (service_role client inside the Edge Function only).
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Account, Post, Store } from "./publish.ts";
+import type { MediaRow, StatsStore } from "./stats.ts";
 
 const BUCKET = "social-media";
 
@@ -9,7 +10,7 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
   return r.data;
 }
 
-export function supabaseStore(db: SupabaseClient): Store {
+export function supabaseStore(db: SupabaseClient): Store & StatsStore {
   return {
     async claim(postId) {
       return must(await db.rpc("social_claim", { p_post_id: postId ?? null, p_limit: 5 }), "claim") as Post[];
@@ -37,6 +38,12 @@ export function supabaseStore(db: SupabaseClient): Store {
     async publishedWithFiles(before) {
       return must(await db.from("social_posts").select("*").eq("status", "published").is("media_deleted_at", null)
         .lt("published_at", before.toISOString()).limit(50), "published posts") as Post[];
+    },
+    async saveAccountDay(accountId: string, day: string, metrics: Record<string, number>) {
+      must(await db.from("social_account_stats").upsert({ account_id: accountId, day, metrics }, { onConflict: "account_id,day" }), "account stats");
+    },
+    async saveMediaDays(rows: MediaRow[]) {
+      if (rows.length) must(await db.from("social_media_stats").upsert(rows, { onConflict: "media_id,day" }), "media stats");
     },
     async removeFiles(paths) {
       if (paths.length) must(await db.storage.from(BUCKET).remove(paths), "remove files");

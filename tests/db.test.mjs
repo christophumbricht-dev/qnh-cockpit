@@ -9,6 +9,7 @@ const SQL = readFileSync(new URL("../supabase/migrations/20261013100000_social.s
 const SQL2 = readFileSync(new URL("../supabase/migrations/20261014100000_roadmap_hangar.sql", import.meta.url), "utf8");
 const SQL3 = readFileSync(new URL("../supabase/migrations/20261014120000_social_todo.sql", import.meta.url), "utf8");
 const SQL4 = readFileSync(new URL("../supabase/migrations/20261019100000_social_location.sql", import.meta.url), "utf8");
+const SQL5 = readFileSync(new URL("../supabase/migrations/20261019120000_social_stats.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -38,6 +39,9 @@ await db.exec(SQL3);
 await db.exec(SQL3);
 await db.exec(SQL4);
 await db.exec(SQL4);
+await db.exec("create schema if not exists cron; create or replace function cron.schedule(text, text, text) returns bigint language sql as $$ select 1::bigint $$;");
+await db.exec(SQL5);
+await db.exec(SQL5);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -182,4 +186,12 @@ test("location: saved places for admins only; frozen once approved; todo still e
   await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
   await assert.rejects(as(ADMIN, `update social_posts set location=null where id='${id}'`), /zurückziehen/);
   await as(ADMIN, `update social_posts set todo='ok' where id='${id}'`);
+});
+
+test("stats: only the server writes, admins read", async () => {
+  await as("service", `insert into social_account_stats (account_id, day, metrics) values ('${ACC}', '2026-10-19', '{"followers_count": 7}')`);
+  await as("service", `insert into social_media_stats (media_id, day, account_id, kind, metrics) values ('17900000000000001', '2026-10-19', '${ACC}', 'REELS', '{"views": 120}')`);
+  assert.equal((await as(ADMIN, "select metrics->>'views' v from social_media_stats")).rows[0].v, "120");
+  assert.equal((await as(OTHER, "select count(*)::int n from social_account_stats")).rows[0].n, 0);
+  await assert.rejects(as(ADMIN, `insert into social_account_stats (account_id, day) values ('${ACC}', '2026-10-20')`));
 });
