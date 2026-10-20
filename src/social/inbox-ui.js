@@ -120,8 +120,8 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     const free = brands().filter((b) => !taken.has(b.id));
     if (!free.length) return "";
     if (!free.some((b) => b.id === ib().connectApp)) ib().connectApp = free[0].id; // the choice survives re-renders
-    return `<li class="acc-connect"><select name="soc-yt-app" aria-label="Für welche App oder Marke">${free.map((b) => `<option value="${esc(b.id)}"${b.id === ib().connectApp ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
-      <button class="btn ghost small-btn" data-action="soc-yt-connect">YouTube-Kanal verbinden</button></li>`;
+    return `<div class="acc-connect"><select name="soc-yt-app" aria-label="Für welche App oder Marke">${free.map((b) => `<option value="${esc(b.id)}"${b.id === ib().connectApp ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
+      <button class="btn ghost small-btn" data-action="soc-yt-connect">YouTube-Kanal verbinden</button></div>`;
   }
 
   async function startConnect(appId) {
@@ -251,5 +251,10 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     return true;
   }
 
-  return { view, count, connectRow, watch, finishConnect, onClick, onInput, onChange };
+  // open / held comments of one account (channel cards on Social)
+  const countFor = (accountId) => {
+    const rows = (S.social.value?.comments ?? []).filter((c) => c.account_id === accountId);
+    return { open: openCount(rows), held: heldCount(rows) };
+  };
+  return { view, count, countFor, connectRow, watch, finishConnect, onClick, onInput, onChange };
 }

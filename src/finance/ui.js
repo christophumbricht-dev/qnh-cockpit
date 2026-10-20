@@ -2,10 +2,11 @@
 // Paying happens in e-banking – here Christoph keeps track and marks «Bezahlt».
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { BILL_FILE_ACCEPT, INTERVALS, amountText, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, owedPrivately, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
+import { BILL_FILE_ACCEPT, INTERVALS, addDays, amountText, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, owedPrivately, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
 import { QrBillError, formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
 
 const CURRENCIES = ["CHF", "EUR", "USD"];
+const QR_ICON = `<svg class="ico fin-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></svg>`;
 const CATEGORIES = ["Software", "Server", "Entwicklung", "Web", "Büro", "Telefon", "Versicherung", "Treuhand", "Gründung", "Werbung", "Merchandise", "Reisen", "Diverses"];
 // quick start for subscriptions Christoph uses – amounts stay empty until he fills them in
 const TEMPLATES = [
@@ -116,17 +117,35 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         ${late.length ? tile("Überfällig", String(late.length), esc(moneyList(sumBy(late))), true) : ""}
         ${owed.length ? tile("Offen an Christoph", esc(moneyList(sumBy(owed))), owed.length === 1 ? "1 privat bezahlter Beleg" : `${owed.length} privat bezahlte Belege`) : ""}
       </div>
-      <section class="block"><h2 class="section-title">Rechnungen${open.length ? ` <span class="count-chip${late.length ? "" : " calm"}">${open.length}</span>` : ""}</h2>
-        ${open.length ? open.map((b) => billItem(b, today)).join("") : `<div class="card calm-card"><div><h3>Keine offenen Rechnungen</h3><p class="muted">PDF oder Foto einer QR-Rechnung hierher ziehen oder «Rechnung erfassen».</p></div></div>`}
-        <div class="dropzone fin-drop" data-drop="fin-bill" data-action="fin-pick-bill" role="button" tabindex="0"><b>Rechnung hierher ziehen</b> oder klicken <span class="small muted">PDF oder Foto · die QR-Rechnung wird gelesen (auf deinem Gerät)</span></div>
-        ${paidList(bs)}
-      </section>
-      ${owedBlock(owed)}
-      <section class="block"><h2 class="section-title">Kosten &amp; Abos</h2>${costList(cs, today)}</section>
-      <section class="block"><h2 class="section-title">Nächste 30 Tage</h2>${next30.length ? `<ul class="fin-timeline">${next30.map((u) => `<li><span class="fin-when">${esc(shortDate(u.date))}</span><span>${esc(u.name)} ${u.kind === "bill" ? `<span class="pill">Rechnung</span>` : `<span class="pill draft">Abo</span>`}</span><span class="fin-amount">${esc(money(u.amount, u.currency))}</span></li>`).join("")}</ul>` : `<p class="muted">Nichts in den nächsten 30 Tagen.</p>`}</section>
-      ${scopeBars(cs)}
-      <section class="block"><h2 class="section-title">Export für den Treuhänder</h2>${exportBox(today)}</section>
+      ${timeline(next30, today)}
+      <div class="fin-cols">
+        <div class="fin-col-main">
+          <section class="block"><h2 class="section-title">Rechnungen${open.length ? ` <span class="count-chip${late.length ? "" : " calm"}">${open.length}</span>` : ""}</h2>
+            <div class="dropzone fin-drop" data-drop="fin-bill" data-action="fin-pick-bill" role="button" tabindex="0">${QR_ICON}<span><b>QR-Rechnung hierher ziehen – PDF oder Foto</b><span class="small muted">oder tippen zum Auswählen · gelesen wird direkt auf deinem Gerät</span></span></div>
+            ${open.length ? open.map((b) => billItem(b, today)).join("") : `<div class="card calm-card"><div><h3>Keine offenen Rechnungen</h3><p class="muted">Neue Rechnungen hier ablegen oder «Rechnung erfassen».</p></div></div>`}
+            ${paidList(bs)}
+          </section>
+          ${owedBlock(owed)}
+        </div>
+        <div class="fin-col-side">
+          <section class="block"><h2 class="section-title">Kosten &amp; Abos</h2>${costList(cs, today)}</section>
+          ${scopeBars(cs)}
+          <section class="block"><h2 class="section-title">Export für den Treuhänder</h2>${exportBox(today)}</section>
+        </div>
+      </div>
       <p class="hint">Bezahlt wird im E-Banking (QR-Rechnung dort scannen oder die Zahlungsdaten kopieren). Abo-Erinnerungen kommen so viele Tage vor der Verlängerung auf «Heute», wie beim Abo eingestellt.</p>`;
+  }
+
+  // the next 30 days on one line: dots by day (filled = bill, ring = subscription), the payments below
+  function timeline(list, today) {
+    if (!list.length) return `<section class="block fin-next"><h2 class="section-title">Nächste 30 Tage</h2><p class="muted">Nichts in den nächsten 30 Tagen.</p></section>`;
+    const end = addDays(today, 30);
+    const dots = list.map((u) => `<span class="tl-dot${u.kind === "bill" ? " bill" : ""}" style="left:${Math.min(100, Math.max(0, (daysBetween(today, u.date) / 30) * 100)).toFixed(1)}%"></span>`).join("");
+    return `<section class="block fin-next" aria-labelledby="fin-next-title"><div class="card">
+      <div class="fin-next-head"><h2 id="fin-next-title">Was in den nächsten 30 Tagen kommt</h2><span class="mono-num small">${esc(shortDate(today))} – ${esc(shortDate(end))} · ${esc(moneyList(sumBy(list)))}</span></div>
+      <div class="tl-track" aria-hidden="true"><span class="tl-now"></span>${dots}</div>
+      <ul class="tl-chips">${list.map((u) => `<li class="${u.kind === "bill" ? "bill" : ""}"><span class="tl-when">${esc(shortDate(u.date))} · ${u.kind === "bill" ? "Rechnung" : "Abo"}</span><b>${esc(u.name)}</b><span class="mono-num">${esc(money(u.amount, u.currency))}</span></li>`).join("")}</ul>
+    </div></section>`;
   }
 
   // CSV: every bill of the chosen period (loaded completely for the export), costs as they are now
@@ -202,21 +221,21 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
   function costList(cs, today) {
     const rows = [...cs].sort((a, b) => (b.active !== false) - (a.active !== false) || monthly(b) - monthly(a) || a.name.localeCompare(b.name));
     const tpl = TEMPLATES.filter((t) => !costs().some((c) => c.name.toLowerCase() === t.name.toLowerCase()))
-      .map((t, i) => `<button class="chip" data-action="fin-template" data-value="${TEMPLATES.indexOf(t)}">+ ${esc(t.name)}</button>`).join("");
-    const table = rows.length ? `<div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Abo / Kosten</th><th>App/Marke</th><th>Betrag</th><th>pro Monat</th><th>Nächste Verlängerung</th><th></th></tr></thead><tbody>
-      ${rows.map((c) => {
+      .map((t) => `<button class="chip" data-action="fin-template" data-value="${TEMPLATES.indexOf(t)}">+ ${esc(t.name)}</button>`).join("");
+    const list = rows.length ? `<div class="card fin-costs"><ul>${rows.map((c) => {
         const next = nextRenewal(c, today);
         const soon = next && c.notice_days && daysBetween(today, next) <= c.notice_days;
-        return `<tr class="${c.active === false ? "off" : ""}"><td><b>${esc(c.name)}</b>${c.provider ? `<br><span class="muted small">${esc(c.provider)}${c.payment ? ` · ${esc(c.payment)}` : ""}</span>` : ""}</td>
-          <td>${scopeBadge(c.scope)} <span class="small">${esc(scopeName(c.scope))}</span></td>
-          <td>${esc(money(c.amount, c.currency))}<br><span class="muted small">${esc(INTERVALS[c.interval])}</span></td>
-          <td>${c.interval === "once" ? "–" : esc(money(monthly(c), c.currency))}</td>
-          <td class="${soon ? "warn" : ""}">${next ? esc(fmtDate(next)) : "–"}${c.notice_days ? `<br><span class="muted small">Erinnerung ${c.notice_days} Tage vorher</span>` : ""}</td>
-          <td class="fin-row-actions">${web(c.url) ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">Verwalten ↗</a>` : ""}<button class="link" data-action="fin-edit-cost" data-id="${c.id}">Bearbeiten</button></td></tr>`;
-      }).join("")}</tbody>
-      <tfoot><tr><td colspan="3"><b>Total aktiv</b></td><td colspan="3"><b>${esc(moneyList(monthlyTotals(rows)))}</b> pro Monat</td></tr></tfoot></table></div>`
+        const bits = [INTERVALS[c.interval], c.payment, next ? `nächste ${shortDate(next)}` : "", c.notice_days ? `Erinnerung ${c.notice_days} Tage vorher` : ""].filter(Boolean);
+        return `<li class="${c.active === false ? "off" : ""}">
+          <div class="fc-main"><span class="fc-name"><b>${esc(c.name)}</b>${soon ? ` <span class="pill warn-pill">kündbar bis ${esc(shortDate(next))}</span>` : ""}</span>
+            <span class="muted small">${scopeBadge(c.scope)} ${esc(scopeName(c.scope))} · ${esc(bits.join(" · "))}</span>
+            <span class="fc-actions">${web(c.url) ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">Verwalten ↗</a>` : ""}<button class="link" data-action="fin-edit-cost" data-id="${c.id}">Bearbeiten</button></span></div>
+          <div class="fc-amount"><span class="mono-num">${esc(money(c.amount, c.currency))}</span>${c.interval !== "once" && c.interval !== "monthly" ? `<span class="muted small">≈ ${esc(amountText(monthly(c)))} / Mt.</span>` : ""}</div></li>`;
+      }).join("")}</ul>
+      <p class="fc-total"><span>Total aktiv pro Monat</span><b class="mono-num">${esc(moneyList(monthlyTotals(rows)))}</b></p>
+      <button class="btn ghost" data-action="fin-new-cost">+ Abo / Kosten</button></div>`
       : `<p class="muted">Noch keine Kosten erfasst. Tipp: eine Vorlage antippen und den Betrag ergänzen.</p>`;
-    return `${table}${tpl ? `<div class="chips fin-templates"><span class="muted small">Vorlagen:</span>${tpl}</div>` : ""}`;
+    return `${list}${tpl ? `<div class="chips fin-templates"><span class="muted small">Vorlagen:</span>${tpl}</div>` : ""}`;
   }
 
   // monthly fixed costs per app/brand (each currency its own bar)

@@ -278,7 +278,14 @@ function pageHead() {
     return `<header class="page-head"><div class="ph-title">${icon("wallet", "ph-icon")}<div><h1>Finanzen</h1><p class="muted">Kosten, Abos und Rechnungen – bezahlt wird im E-Banking, hier behältst du den Überblick.</p></div></div></header>`;
   }
   if (S.tab === "social") {
-    return `<header class="page-head"><div class="ph-title">${icon("chat", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram und YouTube aller Apps – du gibst jeden Beitrag frei und beantwortest Kommentare hier.</p></div></div></header>`;
+    const v = S.social?.value;
+    const now = Date.now();
+    const week = v ? v.posts.filter((p) => ["approved", "draft"].includes(p.status) && p.scheduled_at && new Date(p.scheduled_at).getTime() > now && new Date(p.scheduled_at).getTime() < now + 7 * 864e5).length : 0;
+    const channels = v ? v.accounts.filter((x) => x.active !== false).length : 0;
+    const open = social.commentCount();
+    const line = v ? `${channels} ${channels === 1 ? "Kanal" : "Kanäle"} · ${week} ${week === 1 ? "Beitrag" : "Beiträge"} in den nächsten 7 Tagen · ${open} ${open === 1 ? "Kommentar" : "Kommentare"} offen`
+      : "Instagram und YouTube aller Apps – du gibst jeden Beitrag frei und beantwortest Kommentare hier.";
+    return `<header class="page-head"><div class="ph-title">${icon("chat", "ph-icon")}<div><h1>Social</h1><p class="muted">${esc(line)}</p></div></div></header>`;
   }
   const a = app();
   const stats = S.data[`${a.id}:stats`]?.value;

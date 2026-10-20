@@ -97,28 +97,58 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const shown = posts().filter((p) => st.filter === "all" || account(p.account_id)?.app_id === st.filter);
     const chips = [["all", "Alle Apps"], ...apps.map((id) => [id, appName(id)])]
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
-    const accountRows = accounts().map((a) => {
-      const left = daysLeft(a.token_expires_at);
-      const token = a.platform === "youtube" ? "verbunden" : left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
-      const again = a.platform === "youtube" ? ` <button class="link inline-link" data-action="soc-yt-reconnect" data-value="${esc(a.app_id)}">neu verbinden</button>` : "";
-      return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span>${again}</li>`;
-    }).join("");
     const openComments = inbox.count(false);
-    const modes = [["list", "Liste"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` (${openComments})` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
-      `<button class="chip${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}">${l}</button>`).join("");
-    return `<div class="toolbar"><div class="chips">${modes}<span class="chip-sep"></span>${chips}</div>
+    const modes = [["list", "Beiträge"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
+      `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
+    const connect = inbox.connectRow();
+    const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
+    return `<div class="soc-top">
+        <div class="seg" role="group" aria-label="Ansicht">${modes}</div>
         <div class="row-right">
           ${reviewQueue().length ? `<button class="btn" data-action="soc-review">Freigabe-Runde (${reviewQueue().length})</button>` : ""}
           <button class="btn ghost" data-action="soc-pick-package">Paket importieren</button>
           <button class="btn" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
-      ${accounts().length ? `<ul class="accounts">${accountRows}${inbox.connectRow()}</ul>` : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
+      ${apps.length > 1 ? `<div class="chips soc-apps">${chips}</div>` : ""}
+      ${accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
+        : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
       ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
         const rows = shown.filter((p) => statuses.includes(p.status))
           .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
         return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
       }).join("")}`;
+  }
+
+  // «Mi 21.10. 19:00»
+  const shortZurich = (iso) => new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)).replace(/\.,? /, " ").replace(",", "");
+  // one card per channel: connection, next post, pipeline, comments
+  function channelCard(a) {
+    const left = daysLeft(a.token_expires_at);
+    const status = !a.active ? ["inaktiv", "off"] : a.platform === "youtube" ? ["verbunden", "ok"]
+      : left === null ? ["verbunden", "ok"] : left < 0 ? ["Token abgelaufen", "bad"] : left < 14 ? [`Token noch ${left} Tage`, "warn"] : ["verbunden", "ok"];
+    const mine = posts().filter((p) => p.account_id === a.id);
+    const now = Date.now();
+    const next = mine.filter((p) => p.status === "approved" && p.scheduled_at && new Date(p.scheduled_at).getTime() > now).sort((x, y) => x.scheduled_at.localeCompare(y.scheduled_at))[0];
+    const approved = mine.filter((p) => p.status === "approved").length;
+    const drafts = mine.filter((p) => p.status === "draft").length;
+    const month = mine.filter((p) => p.status === "published" && p.published_at && now - new Date(p.published_at).getTime() < 30 * 864e5).length;
+    const c = inbox.countFor(a.id);
+    const youtube = a.platform === "youtube";
+    return `<article class="channel-card">
+      <div class="channel-head">${appBadge(a.app_id)}<div><b>${esc(youtube ? a.handle || appName(a.app_id) : `@${a.handle}`)}</b><span class="muted small">${esc(PLATFORM[a.platform] ?? a.platform)} · ${esc(appName(a.app_id))}</span></div></div>
+      <span class="ch-status ${status[1]}">${esc(status[0])}</span>
+      <dl class="channel-stats">
+        <div><dt>Nächster Beitrag</dt><dd>${next ? esc(shortZurich(next.scheduled_at)) : "–"}</dd></div>
+        <div><dt>Pipeline</dt><dd>${approved} frei · ${drafts} ${drafts === 1 ? "Entwurf" : "Entwürfe"}</dd></div>
+        <div><dt>Kommentare</dt><dd${c.open ? ' class="hot"' : ""}>${c.open ? `${c.open} offen` : "keine offen"}${c.held ? ` · ${c.held} zurück` : ""}</dd></div>
+        <div><dt>Veröffentlicht, 30 Tage</dt><dd>${month}</dd></div>
+      </dl>
+      <div class="channel-actions">
+        ${c.open || c.held ? `<button class="link" data-action="soc-mode" data-value="comments">Kommentare</button>` : ""}
+        ${youtube ? `<button class="link" data-action="soc-yt-reconnect" data-value="${esc(a.app_id)}">neu verbinden</button>` : ""}
+      </div>
+    </article>`;
   }
 
   // ---------- statistics ----------
