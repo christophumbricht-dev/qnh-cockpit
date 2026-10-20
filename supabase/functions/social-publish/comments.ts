@@ -1,0 +1,392 @@
+// Comment inbox for our own Instagram posts and YouTube videos, and connecting a YouTube channel.
+//
+//   op "comments"          fetch new comments of all active accounts (cron every 15 min, or «Jetzt abholen»)
+//   op "reply"             post Christoph's reply (always his click in the cockpit, never automatic)
+//   op "moderate"          hide / show / approve (YouTube «zurückgehalten») / delete (own comments only)
+//   op "youtube-auth"      Google sign-in URL for «YouTube verbinden»
+//   op "youtube-connect"   code → refresh token (to Vault, never shown) + account row for the channel
+//
+// No liking, following or commenting on other accounts – only answers below our own posts.
+// Logic independent of Supabase and the network (store + fetch injected), tested in comments.test.ts.
+
+import { graph, GraphError, IG_HOST, type FetchFn } from "./graph.ts";
+import { accessToken, authUrl, exchangeCode, GoogleError, googleGerman, youtube, YT_SCOPES, type GoogleConfig, type YouTube } from "./google.ts";
+import { type Account, FinalError, germanError } from "./publish.ts";
+
+export type CommentRow = {
+  account_id: string;
+  remote_id: string;
+  parent_remote_id: string | null;
+  media_id: string;
+  media_title: string;
+  media_permalink: string | null;
+  author: string;
+  author_url: string | null;
+  body: string;
+  posted_at: string | null;
+  like_count: number;
+  own: boolean;
+  held: boolean;
+  hidden?: boolean; // Instagram: hidden on the platform (becomes the status, not stored as a column)
+};
+export type CommentStatus = "new" | "done" | "hidden";
+export type StoredComment = Omit<CommentRow, "hidden"> & {
+  id: string;
+  status: CommentStatus;
+  draft: string;
+  replied_at: string | null;
+  deleted_at: string | null;
+  fetched_at?: string | null;
+};
+
+export interface CommentsStore {
+  accounts(): Promise<Account[]>;
+  account(id: string): Promise<Account>;
+  token(accountId: string): Promise<string>;
+  storeToken(accountId: string, token: string, expiresAt: Date | null): Promise<void>;
+  comments(accountId: string): Promise<StoredComment[]>; // every row of the account, also deleted ones
+  comment(id: string): Promise<StoredComment | null>;
+  insertComments(rows: Array<Record<string, unknown>>): Promise<void>; // new rows (with status); duplicates ignored
+  updateComments(rows: Array<Record<string, unknown>>): Promise<void>; // existing rows, same keys, never the status
+  updateComment(id: string, patch: Record<string, unknown>): Promise<void>;
+  markDeleted(ids: string[], at: string): Promise<void>;
+  upsertAccount(row: { app_id: string; platform: string; remote_id: string; handle: string; token_name: string }): Promise<Account>;
+}
+
+export type CommentDeps = { store: CommentsStore; fetch: FetchFn; now: () => Date; google?: GoogleConfig | null };
+
+export const REPLY_MAX = 2200;
+const firstLine = (t: unknown, n = 300) => String(t ?? "").split("\n").map((s) => s.trim()).find(Boolean)?.slice(0, n) ?? "";
+
+// user-facing German message for any error of these ops
+export function commentError(err: unknown): string {
+  if (err instanceof GraphError && (err.code === 10 || err.code === 200)) {
+    return "Dem Instagram-Zugang fehlt die Berechtigung instagram_business_manage_comments (docs/social-setup.md, Schritt 3).";
+  }
+  if (err instanceof GoogleError) return googleGerman(err);
+  return germanError(err);
+}
+
+// ---------- merge: what to insert, update, re-status and mark deleted ----------
+
+export type MergePlan = {
+  inserts: Array<Record<string, unknown>>;
+  updates: Array<Record<string, unknown>>;
+  statusChanges: Array<{ id: string; status: CommentStatus }>;
+  deletions: string[]; // ids of stored rows
+};
+
+const SAME_KEYS = ["parent_remote_id", "media_id", "media_title", "media_permalink", "author", "author_url", "body", "like_count", "own", "held"] as const;
+const time = (iso: string | null | undefined) => (iso ? Date.parse(iso) : null); // "…Z", "…+0000" and "…+00:00" are the same moment
+const changed = (e: StoredComment, row: Omit<CommentRow, "hidden">) =>
+  SAME_KEYS.some((k) => (e[k] ?? null) !== (row[k] ?? null)) || time(e.posted_at) !== time(row.posted_at);
+// a reply we just sent may take a few minutes to show up in the platform's lists – do not call it deleted meanwhile
+const GRACE_MS = 30 * 60_000;
+
+// complete(mediaId): true when every comment of that post/video was fetched – only then is a missing one deleted.
+export function mergeComments(existing: StoredComment[], fetched: CommentRow[], complete: (mediaId: string) => boolean, nowIso: string): MergePlan {
+  const plan: MergePlan = { inserts: [], updates: [], statusChanges: [], deletions: [] };
+  const stored = new Map(existing.map((e) => [e.remote_id, e]));
+  const seen = new Set<string>();
+  // newest own reply per thread (fetched or stored) – a comment we already answered elsewhere is not «new»
+  const answeredAt = new Map<string, number>();
+  for (const c of [...existing.filter((e) => !e.deleted_at), ...fetched]) {
+    if (!c.own || !c.parent_remote_id || !c.posted_at) continue;
+    const t = Date.parse(c.posted_at);
+    if (t > (answeredAt.get(c.parent_remote_id) ?? 0)) answeredAt.set(c.parent_remote_id, t);
+  }
+  for (const f of fetched) {
+    if (seen.has(f.remote_id)) continue; // a reply can show up twice (thread + replies list)
+    seen.add(f.remote_id);
+    const { hidden, ...row } = f;
+    const e = stored.get(f.remote_id);
+    if (!e) {
+      const thread = f.parent_remote_id ?? f.remote_id;
+      const answered = !f.own && f.posted_at !== null && (answeredAt.get(thread) ?? 0) > Date.parse(f.posted_at);
+      plan.inserts.push({ ...row, status: hidden ? "hidden" : f.own || answered ? "done" : "new", fetched_at: nowIso, deleted_at: null });
+      continue;
+    }
+    if (e.deleted_at || changed(e, row)) plan.updates.push({ ...row, fetched_at: nowIso, deleted_at: null });
+    // Instagram tells us whether a comment is hidden (also when Christoph hid it in the app)
+    if (hidden === true && e.status !== "hidden") plan.statusChanges.push({ id: e.id, status: "hidden" });
+    if (hidden === false && e.status === "hidden") plan.statusChanges.push({ id: e.id, status: "done" });
+  }
+  for (const e of existing) {
+    if (e.deleted_at || seen.has(e.remote_id) || e.status === "hidden" || !complete(e.media_id)) continue;
+    if (e.fetched_at && Date.parse(nowIso) - Date.parse(e.fetched_at) < GRACE_MS) continue;
+    plan.deletions.push(e.id);
+  }
+  return plan;
+}
+
+async function applyPlan(store: CommentsStore, plan: MergePlan, nowIso: string) {
+  if (plan.inserts.length) await store.insertComments(plan.inserts);
+  if (plan.updates.length) await store.updateComments(plan.updates);
+  for (const s of plan.statusChanges) await store.updateComment(s.id, { status: s.status });
+  if (plan.deletions.length) await store.markDeleted(plan.deletions, nowIso);
+}
+
+// ---------- Instagram ----------
+
+type IgComment = {
+  id: string; text?: string; timestamp?: string; username?: string; from?: { id?: string; username?: string };
+  like_count?: number; hidden?: boolean; replies?: { data?: IgComment[]; paging?: { next?: string } };
+};
+type IgMedia = { id: string; caption?: string; permalink?: string; comments_count?: number };
+
+const IG_FIELDS = "id,text,timestamp,username,from,like_count,hidden,replies{id,text,timestamp,username,from,like_count,hidden}";
+const IG_FIELDS_BASIC = "id,text,timestamp,username,like_count,replies{id,text,timestamp,username,like_count}";
+export const IG_MEDIA_LIMIT = 30;
+
+function igRow(acc: Account, media: IgMedia, c: IgComment, parent: string | null): CommentRow {
+  const username = String(c.username ?? c.from?.username ?? "");
+  return {
+    account_id: acc.id, remote_id: String(c.id), parent_remote_id: parent, media_id: String(media.id),
+    media_title: firstLine(media.caption), media_permalink: media.permalink ?? null,
+    author: username, author_url: /^[A-Za-z0-9._]{1,30}$/.test(username) ? `https://www.instagram.com/${username}/` : null,
+    body: String(c.text ?? "").slice(0, 10000), posted_at: c.timestamp ?? null, like_count: Number(c.like_count ?? 0) || 0,
+    own: username !== "" && username.toLowerCase() === acc.handle.toLowerCase(), held: false,
+    ...(typeof c.hidden === "boolean" ? { hidden: c.hidden } : {}),
+  };
+}
+
+async function fetchInstagram(deps: CommentDeps, acc: Account, existing: StoredComment[]) {
+  const g = graph(deps.fetch, IG_HOST, await deps.store.token(acc.id));
+  const media: IgMedia[] = (await g.get(`${acc.remote_id}/media`, { fields: "id,caption,permalink,comments_count", limit: IG_MEDIA_LIMIT })).data ?? [];
+  const storedCount = new Map<string, number>();
+  for (const e of existing) if (!e.deleted_at) storedCount.set(e.media_id, (storedCount.get(e.media_id) ?? 0) + 1);
+  const rows: CommentRow[] = [];
+  const complete = new Set<string>();
+  let fields = IG_FIELDS;
+  for (const m of media) {
+    // only posts whose comment count changed (saves API calls; counts include replies)
+    if ((Number(m.comments_count) || 0) === (storedCount.get(m.id) ?? 0)) continue;
+    let after: string | undefined;
+    let finished = false, truncated = false;
+    for (let page = 0; page < 6; page++) {
+      let res;
+      try {
+        res = await g.get(`${m.id}/comments`, { fields, limit: 50, after });
+      } catch (err) {
+        // older API versions refuse some fields – ask once more with the basic set
+        if (err instanceof GraphError && fields === IG_FIELDS) { fields = IG_FIELDS_BASIC; page--; continue; }
+        throw err;
+      }
+      for (const c of (res.data ?? []) as IgComment[]) {
+        rows.push(igRow(acc, m, c, null));
+        for (const r of c.replies?.data ?? []) rows.push(igRow(acc, m, r, String(c.id)));
+        if (c.replies?.paging?.next) truncated = true; // more replies than in this answer
+      }
+      after = res.paging?.next ? res.paging?.cursors?.after : undefined;
+      if (!after) { finished = true; break; }
+    }
+    if (finished && !truncated) complete.add(m.id);
+  }
+  return { rows, complete: (id: string) => complete.has(id) };
+}
+
+// ---------- YouTube ----------
+
+type YtComment = {
+  id: string;
+  snippet?: {
+    authorDisplayName?: string; authorChannelUrl?: string; authorChannelId?: { value?: string };
+    textDisplay?: string; textOriginal?: string; likeCount?: number; publishedAt?: string; videoId?: string; parentId?: string;
+  };
+};
+type YtThread = { id: string; snippet?: { videoId?: string; topLevelComment?: YtComment; totalReplyCount?: number }; replies?: { comments?: YtComment[] } };
+
+export const ytWatchUrl = (videoId: string) => `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+
+async function youtubeFor(deps: CommentDeps, acc: Account): Promise<YouTube> {
+  if (!deps.google) throw new FinalError("YouTube ist noch nicht eingerichtet: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET fehlen (docs/social-setup.md, «YouTube verbinden»).");
+  return youtube(deps.fetch, await accessToken(deps.fetch, deps.google, await deps.store.token(acc.id)));
+}
+
+function ytRow(acc: Account, c: YtComment, parent: string | null, videoId: string, held: boolean): CommentRow {
+  const s = c.snippet ?? {};
+  return {
+    account_id: acc.id, remote_id: String(c.id), parent_remote_id: parent, media_id: videoId, media_title: "", media_permalink: ytWatchUrl(videoId),
+    author: String(s.authorDisplayName ?? "").slice(0, 200), author_url: s.authorChannelUrl ?? null,
+    body: String(s.textDisplay ?? s.textOriginal ?? "").slice(0, 10000), posted_at: s.publishedAt ?? null, like_count: Number(s.likeCount ?? 0) || 0,
+    own: s.authorChannelId?.value === acc.remote_id, held,
+  };
+}
+
+async function fetchYoutube(deps: CommentDeps, acc: Account, existing: StoredComment[]) {
+  const yt = await youtubeFor(deps, acc);
+  const rows: CommentRow[] = [];
+  let whole = true;
+  // published threads (newest first, up to 300) + the ones YouTube holds back for review (1 page)
+  for (const [moderationStatus, pages] of [["published", 3], ["heldForReview", 1]] as const) {
+    let pageToken: string | undefined;
+    let done = false;
+    for (let p = 0; p < pages; p++) {
+      const res = await yt.get("commentThreads", {
+        part: "snippet,replies", allThreadsRelatedToChannelId: acc.remote_id, maxResults: 100, order: "time", textFormat: "plainText", moderationStatus, pageToken,
+      });
+      for (const t of (res.items ?? []) as YtThread[]) {
+        const top = t.snippet?.topLevelComment;
+        const videoId = String(t.snippet?.videoId ?? top?.snippet?.videoId ?? "");
+        if (!top || !videoId) continue;
+        rows.push(ytRow(acc, top, null, videoId, moderationStatus === "heldForReview"));
+        let replies = t.replies?.comments ?? [];
+        if ((t.snippet?.totalReplyCount ?? 0) > replies.length) {
+          const more = await yt.get("comments", { part: "snippet", parentId: t.id, maxResults: 100, textFormat: "plainText" });
+          replies = more.items ?? replies;
+          if (more.nextPageToken) whole = false;
+        }
+        for (const r of replies) rows.push(ytRow(acc, r, String(top.id), videoId, false));
+      }
+      pageToken = res.nextPageToken;
+      if (!pageToken) { done = true; break; }
+    }
+    if (!done) whole = false;
+  }
+  // video titles for context: from rows we already have, otherwise one videos.list call (1 unit per 50 videos)
+  const titles = new Map<string, string>();
+  for (const e of existing) if (e.media_title) titles.set(e.media_id, e.media_title);
+  const unknown = [...new Set(rows.map((r) => r.media_id))].filter((id) => !titles.has(id));
+  for (let i = 0; i < unknown.length; i += 50) {
+    const res = await yt.get("videos", { part: "snippet", id: unknown.slice(i, i + 50).join(","), maxResults: 50 });
+    for (const v of res.items ?? []) titles.set(String(v.id), firstLine(v.snippet?.title));
+  }
+  for (const r of rows) r.media_title = titles.get(r.media_id) ?? "";
+  // comments that YouTube no longer lists are deleted only if every list was read completely
+  return { rows, complete: () => whole };
+}
+
+// ---------- ops ----------
+
+export type FetchResult = { account: string; platform: string; status: "ok" | "failed"; new?: number; error?: string };
+
+export async function fetchComments(deps: CommentDeps): Promise<FetchResult[]> {
+  const out: FetchResult[] = [];
+  const nowIso = deps.now().toISOString();
+  for (const acc of await deps.store.accounts()) {
+    if (!acc.active || !["instagram", "youtube"].includes(acc.platform)) continue;
+    try {
+      const existing = await deps.store.comments(acc.id);
+      const { rows, complete } = acc.platform === "instagram" ? await fetchInstagram(deps, acc, existing) : await fetchYoutube(deps, acc, existing);
+      const plan = mergeComments(existing, rows, complete, nowIso);
+      await applyPlan(deps.store, plan, nowIso);
+      out.push({ account: acc.handle, platform: acc.platform, status: "ok", new: plan.inserts.filter((r) => r.status === "new").length });
+    } catch (err) {
+      out.push({ account: acc.handle, platform: acc.platform, status: "failed", error: commentError(err) });
+    }
+  }
+  return out;
+}
+
+async function load(deps: CommentDeps, commentId: string) {
+  const c = await deps.store.comment(commentId);
+  if (!c) throw new FinalError("Diesen Kommentar gibt es nicht mehr im Cockpit.");
+  const acc = await deps.store.account(c.account_id);
+  if (!acc?.active) throw new FinalError("Das Konto ist nicht aktiv.");
+  return { c, acc };
+}
+
+export async function replyTo(deps: CommentDeps, commentId: string, text: string) {
+  const msg = String(text ?? "").trim();
+  if (!msg) throw new FinalError("Die Antwort ist leer.");
+  if (msg.length > REPLY_MAX) throw new FinalError(`Die Antwort ist ${msg.length} Zeichen lang, höchstens ${REPLY_MAX}.`);
+  const { c, acc } = await load(deps, commentId);
+  if (c.deleted_at) throw new FinalError("Dieser Kommentar wurde inzwischen gelöscht.");
+  if (c.status === "hidden") throw new FinalError("Der Kommentar ist ausgeblendet – zuerst einblenden.");
+  const now = deps.now();
+  if (c.replied_at && now.getTime() - Date.parse(c.replied_at) < 60_000) throw new FinalError("Gerade eben schon beantwortet – nicht doppelt senden.");
+  // both platforms only thread one level deep: a reply to a reply goes into the same thread
+  const parent = c.parent_remote_id ?? c.remote_id;
+  let replyId: string;
+  try {
+    if (acc.platform === "instagram") {
+      const g = graph(deps.fetch, IG_HOST, await deps.store.token(acc.id));
+      replyId = String((await g.post(`${parent}/replies`, { message: msg })).id);
+    } else if (acc.platform === "youtube") {
+      const yt = await youtubeFor(deps, acc);
+      replyId = String((await yt.post("comments", { part: "snippet" }, { snippet: { parentId: parent, textOriginal: msg } })).id);
+    } else throw new FinalError("Antworten geht nur auf Instagram und YouTube.");
+  } catch (err) {
+    throw err instanceof FinalError ? err : new FinalError(commentError(err));
+  }
+  const nowIso = now.toISOString();
+  await deps.store.insertComments([{
+    account_id: acc.id, remote_id: replyId, parent_remote_id: parent, media_id: c.media_id, media_title: c.media_title, media_permalink: c.media_permalink,
+    author: acc.handle, author_url: null, body: msg, posted_at: nowIso, like_count: 0, own: true, held: false, status: "done", fetched_at: nowIso, deleted_at: null,
+  }]);
+  await deps.store.updateComment(c.id, { status: "done", draft: "", replied_at: nowIso });
+  return { id: c.id, status: "replied", reply_id: replyId };
+}
+
+export type ModerateAction = "hide" | "show" | "approve" | "delete";
+
+export async function moderate(deps: CommentDeps, commentId: string, action: ModerateAction) {
+  if (!["hide", "show", "approve", "delete"].includes(action)) throw new FinalError("Unbekannte Aktion.");
+  const { c, acc } = await load(deps, commentId);
+  if (c.deleted_at) throw new FinalError("Dieser Kommentar wurde inzwischen gelöscht.");
+  if (action === "delete" && !c.own) throw new FinalError("Löschen geht nur bei deinen eigenen Antworten – fremde Kommentare ausblenden.");
+  if (action === "hide" && c.own) throw new FinalError("Eigene Kommentare kann man nicht ausblenden – löschen geht.");
+  try {
+    if (acc.platform === "instagram") {
+      if (action === "approve") throw new FinalError("Auf Instagram gibt es kein Zurückhalten.");
+      const g = graph(deps.fetch, IG_HOST, await deps.store.token(acc.id));
+      if (action === "delete") await g.del(c.remote_id);
+      else await g.post(c.remote_id, { hide: action === "hide" });
+    } else if (acc.platform === "youtube") {
+      const yt = await youtubeFor(deps, acc);
+      if (action === "delete") await yt.del("comments", { id: c.remote_id });
+      // «ausblenden» = back to «zur Überprüfung zurückgehalten»: invisible for others, and reversible (rejected is not)
+      else await yt.post("comments/setModerationStatus", { id: c.remote_id, moderationStatus: action === "hide" ? "heldForReview" : "published" });
+    } else throw new FinalError("Nur Instagram und YouTube.");
+  } catch (err) {
+    throw err instanceof FinalError ? err : new FinalError(commentError(err));
+  }
+  const nowIso = deps.now().toISOString();
+  const patch: Record<string, unknown> =
+    action === "delete" ? { deleted_at: nowIso }
+    : action === "hide" ? { status: "hidden" }
+    : action === "show" ? { status: "done", held: false }
+    : { held: false, status: c.status === "hidden" ? "new" : c.status };
+  await deps.store.updateComment(c.id, patch);
+  return { id: c.id, status: action };
+}
+
+// ---------- connecting a YouTube channel ----------
+
+export const REDIRECTS_DEFAULT = ["https://cockpit.setqnh.ch/youtube-callback.html", "http://localhost:5185/youtube-callback.html"];
+const APP_ID = /^[a-z0-9-]{2,30}$/;
+
+function checkConnect(google: GoogleConfig | null | undefined, allowed: string[], appId: string, redirectUri: string): GoogleConfig {
+  if (!google) throw new FinalError("YouTube ist noch nicht eingerichtet: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET fehlen (docs/social-setup.md, «YouTube verbinden»).");
+  if (!APP_ID.test(appId)) throw new FinalError("Unbekannte App/Marke.");
+  if (!allowed.includes(redirectUri)) throw new FinalError(`Diese Rücksprung-Adresse ist nicht erlaubt: ${redirectUri}`);
+  return google;
+}
+
+export function youtubeAuth(google: GoogleConfig | null | undefined, allowed: string[], appId: string, redirectUri: string, state: string) {
+  const cfg = checkConnect(google, allowed, appId, redirectUri);
+  if (!/^[A-Za-z0-9-]{16,100}$/.test(state)) throw new FinalError("Ungültiger Status-Wert.");
+  return { url: authUrl(cfg, redirectUri, state) };
+}
+
+export async function youtubeConnect(deps: CommentDeps, allowed: string[], appId: string, code: string, redirectUri: string) {
+  const cfg = checkConnect(deps.google, allowed, appId, redirectUri);
+  if (!code || code.length > 2000) throw new FinalError("Kein Code von Google erhalten.");
+  try {
+    const t = await exchangeCode(deps.fetch, cfg, code, redirectUri);
+    const granted = t.scope.split(/\s+/);
+    if (!YT_SCOPES.every((s) => granted.includes(s))) {
+      throw new FinalError("Bei Google wurden nicht alle Häkchen gesetzt. Bitte neu verbinden und beide YouTube-Berechtigungen erlauben (Videos hochladen, Kommentare verwalten).");
+    }
+    if (!t.refreshToken) throw new FinalError("Google hat keinen dauerhaften Zugang geliefert. Bitte neu verbinden.");
+    const ch = await youtube(deps.fetch, t.accessToken).get("channels", { part: "snippet", mine: true });
+    const item = ch.items?.[0];
+    if (!item?.id) throw new FinalError("Mit diesem Google-Konto ist kein YouTube-Kanal verbunden. Beim Anmelden den Kanal (bzw. das Brand-Konto) wählen.");
+    const handle = (String(item.snippet?.customUrl ?? "").replace(/^@/, "") || String(item.snippet?.title ?? "") || String(item.id)).slice(0, 60);
+    const acc = await deps.store.upsertAccount({ app_id: appId, platform: "youtube", remote_id: String(item.id), handle, token_name: `google_token_${appId.replace(/-/g, "_")}_youtube` });
+    await deps.store.storeToken(acc.id, t.refreshToken, null); // Google refresh tokens do not expire on a fixed date
+    return { account_id: acc.id, handle, title: String(item.snippet?.title ?? "") };
+  } catch (err) {
+    throw err instanceof FinalError ? err : new FinalError(commentError(err));
+  }
+}

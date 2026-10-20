@@ -22,12 +22,12 @@ export class GraphError extends Error {
 type Params = Record<string, string | number | boolean | undefined | null>;
 
 export function graph(fetchFn: FetchFn, host: string, token: string) {
-  async function call(method: "GET" | "POST", path: string, params: Params = {}) {
+  async function call(method: "GET" | "POST" | "DELETE", path: string, params: Params = {}) {
     const url = new URL(`${host}/${GRAPH_VERSION}/${path}`);
     const form = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) form.set(k, String(v));
     const init: RequestInit = { method };
-    if (method === "GET") {
+    if (method !== "POST") { // GET, and DELETE as documented by Meta (parameters in the query)
       form.forEach((v, k) => url.searchParams.set(k, v));
       url.searchParams.set("access_token", token);
     } else {
@@ -46,6 +46,7 @@ export function graph(fetchFn: FetchFn, host: string, token: string) {
   return {
     get: (path: string, params?: Params) => call("GET", path, params),
     post: (path: string, params?: Params) => call("POST", path, params),
+    del: (path: string, params?: Params) => call("DELETE", path, params),
   };
 }
 

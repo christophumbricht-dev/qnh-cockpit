@@ -41,14 +41,14 @@ export type Post = {
   location?: { id: string; name?: string } | null;
   location_dropped?: boolean; // set while publishing when Instagram refused the location
 };
-export type Account = { id: string; platform: "instagram" | "facebook"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
+export type Account = { id: string; app_id?: string; platform: "instagram" | "facebook" | "youtube"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
 
 export interface Store {
   claim(postId?: string): Promise<Post[]>;
   account(id: string): Promise<Account>;
   accounts(): Promise<Account[]>;
   token(accountId: string): Promise<string>;
-  storeToken(accountId: string, token: string, expiresAt: Date): Promise<void>;
+  storeToken(accountId: string, token: string, expiresAt: Date | null): Promise<void>;
   update(postId: string, patch: Partial<Post> & Record<string, unknown>): Promise<void>;
   publicUrl(path: string): string;
   publishedWithFiles(before: Date): Promise<Post[]>;
@@ -82,6 +82,7 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
   try {
     const account = await store.account(post.account_id);
     if (account.platform === "facebook") return await publishFacebook(deps, post, account);
+    if (account.platform === "youtube") throw new FinalError("Veröffentlichen auf YouTube ist noch nicht eingebaut.");
     const g = graph(deps.fetch, IG_HOST, await store.token(account.id));
 
     if (post.remote_media_id) return await finish(deps, g, post, post.remote_media_id); // published before, only finish

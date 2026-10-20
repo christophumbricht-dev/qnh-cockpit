@@ -133,14 +133,55 @@ Instagram verlangt als Standort die **ID einer Facebook-Seite eines echten Ortes
 3. Im Cockpit im Beitrag → **Standort** → **+ Neuen Ort hinzufügen …** → Name und ID eingeben. Ab dann ist der Ort in der Liste.
 Nimmt Instagram einen Ort nicht an, wird der Beitrag trotzdem veröffentlicht – ohne Standort, mit Hinweis im Cockpit.
 
+## Kommentare beantworten (Social → «Kommentare»)
+Das Cockpit holt alle 15 Minuten die Kommentare unter deinen eigenen Instagram-Beiträgen und YouTube-Videos. Du liest sie dort, antwortest mit **«Auf Instagram antworten»** bzw. **«Auf YouTube antworten»**, legst sie mit **«Erledigt»** ab oder blendest Spam mit **«Ausblenden»** aus (rückgängig mit «Einblenden»). Deine eigenen Antworten kannst du löschen. Gesendet wird **nur per Klick** – nie automatisch. Neue Kommentare stehen auch unter «Heute».
+
+Einrichten (einmal, ca. 10 Min.):
+1. **SQL Editor → New query** → Inhalt von `supabase/migrations/20261020100000_social_comments.sql` → **Run**.
+2. Server-Teil neu hochladen (PowerShell im Ordner `C:\Projects\qnh-cockpit`):
+   ```
+   npx supabase functions deploy social-publish --project-ref PROJEKT-ID
+   ```
+3. Instagram braucht keine neue Berechtigung: `instagram_business_manage_comments` ist schon da (Schritt 3, erster Kommentar).
+4. Cockpit → Social → **Kommentare** → **Jetzt abholen**.
+
+Antwortvorschläge: Claude kann am PC mit `npm.cmd run social -- comments` die offenen Kommentare lesen und mit `npm.cmd run social -- comments draft <id> "…"` einen Vorschlag hinterlegen. Er steht dann im Antwortfeld – du liest, änderst und sendest selbst.
+
+## YouTube-Kanal verbinden (für Kommentare, später auch zum Veröffentlichen)
+Einmalig ca. 20 Minuten. Bezeichnungen in der Google Cloud Console ändern sich manchmal – im UI prüfen.
+
+**Voraussetzung:** Der YouTube-Kanal (z. B. Leeside Lab) existiert schon. Ist er ein Brand-Konto, wählst du ihn beim Anmelden aus.
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → oben **Projekt auswählen → Neues Projekt** → Name `QNH Cockpit` → **Erstellen**.
+2. **APIs & Dienste → Bibliothek** → «YouTube Data API v3» suchen → **Aktivieren**.
+3. **Google Auth Platform** (bzw. «OAuth-Zustimmungsbildschirm») → **Jetzt starten**:
+   - App-Name `QNH Cockpit`, Support-E-Mail: deine
+   - Zielgruppe: **Extern**
+   - Kontaktdaten: deine E-Mail → Richtlinie akzeptieren → **Erstellen**
+4. **Zielgruppe** (Audience) → Veröffentlichungsstatus → **App veröffentlichen** («In Produktion»). **Wichtig:** Im Status «Test» läuft der Zugang nach 7 Tagen ab und das Cockpit verliert YouTube. Eine Google-Prüfung braucht es für deine eigenen Kanäle nicht – beim Verbinden zeigt Google einmal «Google hat diese App nicht überprüft»: **Erweitert → Weiter zu QNH Cockpit**.
+5. **Clients → Client erstellen** → Anwendungstyp **Webanwendung**, Name `Cockpit` → **Autorisierte Weiterleitungs-URIs** – genau diese zwei:
+   ```
+   https://cockpit.setqnh.ch/youtube-callback.html
+   http://localhost:5185/youtube-callback.html
+   ```
+   → **Erstellen**. Google zeigt **Client-ID** und **Clientschlüssel** (beginnt mit `GOCSPX-`).
+6. Beides **selbst** als Supabase-Secrets setzen (PowerShell, nicht in einen Chat kopieren):
+   ```
+   npx supabase secrets set GOOGLE_CLIENT_ID=DIE_CLIENT_ID GOOGLE_CLIENT_SECRET=DER_CLIENTSCHLUESSEL --project-ref PROJEKT-ID
+   ```
+7. Cockpit → **Social** → unter den Konten die App/Marke wählen (z. B. «Leeside Lab») → **YouTube-Kanal verbinden** → mit dem Google-Konto anmelden → den **Kanal** wählen → **beide Häkchen** setzen (Videos hochladen, Kommentare verwalten) → zurück im Cockpit steht «YouTube-Kanal … verbunden».
+
+Was dabei passiert: Der dauerhafte Zugang von Google landet direkt in Supabase Vault (`google_token_<app>_youtube`) – niemand sieht ihn, auch du nicht. Zurückziehen: [myaccount.google.com/permissions](https://myaccount.google.com/permissions) → QNH Cockpit → Zugriff entfernen. Danach im Cockpit neu verbinden.
+
+**Kosten/Kontingent:** gratis. YouTube gibt jedem Projekt ein Tageskontingent; Kommentare abholen kostet wenige Einheiten pro Durchgang, eine Antwort 50 Einheiten.
+
 ## Was das System macht (und was nicht)
 - Veröffentlicht **nur freigegebene** Beiträge, nie automatisch einen Entwurf. Die Datenbank erzwingt das zusätzlich.
 - Höchstens **3 Versuche** pro Beitrag, mit verständlicher Fehlermeldung. Kein doppeltes Posten.
 - Hält das Tageslimit von Instagram ein (100 Beiträge in 24 Stunden) und wartet sonst.
 - Facebook-Seiten: im Code vorbereitet, **ausgeschaltet** (`FACEBOOK_ENABLED`).
 
-## Offen – Stufe 2 (später, nicht jetzt)
-- **Posteingang:** Kommentare auf eigene Beiträge und Direktnachrichten im Cockpit lesen, Antwortentwürfe vorbereiten – **senden tust du selbst** per Klick.
-- Spam-Kommentare ausblenden, Willkommensnachricht für neue Follower.
+## Offen – später
+- **Direktnachrichten** im Cockpit (Kommentare sind erledigt, siehe oben). Braucht `instagram_business_manage_messages`.
+- Willkommensnachricht für neue Follower.
 - **Nicht** vorgesehen und gegen die Instagram-Regeln: automatisch liken, folgen oder bei fremden Konten kommentieren.
-- Braucht zusätzlich die Berechtigungen `instagram_business_manage_comments` (schon oben) und `instagram_business_manage_messages`.

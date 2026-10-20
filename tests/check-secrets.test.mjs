@@ -41,3 +41,8 @@ test("private .env values must not appear", () => {
   const root = project({ "src/a.js": "const t = 'supersecretvalue123';" }, "META_TOKEN=supersecretvalue123\nVITE_X_URL=https://x\n");
   assert.match(checkSecrets(root)[0], /META_TOKEN/);
 });
+
+test("Google client secret and tokens are found, URLs with // are not", () => {
+  const p = checkSecrets(project({ "supabase/functions/f/x.ts": `"GOCSPX-${"a".repeat(28)}" "1//0g${"b".repeat(60)}" "ya29.${"c".repeat(40)}"`, "src/a.js": `const u = "https://www.googleapis.com/youtube/v3"; // 1// comment` }));
+  assert.equal(p.length, 3);
+});

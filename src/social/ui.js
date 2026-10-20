@@ -6,16 +6,19 @@ import { KINDS, LIMITS, aspectLabel, countHashtags, formatZurich, formatZurichDa
 import { readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
+import { createInbox } from "./inbox-ui.js";
 
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
-const PLATFORM = { instagram: "Instagram", facebook: "Facebook" };
+const PLATFORM = { instagram: "Instagram", facebook: "Facebook", youtube: "YouTube" };
 const LOCKED = ["approved", "publishing", "published"];
 
-export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "" }) {
+export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [] }) {
   S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views" };
   let unsubscribe = null;
   let reloadTimer;
+  const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
+  let connectChecked = false;
 
   // ---------- data ----------
   async function load(force = false) {
@@ -30,10 +33,17 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       st.error = err;
     }
     st.loading = false;
-    if (!S.social.editor || !document.activeElement?.closest?.(".soc-editor")) render();
+    if (st.value) {
+      inbox.watch();
+      if (!connectChecked) { connectChecked = true; inbox.finishConnect(); } // back from «YouTube verbinden»
+    }
+    const typing = document.activeElement?.closest?.(".soc-editor, .cmt-reply");
+    if (!typing) render();
   }
 
   const accounts = () => S.social.value?.accounts ?? [];
+  // accounts the editor can publish to (YouTube: comments only for now)
+  const publishable = () => accounts().filter((a) => a.platform !== "youtube");
   const posts = () => S.social.value?.posts ?? [];
   const places = () => S.social.value?.locations ?? [];
   // not yet published post that looks like something already on Instagram → warning
@@ -60,16 +70,18 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const failed = posts().filter((p) => p.status === "failed").length;
     const drafts = posts().filter((p) => p.status === "draft").length;
     const expiring = accounts().filter((a) => a.active && daysLeft(a.token_expires_at) !== null && daysLeft(a.token_expires_at) < 14);
-    const tile = (label, value, sub, alert) => `<a class="tile${alert ? " alert" : ""}" href="#social"><span class="tile-label">${label}</span><span class="tile-num">${value}</span>${sub ? `<span class="tile-sub">${esc(sub)}</span>` : ""}</a>`;
+    const tile = (label, value, sub, alert, href = "#social") => `<a class="tile${alert ? " alert" : ""}" href="${href}"><span class="tile-label">${label}</span><span class="tile-num">${value}</span>${sub ? `<span class="tile-sub">${esc(sub)}</span>` : ""}</a>`;
+    const open = inbox.count();
     return `<section class="card"><div class="card-head"><span class="dot dot-social"></span><div><h2>Social</h2><p class="muted">Beiträge aller Apps</p></div></div>
       <div class="tiles">
         ${tile("Geplant", num(planned.length), planned[0] ? `nächster: ${formatZurich(planned[0].scheduled_at)}` : "", false)}
         ${tile("Entwürfe", num(drafts), "", false)}
         ${tile("Fehler", num(failed), "", failed > 0)}
+        ${open ? tile("Kommentare", num(open), "warten auf Antwort", false, "#social/kommentare") : ""}
         ${expiring.length ? tile("Token läuft ab", num(expiring.length), expiring.map((a) => `@${a.handle}: ${daysLeft(a.token_expires_at)} Tage`).join(", "), true) : ""}
       </div></section>`;
   }
-  const badge = () => posts().filter((p) => p.status === "failed").length;
+  const badge = () => posts().filter((p) => p.status === "failed").length + inbox.count();
 
   // ---------- list ----------
   function view() {
@@ -85,20 +97,21 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const accountRows = accounts().map((a) => {
       const left = daysLeft(a.token_expires_at);
-      const token = left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
+      const token = a.platform === "youtube" ? "verbunden (Kommentare)" : left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
       return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span></li>`;
     }).join("");
-    const modes = [["list", "Liste"], ["calendar", "Kalender"], ["stats", "Statistik"]].map(([v, l]) =>
+    const openComments = inbox.count(false);
+    const modes = [["list", "Liste"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` (${openComments})` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
       `<button class="chip${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}">${l}</button>`).join("");
     return `<div class="toolbar"><div class="chips">${modes}<span class="chip-sep"></span>${chips}</div>
         <div class="row-right">
           ${reviewQueue().length ? `<button class="btn" data-action="soc-review">Freigabe-Runde (${reviewQueue().length})</button>` : ""}
           <button class="btn ghost" data-action="soc-pick-package">Paket importieren</button>
-          <button class="btn" data-action="soc-new"${accounts().length ? "" : " disabled"}>Neuer Beitrag</button>
+          <button class="btn" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
-      ${accounts().length ? `<ul class="accounts">${accountRows}</ul>` : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
+      ${accounts().length ? `<ul class="accounts">${accountRows}${inbox.connectRow()}</ul>` : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
-      ${st.mode === "stats" ? statsView() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
+      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
         const rows = shown.filter((p) => statuses.includes(p.status))
           .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
         return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
@@ -160,7 +173,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "stats"].includes(m) ? m : "list"; } catch { return "list"; }
+    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "stats", "comments"].includes(m) ? m : "list"; } catch { return "list"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -347,7 +360,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   function openEditor(post, { duplicate = false } = {}) {
-    const fallback = accounts().find((a) => S.social.filter === "all" || a.app_id === S.social.filter) ?? accounts()[0];
+    const fallback = publishable().find((a) => S.social.filter === "all" || a.app_id === S.social.filter) ?? publishable()[0];
     const items = (post?.media ?? []).map((m) => (duplicate ? { ...m, copyFrom: m.path, path: null } : { ...m }));
     S.social.editor = {
       id: post && !duplicate ? post.id : crypto.randomUUID(),
@@ -428,7 +441,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           ${ed.last_error ? `<p class="error">${esc(ed.last_error)}</p>` : ""}
           ${ed.isNew ? "" : twinHtml(twinOf({ ...ed, remote_media_id: posts().find((p) => p.id === ed.id)?.remote_media_id }))}
           <label class="field">Konto
-            <select name="soc-account"${dis}>${accounts().map((a) => `<option value="${a.id}"${a.id === ed.account_id ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}</select></label>
+            <select name="soc-account"${dis}>${publishable().map((a) => `<option value="${a.id}"${a.id === ed.account_id ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}</select></label>
           <div class="field">Art<div class="chips">${kinds}</div></div>
           ${ed.mediaDeleted ? `<p class="note">Die Dateien wurden 14 Tage nach der Veröffentlichung gelöscht.</p>` : ""}
           ${ro ? "" : `<div class="dropzone" data-drop="files" data-action="soc-pick-files" role="button" tabindex="0">
@@ -647,6 +660,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- events (called from main.js) ----------
   async function onClick(action, el) {
+    if (action.startsWith("soc-cmt-") || action.startsWith("soc-yt-")) return inbox.onClick(action, el);
     const st = S.social;
     const ed = st.editor;
     const id = el.dataset.id;
@@ -759,6 +773,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   function onInput(e) {
+    if (inbox.onInput(e)) return true;
     const ed = S.social.editor;
     const name = e.target.name ?? "";
     if (!ed || !name.startsWith("soc-")) return false;
@@ -867,5 +882,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
   }
 
-  return { onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart };
+  // #social/kommentare opens the inbox (link from «Heute»)
+  const setMode = (mode) => { if (["list", "calendar", "comments", "stats"].includes(mode)) S.social.mode = mode; };
+  return { onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode, commentCount: () => inbox.count() };
 }

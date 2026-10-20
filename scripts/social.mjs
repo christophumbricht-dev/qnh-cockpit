@@ -5,6 +5,8 @@
 //   npm run social -- import              import new packages, update changed drafts
 //   npm run social -- import <ordner> …   only these folders (also packages whose time has passed)
 //   npm run social -- stats [--app downwind] [--days 28] [--json] [--refresh]   Instagram statistics (docs/social-statistik.md)
+//   npm run social -- comments [fetch] [--all] [--app leesidelab]   comments on our posts/videos (Social → «Kommentare»)
+//   npm run social -- comments draft <id> "…"                         reply suggestion – Christoph sends it himself
 //   npm run social -- import --replace    also take over changed packages of approved/edited posts (asks Christoph first!)
 //
 // Uses Christoph's admin session from `npm run roadmap -- login`. Remembers what was imported in
@@ -15,6 +17,7 @@ import { join } from "node:path";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { EDITABLE, jpegSize, packageHash, plan } from "./social-lib.mjs";
 import { stats } from "./social-stats.mjs";
+import { comments } from "./social-comments.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
 import { PackageError, parsePackage } from "../src/social/package.js";
 import { KINDS, formatZurich, validatePost, zurichToUtc } from "../src/social/validate.js";
@@ -103,8 +106,9 @@ const firstLine = (t) => String(t ?? "").split("\n").find(Boolean)?.slice(0, 70)
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  if (!["status", "import", "stats"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh]");
+  if (!["status", "import", "stats", "comments"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"]");
   if (cmd === "stats") return stats(await signedIn(), args(process.argv.slice(3), ["json", "refresh"]));
+  if (cmd === "comments") return comments(await signedIn(), args(process.argv.slice(3), ["json", "all", "clear"]));
   const a = args(rest, ["replace"]);
   const only = new Set(a._);
   if (!existsSync(DIR)) fail(`Ordner fehlt: ${DIR}`);
