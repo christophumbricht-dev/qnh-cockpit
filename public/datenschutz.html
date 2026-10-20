@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datenschutz – QNH Cockpit</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #f3f5f8; --surface: #ffffff; --ink: #102a43; --muted: #486581; --line: #d9e2ec; --brand: #0b7285; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0a1520; --surface: #111f2e; --ink: #e6edf3; --muted: #8aa1b8; --line: #20344a; --brand: #3bc9db; color-scheme: dark; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 700px; margin: 0 auto; padding: 48px max(16px, env(safe-area-inset-left, 0px)) 64px; display: grid; gap: 18px; }
+  h1 { margin: 0; font-size: 30px; line-height: 1.15; }
+  h2 { margin: 12px 0 0; font-size: 19px; }
+  p, ul { margin: 0; }
+  ul { padding-left: 20px; display: grid; gap: 6px; }
+  .muted { color: var(--muted); }
+  a { color: var(--brand); }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="app.html">← QNH Cockpit</a></p>
+  <h1>Datenschutzerklärung QNH Cockpit</h1>
+  <p class="muted">Stand: Oktober 2026</p>
+
+  <h2>Verantwortlich</h2>
+  <p>QNH, Christoph Umbricht, Schweiz. Kontakt: <a href="mailto:hello@setqnh.ch">hello@setqnh.ch</a></p>
+
+  <h2>Wofür das Cockpit da ist</h2>
+  <p>Das QNH Cockpit ist ein internes Werkzeug. Nur der Inhaber kann sich anmelden. Es verwaltet die eigenen Apps und die eigenen Social-Media-Kanäle von QNH.</p>
+
+  <h2>Daten von Google (YouTube)</h2>
+  <p>Wenn der Inhaber einen YouTube-Kanal verbindet, erhält das Cockpit mit seiner Zustimmung Zugriff auf diesen Kanal. Verarbeitet werden:</p>
+  <ul>
+    <li>Kanal-ID und Kanalname, um den Kanal im Cockpit anzuzeigen.</li>
+    <li>Ein Zugangsschlüssel von Google (Refresh-Token). Er liegt verschlüsselt im Schlüsseltresor der Datenbank (Supabase Vault) und wird nirgends angezeigt.</li>
+    <li>Videos, Titel und Beschreibungen, die der Inhaber selbst vorbereitet und freigibt. Sie werden zur freigegebenen Zeit auf seinen Kanal hochgeladen.</li>
+    <li>Kommentare unter den eigenen Videos (Name und Profil-Link der kommentierenden Person, Text, Zeitpunkt), damit der Inhaber sie lesen und beantworten kann.</li>
+  </ul>
+  <p>Die Daten werden nur für diese Zwecke genutzt. Sie werden nicht verkauft, nicht für Werbung verwendet, nicht an Dritte weitergegeben und nicht zum Training von KI-Modellen verwendet. Die Nutzung von Informationen aus Google-APIs hält sich an die <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, einschliesslich der Anforderungen zur eingeschränkten Nutzung (Limited Use).</p>
+
+  <h2>Daten von Instagram</h2>
+  <p>Für die eigenen Instagram-Konten gilt dasselbe: Das Cockpit veröffentlicht freigegebene Beiträge, ruft Statistiken der eigenen Beiträge ab und zeigt Kommentare darunter an.</p>
+
+  <h2>Wo die Daten liegen</h2>
+  <ul>
+    <li>Datenbank und Dateien: Supabase (Zugriff nur für den Inhaber, geschützt durch Zugriffsregeln in der Datenbank).</li>
+    <li>Die Webseite selbst: GitHub Pages. Sie speichert keine Personendaten.</li>
+  </ul>
+  <p>Kommentare werden gespeichert, solange sie im Cockpit gebraucht werden. Auf Anfrage löschen wir sie.</p>
+
+  <h2>Zugriff widerrufen</h2>
+  <p>Den Zugriff auf YouTube kann der Inhaber jederzeit unter <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> entziehen. Danach kann das Cockpit nichts mehr auf dem Kanal tun.</p>
+
+  <h2>Deine Rechte</h2>
+  <p>Wer einen Kommentar unter unseren Videos oder Beiträgen geschrieben hat, kann jederzeit Auskunft oder Löschung der im Cockpit gespeicherten Kopie verlangen: <a href="mailto:hello@setqnh.ch">hello@setqnh.ch</a>.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QNH Cockpit</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #f3f5f8; --surface: #ffffff; --ink: #102a43; --muted: #486581; --line: #d9e2ec; --brand: #0b7285; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0a1520; --surface: #111f2e; --ink: #e6edf3; --muted: #8aa1b8; --line: #20344a; --brand: #3bc9db; color-scheme: dark; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 48px max(16px, env(safe-area-inset-left, 0px)) 64px; display: grid; gap: 20px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand svg { width: 30px; height: 40px; }
+  h1 { margin: 0; font-size: 32px; line-height: 1.15; }
+  h2 { margin: 8px 0 0; font-size: 19px; }
+  p, ul { margin: 0; }
+  ul { padding-left: 20px; display: grid; gap: 6px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; display: grid; gap: 10px; }
+  a { color: var(--brand); }
+  footer { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <svg viewBox="40 44 90 122" aria-hidden="true"><g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><polyline points="50,155 85,120 120,155" stroke="#99E9F2"/><polyline points="50,122 85,87 120,122" stroke="#22B8CF"/><polyline points="50,89 85,54 120,89" stroke="#0B7285"/></g></svg>
+    <h1>QNH Cockpit</h1>
+  </div>
+  <p>Das QNH Cockpit ist das interne Verwaltungswerkzeug von QNH (Christoph Umbricht, Schweiz) für die eigenen Apps und die eigenen Social-Media-Kanäle. Es ist nicht öffentlich nutzbar: Anmelden kann sich nur der Inhaber.</p>
+
+  <section class="card">
+    <h2>Was das Cockpit tut</h2>
+    <ul>
+      <li>Aufgaben, Termine und Kosten der eigenen Apps an einem Ort zeigen.</li>
+      <li>Beiträge für die eigenen Instagram-Konten und YouTube-Kanäle planen. Veröffentlicht wird nur, was der Inhaber vorher freigegeben hat.</li>
+      <li>Kommentare unter den eigenen Beiträgen und Videos anzeigen, damit der Inhaber sie beantworten, ausblenden oder löschen kann – jede Aktion auf seinen Klick.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Zugriff auf YouTube</h2>
+    <p>Der Inhaber verbindet seine eigenen YouTube-Kanäle über die Anmeldung bei Google und stimmt dabei ausdrücklich zu. Das Cockpit nutzt den Zugriff nur, um von ihm freigegebene Videos auf diese Kanäle hochzuladen und Kommentare unter diesen Videos zu verwalten. Daten aus Google-APIs werden nicht verkauft, nicht für Werbung genutzt und nicht an Dritte weitergegeben.</p>
+    <p>Mehr dazu in der <a href="datenschutz.html">Datenschutzerklärung</a>.</p>
+  </section>
+
+  <footer class="muted">
+    <a href="datenschutz.html">Datenschutzerklärung</a>
+    <span>Kontakt: <a href="mailto:hello@setqnh.ch">hello@setqnh.ch</a></span>
+    <a href="./">Zum Cockpit (Anmeldung)</a>
+  </footer>
+</main>
+</body>
+</html>
