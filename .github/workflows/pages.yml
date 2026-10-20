@@ -32,7 +32,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: npm test
+        # on failure, the failing tests are also shown as an annotation on the run (readable without the log)
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt || {
+            node -e 'const t=require("fs").readFileSync("test-output.txt","utf8").split("\n");const out=[];t.forEach((l,i)=>{if(/^\s*not ok/.test(l))out.push(t.slice(i,i+30).join("\n"))});const s=(out.join("\n---\n")||t.slice(-60).join("\n")).slice(0,3500).replace(/%/g,"%25").replace(/\r/g,"%0D").replace(/\n/g,"%0A");console.log("::error title=npm test failed::"+s)'
+            exit 1
+          }
       - name: Edge Function tests (Deno)
         run: npm run test:functions
       - run: npm run check:secrets

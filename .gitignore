@@ -8,3 +8,4 @@ pakete/
 roadmap-local/
 # old guide PDF contains a private e-mail address – regenerate from the .docx before committing a PDF
 docs/*.pdf
+test-output.txt
