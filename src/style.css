@@ -18,10 +18,10 @@
   --brand: #0b7285;
   --brand-2: #22b8cf;
   --brand-soft: #e3f8fa;
-  --alert: #d9480f;
+  --alert: #c2410c;
   --alert-soft: #fff1e6;
-  --warn: #b35c00;
-  --ok: #2b8a3e;
+  --warn: #9a4d00;
+  --ok: #237032;
   --ok-soft: #e7f5ea;
   --side: #102a43;
   --side-ink: #d9e2ec;
@@ -150,20 +150,6 @@ kbd { font: 500 11px/1 var(--mono); border: 1px solid currentColor; border-radiu
 .calm-card p { margin: 0; }
 .calm-icon { width: 46px; height: 46px; padding: 11px; border-radius: 50%; background: var(--ok-soft); color: var(--ok); transform: rotate(-30deg); }
 
-/* to-do list on "Heute" */
-.todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.todo-item {
-  display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line);
-  border-radius: 14px; color: var(--ink); text-decoration: none; box-shadow: var(--shadow); transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.todo-item:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
-.todo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand-2); flex: none; }
-.todo-item.alert .todo-dot { background: var(--alert); box-shadow: 0 0 0 4px var(--alert-soft); }
-.todo-item.info .todo-dot { box-shadow: 0 0 0 4px var(--brand-soft); }
-.todo-label { flex: 1; font-weight: 600; }
-.todo-where { --app: var(--brand); font-size: 12px; font-weight: 600; color: var(--app); background: color-mix(in srgb, var(--app) 12%, transparent); padding: 3px 9px; border-radius: 99px; }
-.todo-arrow { color: var(--muted); width: 18px; height: 18px; }
-
 /* app cards on "Heute" */
 .app-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .app-card {
@@ -203,22 +189,7 @@ kbd { font: 500 11px/1 var(--mono); border: 1px solid currentColor; border-radiu
 .goal.big { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); margin: 18px 0 16px; }
 .goal.big .goal-num b { font-size: 26px; }
 .goal.big .goal-track { height: 14px; }
-@media (prefers-reduced-motion: reduce) { .goal-track span, .todo-item, .app-card, .ac-arrow { transition: none; } }
-
-/* social snapshot */
-.social-snap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.snap-stats { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.snap-stats a { display: flex; align-items: baseline; gap: 6px; padding: 8px 14px; background: var(--surface-2); border-radius: 10px; color: var(--ink); text-decoration: none; }
-.snap-stats a:hover { background: var(--brand-soft); }
-.snap-stats b { font: 700 20px var(--display); }
-.snap-stats span { font-size: 13px; color: var(--muted); }
-.snap-stats .btn { margin-left: auto; }
-.snap-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
-.snap-list a { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 6px; color: var(--ink); text-decoration: none; border-radius: 8px; }
-.snap-list a:hover { background: var(--surface-2); }
-.snap-list .ico { color: var(--brand); width: 18px; height: 18px; }
-.snap-when { font-weight: 600; white-space: nowrap; flex: none; }
-.snap-what { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .goal-track span, .app-card, .ac-arrow { transition: none; } }
 
 /* tiles (app page) */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
@@ -336,8 +307,6 @@ blockquote { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--li
 .gate-card > .muted { margin: 2px 0 20px; text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px; }
 
 /* ---- social (tab) ---- */
-.accounts { list-style: none; padding: 0; margin: 0 0 8px; font-size: 14px; }
-.accounts li { padding: 2px 0; }
 h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 26px 0 10px; display: flex; gap: 8px; align-items: baseline; }
 .soc-item { display: grid; grid-template-columns: 72px 1fr; gap: 14px; align-items: start; }
 .thumb { width: 72px; height: 90px; object-fit: cover; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); display: block; }
@@ -391,7 +360,6 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
   .nav-label { flex: none; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .desk-text { display: none; }
   .phone-text { display: inline !important; }
-  .slot-1 { order: 1; } .slot-2 { order: 2; } .slot-3 { order: 3; } .slot-4 { order: 4; } .slot-5 { order: 5; }
   .mobile-top { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--side); }
   .mobile-top .brand { margin-right: auto; font-size: 16px; }
   .page-head, .page { padding-left: 16px; padding-right: 16px; }
@@ -400,10 +368,8 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
   .page-head h1 { font-size: 24px; }
   .kpi-num, .tile-num { font-size: 26px; }
   .app-cards { grid-template-columns: 1fr; }
-  .snap-stats .btn { margin-left: 0; }
   .who { margin-left: 0; width: 100%; }
 }
-@media (max-width: 860px) { .snap-list a { flex-wrap: wrap; row-gap: 0; } .snap-what { flex-basis: 100%; padding-left: 28px; } }
 @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tile { padding: 12px; } .tile-row { grid-template-columns: 1fr; gap: 6px; } .tile-num { font-size: 24px; } .kpis { gap: 8px; } }
 
 /* ---- photos (Jürg Umbricht, @exploring_the_skies) ---- */
@@ -563,8 +529,6 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .focus-list { margin: 4px 0 12px; padding-left: 22px; }
 .focus-list li { margin: 4px 0; }
 .focus-card .actions { margin-top: 18px; }
-.next-card { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.next-card .next-title { font: 600 18px/1.3 var(--display); flex: 1; min-width: 200px; }
 
 .soc-todo a, .soc-todo-preview a { color: inherit; font-weight: 600; overflow-wrap: anywhere; }
 .soc-todo .copy, .soc-todo-preview .copy { margin: 0 0 0 2px; font-size: 12px; }
@@ -661,7 +625,7 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
 .hello-actions .btn.ghost { color: var(--ink-2); border-color: var(--line); background: var(--surface); }
 .hello-actions kbd { margin-left: 4px; color: var(--muted); }
 
-.instruments { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 22px; }
+.instruments { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-top: 22px; }
 .instr { display: grid; gap: 6px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); text-decoration: none; box-shadow: var(--shadow); transition: transform 0.15s ease, box-shadow 0.15s ease; min-width: 0; }
 .instr:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
 .instr-label { display: flex; align-items: center; gap: 8px; font: 400 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
@@ -702,7 +666,7 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
 .lane-week .ag-link { padding-top: 10px; padding-bottom: 10px; }
 .lane-week .ag-link .app-badge, .lane-week .row-icon { width: 28px; height: 28px; border-radius: 8px; font-size: 13px; }
 
-.next-card { --app: var(--brand); display: grid; gap: 12px; background: var(--side); color: #d9e2ec; border-radius: 18px; padding: 22px; box-shadow: var(--shadow-lift); }
+.next-card { --app: var(--brand); display: grid; gap: 12px; background: var(--side); color: #d9e2ec; border: 1px solid color-mix(in srgb, var(--brand-2) 28%, transparent); border-radius: 18px; padding: 22px; box-shadow: var(--shadow-lift); }
 .next-eyebrow { font: 400 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #99e9f2; }
 .next-card h2 { margin: 0; font: 700 21px/1.25 var(--display); color: #fff; }
 .next-due { font-size: 13px; color: #9fb3c8; }
@@ -749,7 +713,6 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
 
 /* ---- Finanzen ---- */
 .fin-tiles .fin-num { font-size: 22px; line-height: 1.15; }
-.fin-snap b { font-size: 18px; }
 .fin-bill { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; align-items: start; }
 .fin-main { min-width: 0; }
 .fin-date { display: grid; place-content: center; text-align: center; width: 56px; height: 56px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
@@ -859,9 +822,11 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
 @media (max-width: 860px) {
   .channels { grid-template-columns: minmax(0, 1fr); }
   .seg { width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .seg-btn { flex: 1 0 auto; padding: 0 12px; }
+  .seg-btn { flex: 1 0 auto; padding: 0 9px; font-size: 13px; }
+  .channel-card { padding: 14px; gap: 10px; }
+  .channel-stats div:nth-child(2n) { display: none; }
   .soc-top .row-right:not(:has(.btn:not(.desk-only))) { display: none; }
-  .ph-title { flex-wrap: nowrap; align-items: flex-start; }
+  .ph-title:not(:has(.who)) { flex-wrap: nowrap; align-items: flex-start; }
   .ph-icon { width: 36px; height: 36px; padding: 7px; }
 }
 
@@ -897,3 +862,7 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
 .fc-total { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0; font-size: 14px; }
 .fin-costs > .btn { justify-self: start; }
 .warn-pill { background: var(--alert-soft); color: var(--warn); }
+.side-title { margin: 0; font: 700 17px/1.2 var(--display); }
+.next-steps li.done { text-decoration: line-through; color: #9fb3c8; }
+:root[data-theme="dark"] .fab { color: #062530; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fab { color: #062530; } }

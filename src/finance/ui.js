@@ -225,12 +225,12 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     const list = rows.length ? `<div class="card fin-costs"><ul>${rows.map((c) => {
         const next = nextRenewal(c, today);
         const soon = next && c.notice_days && daysBetween(today, next) <= c.notice_days;
-        const bits = [INTERVALS[c.interval], c.payment, next ? `nächste ${shortDate(next)}` : "", c.notice_days ? `Erinnerung ${c.notice_days} Tage vorher` : ""].filter(Boolean);
+        const bits = [c.provider, INTERVALS[c.interval], c.payment, next ? `nächste ${shortDate(next)}` : "", c.notice_days ? `Erinnerung ${c.notice_days} Tage vorher` : ""].filter(Boolean);
         return `<li class="${c.active === false ? "off" : ""}">
-          <div class="fc-main"><span class="fc-name"><b>${esc(c.name)}</b>${soon ? ` <span class="pill warn-pill">kündbar bis ${esc(shortDate(next))}</span>` : ""}</span>
+          <div class="fc-main"><span class="fc-name"><b>${esc(c.name)}</b>${soon ? ` <span class="pill warn-pill">verlängert am ${esc(shortDate(next))}</span>` : ""}</span>
             <span class="muted small">${scopeBadge(c.scope)} ${esc(scopeName(c.scope))} · ${esc(bits.join(" · "))}</span>
             <span class="fc-actions">${web(c.url) ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">Verwalten ↗</a>` : ""}<button class="link" data-action="fin-edit-cost" data-id="${c.id}">Bearbeiten</button></span></div>
-          <div class="fc-amount"><span class="mono-num">${esc(money(c.amount, c.currency))}</span>${c.interval !== "once" && c.interval !== "monthly" ? `<span class="muted small">≈ ${esc(amountText(monthly(c)))} / Mt.</span>` : ""}</div></li>`;
+          <div class="fc-amount"><span class="mono-num">${esc(money(c.amount, c.currency))}</span>${c.interval !== "once" && c.interval !== "monthly" ? `<span class="muted small">≈ ${esc(money(monthly(c), c.currency))} / Mt.</span>` : ""}</div></li>`;
       }).join("")}</ul>
       <p class="fc-total"><span>Total aktiv pro Monat</span><b class="mono-num">${esc(moneyList(monthlyTotals(rows)))}</b></p>
       <button class="btn ghost" data-action="fin-new-cost">+ Abo / Kosten</button></div>`

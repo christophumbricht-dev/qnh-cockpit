@@ -62,7 +62,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
   // open = "In Arbeit" or "Als Nächstes"; order: due date (overdue first), in progress before next, board order
   function focusQueue(scope = null) {
     return (S.qnh.items ?? [])
-      .filter((i) => (i.status === "doing" || i.status === "next") && (!scope || scope === "all" || i.scope === scope))
+      .filter((i) => (i.status === "doing" || i.status === "next") && (!scope || scope === "all" || i.scope === scope) && !(i.snoozed_until && i.snoozed_until > zurichToday()))
       .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || (a.status === "doing" ? 0 : 1) - (b.status === "doing" ? 0 : 1)
         || a.sort - b.sort || String(a.created_at).localeCompare(String(b.created_at)));
   }
@@ -356,5 +356,5 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     return true;
   }
 
-  return { nextTask, startFocus, load, roadmapView, hangarView, dueSoon, agenda, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
+  return { nextTask, repeatSupported, startFocus, load, roadmapView, hangarView, dueSoon, agenda, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
 }

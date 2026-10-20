@@ -12,7 +12,7 @@ import { qnhReady } from "./qnh/data.js";
 import { createStore } from "./store/ui.js";
 import { createFinance } from "./finance/ui.js";
 import { financeConfigured } from "./finance/data.js";
-import { money, moneyList, monthlyTotals, owedPrivately, sumBy, upcoming, zurichToday } from "./finance/calc.js";
+import { billDue, money, moneyList, monthlyTotals, owedPrivately, sumBy, upcoming, zurichToday } from "./finance/calc.js";
 import { isOpen } from "./social/inbox.js";
 import { LANES, buildAgenda, isoWeek, laneForDate, needsYou } from "./today.js";
 
@@ -123,7 +123,7 @@ function route() {
   if (first === "social") {
     S.tab = "social";
     if (second === "kommentare") social.setMode("comments");
-    else if (second && [...APPS, ...BRANDS].some((b) => b.id === second)) S.social.filter = second; // a channel from the sidebar
+    else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }
   else if (first === "apps") S.tab = "apps";
   else if (first === "roadmap") S.tab = "roadmap-all";
@@ -164,6 +164,7 @@ function render(force = false) {
   lastHtml = html;
   root.innerHTML = html;
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
+  sheetFocus();
   social.afterRender();
 }
 
@@ -189,20 +190,21 @@ function shell() {
   const channels = socialConfigured() ? (S.social?.value?.accounts ?? []).filter((x) => x.active !== false) : [];
   const channelItems = channels.map((c) => `<a class="nav-sub desk-only${S.tab === "social" && S.social.filter === c.app_id ? " on" : ""}" href="#social/${esc(c.app_id)}">${icon(c.platform === "youtube" ? "play" : "camera")}<span class="nav-label">${esc(c.platform === "youtube" ? c.handle || appById(c.app_id)?.name || "YouTube" : `@${c.handle}`)}</span></a>`).join("");
   const finBadge = financeConfigured() ? finance.badge() : 0;
-  return `<div class="shell">
+  return `<div class="shell"${S.sheet ? " inert" : ""}>
     <aside class="side" aria-label="Navigation">
       <a href="#" class="brand" aria-label="QNH Cockpit – Heute">${logo()}<span>QNH <b>Cockpit</b></span></a>
       <button class="search-btn" data-action="search-open">${icon("search")}<span>Suchen</span><kbd>Ctrl K</kbd></button>
       <nav class="side-nav">
-        ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount, `slot-1${lanes.now.length ? " hot" : ""}`)}
-        ${qnhReady() ? navItem("#roadmap", S.tab === "roadmap-all", icon("tasks"), "Aufgaben", 0, "slot-2") : ""}
-        ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "slot-5 hot") : ""}
+        ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount, lanes.now.length ? "hot" : "")}
+        ${qnhReady() ? navItem("#roadmap", S.tab === "roadmap-all", icon("tasks"), "Aufgaben", 0) : ""}
+        ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "desk-only hot") : ""}
         <p class="side-label">Apps</p>
         ${appItems}
-        ${navItem("#apps", S.tab === "apps" || isAppPage(), icon("grid"), "Apps", appsBadge, "slot-3 phone-only")}
+        ${navItem("#apps", S.tab === "apps" || isAppPage(), icon("grid"), "Apps", appsBadge, "phone-only")}
         ${qnhReady() && socialConfigured() ? `<p class="side-label">Social</p>
-          ${navItem("#social", S.tab === "social" && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge(), "slot-4")}
+          ${navItem("#social", S.tab === "social" && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge())}
           ${channelItems}` : ""}
+        ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "phone-only hot") : ""}
         ${qnhReady() ? navItem("#hangar", S.tab === "hangar", icon("folder"), "Hangar", 0, "desk-only nav-bottom") : ""}
       </nav>
       <div class="side-foot">
@@ -230,6 +232,17 @@ function shell() {
   ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ""}`;
 }
 
+// an open sheet takes the focus (the page behind is inert); when it closes, focus goes back to the button that opened it
+let sheetWas = null;
+function sheetFocus() {
+  if (S.sheet && !root.querySelector(".sheet")?.contains(document.activeElement)) root.querySelector(".sheet .sheet-item")?.focus();
+  if (!S.sheet && sheetWas) {
+    const back = [...root.querySelectorAll(`[data-action="sheet"][data-value="${sheetWas}"]`)].find((b) => b.offsetParent !== null);
+    back?.focus();
+  }
+  sheetWas = S.sheet;
+}
+
 // small menus: «Neu» (quick add from anywhere) and, on the phone, what does not fit in the bottom bar
 function sheet() {
   const item = (attrs, ico, label, sub = "") => `<button class="sheet-item" ${attrs}>${icon(ico)}<span><b>${esc(label)}</b>${sub ? `<span class="muted small">${esc(sub)}</span>` : ""}</span></button>`;
@@ -237,7 +250,8 @@ function sheet() {
     ? `<h2>Neu</h2>
       ${item('data-action="quick-task"', "tasks", "Aufgabe", "in die Roadmap")}
       ${financeConfigured() ? item('data-action="quick-bill"', "wallet", "Rechnung erfassen", "PDF oder Foto, QR-Rechnung wird gelesen") : ""}
-      ${socialConfigured() ? item('data-action="go-new-post"', "chat", "Beitrag", "Instagram oder YouTube") : ""}`
+      ${socialConfigured() && S.social?.value?.accounts?.length ? item('data-action="go-new-post"', "chat", "Beitrag", "Instagram oder YouTube") : ""}
+      ${socialConfigured() ? item('data-action="quick-package"', "folder", "Paket importieren", "Ordner oder ZIP mit post.json") : ""}`
     : `<h2>Menü</h2>
       ${item('data-action="go" data-value="#hangar"', "folder", "Hangar", "Links und Ablage")}
       ${item('data-action="search-open"', "search", "Suchen")}
@@ -423,15 +437,15 @@ function nextCard() {
   if (!t) return "";
   const sc = qnh.scopeOf(t.scope);
   const late = t.due && new Date(`${t.due}T23:59:59`) < new Date();
-  const steps = String(t.body ?? "").split("\n").map((l) => l.match(/^\s*(?:[-•*]|\[[ x]?\])\s+(.*)$/i)?.[1]).filter(Boolean);
+  const steps = String(t.body ?? "").split("\n").map((l) => l.match(/^\s*([-•*]|\[[ x]?\])\s+(.*)$/i)).filter(Boolean).map((m) => ({ text: m[2], done: /^\[x\]$/i.test(m[1]) }));
   return `<section class="next-card" style="--app:${esc(sc.color)}" aria-labelledby="next-title">
     <span class="next-eyebrow">Als Nächstes · ${esc(sc.name)}</span>
     <h2 id="next-title">${esc(t.title)}</h2>
     ${t.due ? `<span class="next-due${late ? " late" : ""}">${late ? "überfällig" : `bis ${esc(new Date(`${t.due}T12:00:00`).toLocaleDateString("de-CH"))}`}</span>` : ""}
-    ${steps.length ? `<ul class="next-steps">${steps.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${steps.length > 4 ? `<span class="next-more">+ ${steps.length - 4} weitere</span>` : ""}` : ""}
+    ${steps.length ? `<ul class="next-steps">${steps.slice(0, 4).map((x) => `<li${x.done ? ' class="done"' : ""}>${esc(x.text)}</li>`).join("")}</ul>${steps.length > 4 ? `<span class="next-more">+ ${steps.length - 4} weitere</span>` : ""}` : ""}
     <div class="next-actions">
       <button class="btn" data-action="rm-done" data-id="${esc(t.id)}">${icon("check")} Erledigt</button>
-      <button class="btn ghost" data-action="rm-snooze" data-id="${esc(t.id)}">Morgen</button>
+      ${qnh.repeatSupported() ? `<button class="btn ghost" data-action="rm-snooze" data-id="${esc(t.id)}">Morgen</button>` : ""}
       <button class="link" data-action="go-focus">Fokus-Runde</button>
     </div></section>`;
 }
@@ -448,7 +462,8 @@ function agendaItem(t, lane) {
   const label = !sc || t.where === sc.name ? t.where : `${t.where} · ${sc.name}`;
   const external = /^https?:/.test(t.href ?? "");
   const acts = (t.actions ?? []).map((a, i) => `<button class="btn${i === 0 && lane !== "week" ? "" : " ghost"} small-btn" data-action="${esc(a.action)}"${a.id ? ` data-id="${esc(a.id)}"` : ""}${a.value ? ` data-value="${esc(a.value)}"` : ""}>${esc(a.label)}</button>`).join("");
-  const sub = [label, t.sub].filter(Boolean).join(" · ");
+  const where = (label ? label.split(" · ") : []).filter((x) => !String(t.sub ?? "").includes(x)); // no «Social · Social → …»
+  const sub = [...where, t.sub].filter(Boolean).join(" · ");
   return `<li class="ag-item ${t.tone === "alert" ? "alert" : "info"}">
     <a class="ag-link" href="${esc(t.href ?? "#")}"${external ? ' target="_blank" rel="noopener"' : ""}>
       ${rowBadge(t)}
@@ -474,10 +489,11 @@ function statusTiles(lanes) {
   const tile = (href, label, value, sub, alert) => `<a class="instr${alert ? " alert" : ""}" href="${href}"><span class="instr-label"><span class="instr-dot"></span>${esc(label)}</span><span class="instr-value">${esc(value)}</span><span class="instr-sub">${esc(sub)}</span></a>`;
   const out = [];
   const appRows = all.filter((i) => /^(app|store):/.test(i.key));
-  const appNow = appRows.filter((i) => i.lane === "now");
+  const appNow = appRows.filter((i) => i.lane === "now" && i.tone === "alert"); // «Bei X anmelden» is not a fault
   out.push(tile("#apps", "Apps", appNow.length ? `${appNow.length} ${appNow.length === 1 ? "Störung" : "Störungen"}` : appRows.length ? `${appRows.length} offen` : "Alles grün",
     (appNow[0] ?? appRows[0])?.title ?? APPS.map((a) => a.name).join(" · "), appNow.length > 0));
   const v = S.social?.value;
+  if (socialConfigured() && !v && S.social?.error) out.push(tile("#social", "Social", "nicht geladen", errorText(S.social.error), true));
   if (socialConfigured() && v) {
     const now = Date.now();
     const failed = v.posts.filter((p) => p.status === "failed");
@@ -491,10 +507,11 @@ function statusTiles(lanes) {
       ready ? `${ready} ${ready === 1 ? "Antwortvorschlag" : "Antwortvorschläge"} bereit` : comments.length ? "warten auf Antwort" : "alles beantwortet", false));
   }
   const f = financeConfigured() ? S.fin?.value : null;
+  if (financeConfigured() && !f && S.fin?.error) out.push(tile("#finanzen", "Finanzen", "nicht geladen", errorText(S.fin.error), true));
   if (f) {
     const today = zurichToday();
     const open = f.bills.filter((b) => b.status === "open");
-    const late = open.filter((b) => b.due_date && b.due_date < today);
+    const late = open.filter((b) => billDue(b, today).date < today).sort((a, b) => billDue(a, today).date.localeCompare(billDue(b, today).date));
     out.push(tile("#finanzen", "Finanzen", late.length ? `${late.length} überfällig` : open.length ? `${open.length} offen` : "alles bezahlt",
       late.length ? `${late[0].payee} · ${money(late[0].amount, late[0].currency)}` : open.length ? moneyList(sumBy(open)) : `Fixkosten ${moneyList(monthlyTotals(f.costs))} / Monat`, late.length > 0));
   }
@@ -504,7 +521,8 @@ function statusTiles(lanes) {
 // the posts of the next 7 days
 function airCard() {
   const v = S.social?.value;
-  if (!socialConfigured() || !v) return "";
+  if (!socialConfigured()) return "";
+  if (!v) return S.social?.error ? `<section class="side-card"><h2 class="side-title">Diese Woche auf Sendung</h2><p class="error small">${esc(errorText(S.social.error))}</p></section>` : "";
   const now = Date.now();
   const posts = v.posts.filter((p) => ["approved", "draft"].includes(p.status) && p.scheduled_at && new Date(p.scheduled_at).getTime() > now && new Date(p.scheduled_at).getTime() < now + 7 * 864e5)
     .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)).slice(0, 5);
@@ -530,7 +548,7 @@ function airCard() {
 // money at a glance
 function moneyCard() {
   const v = financeConfigured() ? S.fin?.value : null;
-  if (!v) return "";
+  if (!v) return financeConfigured() && S.fin?.error ? `<section class="side-card"><h2 class="side-title">Geld</h2><p class="error small">${esc(errorText(S.fin.error))}</p></section>` : "";
   const today = zurichToday();
   const open = v.bills.filter((b) => b.status === "open");
   const next = upcoming(v.costs, v.bills, today, 30)[0];
@@ -677,6 +695,7 @@ function palette() {
 }
 
 function openSearch() {
+  S.sheet = null;
   S.search = { open: true, q: "", sel: 0 };
   // load what the search can find (each loads only once)
   for (const a of APPS) {
@@ -1074,6 +1093,16 @@ document.addEventListener("keydown", (e) => {
     return S.search.open ? closeSearch() : openSearch();
   }
   if (S.sheet && e.key === "Escape" && !S.search.open) { S.sheet = null; return render(); }
+  if (S.sheet && e.key === "Tab" && !S.search.open) {
+    // keep Tab inside the open sheet (the page behind is inert)
+    const items = [...root.querySelectorAll(".sheet button")];
+    const i = items.indexOf(document.activeElement);
+    if (items.length && (i === -1 || (e.shiftKey ? i === 0 : i === items.length - 1))) {
+      e.preventDefault();
+      items[e.shiftKey ? items.length - 1 : 0].focus();
+    }
+    return;
+  }
   if (!S.search.open) return;
   if (e.key === "Escape") return closeSearch();
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -1109,6 +1138,7 @@ root.addEventListener("click", async (e) => {
   if (action === "go") { S.sheet = null; if (location.hash === value) render(); else location.hash = value; return; }
   if (action === "quick-task") return quickTask();
   if (action === "quick-bill") return quickBill();
+  if (action === "quick-package") { S.sheet = null; social.onClick("soc-pick-package", el); return render(); } // the file picker opens inside the tap (iOS)
   const a = el.dataset.app ? appById(el.dataset.app) : app();
   if (S.sheet && (action === "refresh" || action === "sign-out")) S.sheet = null;
 

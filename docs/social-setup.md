@@ -169,7 +169,7 @@ Einmalig ca. 20 Minuten. Bezeichnungen in der Google Cloud Console ändern sich 
    ```
    npx supabase secrets set GOOGLE_CLIENT_ID=DIE_CLIENT_ID GOOGLE_CLIENT_SECRET=DER_CLIENTSCHLUESSEL --project-ref PROJEKT-ID
    ```
-7. Cockpit → **Social** → unter den Konten die App/Marke wählen (z. B. «Leeside Lab») → **YouTube-Kanal verbinden** → mit dem Google-Konto anmelden → den **Kanal** wählen → **beide Häkchen** setzen (Videos hochladen, Kommentare verwalten) → zurück im Cockpit steht «YouTube-Kanal … verbunden».
+7. Cockpit → **Social** → Ansicht **Beiträge** → in der Karte **«Kanal hinzufügen»** die App/Marke wählen (z. B. «Leeside Lab») → **YouTube-Kanal verbinden** → mit dem Google-Konto anmelden → den **Kanal** wählen → **beide Häkchen** setzen (Videos hochladen, Kommentare verwalten) → zurück im Cockpit steht «YouTube-Kanal … verbunden».
 
 Was dabei passiert: Der dauerhafte Zugang von Google landet direkt in Supabase Vault (`google_token_<app>_youtube`) – niemand sieht ihn, auch du nicht. Zurückziehen: [myaccount.google.com/permissions](https://myaccount.google.com/permissions) → QNH Cockpit → Zugriff entfernen. Danach im Cockpit neu verbinden.
 

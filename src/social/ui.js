@@ -718,7 +718,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const ed = st.editor;
     const id = el.dataset.id;
     switch (action) {
-      case "soc-filter": st.filter = el.dataset.value; render(); return true;
+      case "soc-filter":
+        st.filter = el.dataset.value;
+        try { history.replaceState(null, "", st.filter === "all" ? "#social" : `#social/${st.filter}`); } catch { /* sandboxed */ }
+        render();
+        return true;
       case "soc-stats-days": st.statsDays = Number(el.dataset.value); render(); return true;
       case "soc-stats-sort": st.statsSort = el.dataset.value; render(); return true;
       case "soc-stats-refresh":
