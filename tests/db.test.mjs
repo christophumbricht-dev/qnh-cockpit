@@ -12,6 +12,7 @@ const SQL4 = readFileSync(new URL("../supabase/migrations/20261019100000_social_
 const SQL5 = readFileSync(new URL("../supabase/migrations/20261019120000_social_stats.sql", import.meta.url), "utf8");
 const SQL6 = readFileSync(new URL("../supabase/migrations/20261020100000_social_comments.sql", import.meta.url), "utf8");
 const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_youtube.sql", import.meta.url), "utf8");
+const SQL8 = readFileSync(new URL("../supabase/migrations/20261021100000_finance.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -48,6 +49,8 @@ await db.exec(SQL6);
 await db.exec(SQL6);
 await db.exec(SQL7);
 await db.exec(SQL7);
+await db.exec(SQL8);
+await db.exec(SQL8);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -242,4 +245,30 @@ test("youtube title: stored with the post, frozen once approved, todo still edit
   assert.equal((await as(ADMIN, `select title from social_posts where id='${id}'`)).rows[0].title, "other");
   await as(ADMIN, `update social_posts set caption=repeat('x', 3000) where id='${id}'`); // a long YouTube description
   await assert.rejects(as(ADMIN, `update social_posts set caption=repeat('x', 5001) where id='${id}'`));
+});
+
+test("finance: admins only; paid_at follows the status; the bill bucket is private", async () => {
+  await assert.rejects(as(OTHER, "insert into fin_costs (name, amount) values ('Supabase', 25)"));
+  await assert.rejects(as(null, "select * from fin_bills"));
+  const c = (await as(ADMIN, "insert into fin_costs (name, provider, scope, amount, currency, interval, next_due, notice_days) values ('Apple Developer Program', 'Apple', 'qnh', 99, 'USD', 'yearly', '2027-01-15', 30) returning id")).rows[0].id;
+  assert.equal((await as(OTHER, "select count(*)::int n from fin_costs")).rows[0].n, 0);
+  await assert.rejects(as(ADMIN, "insert into fin_costs (name, amount, interval) values ('x', 1, 'weekly')"));
+  await assert.rejects(as(ADMIN, "insert into fin_costs (name, amount, url) values ('x', 1, 'javascript:alert(1)')"));
+  const b = (await as(ADMIN, `insert into fin_bills (payee, amount, due_date, iban, reference, cost_id, source) values ('Infomaniak', 59.40, '2026-11-01', 'CH4431999123000889012', '210000000003139471430009017', '${c}', 'qr') returning id`)).rows[0].id;
+  await assert.rejects(as(ADMIN, "insert into fin_bills (payee, iban) values ('x', 'not an iban')"));
+  await as(ADMIN, `update fin_bills set status='paid' where id='${b}'`);
+  assert.ok((await as(ADMIN, `select paid_at from fin_bills where id='${b}'`)).rows[0].paid_at);
+  await as(ADMIN, `update fin_bills set status='open' where id='${b}'`);
+  assert.equal((await as(ADMIN, `select paid_at from fin_bills where id='${b}'`)).rows[0].paid_at, null);
+  assert.equal((await db.query("select public from storage.buckets where id='finance'")).rows[0].public, false);
+  await as(ADMIN, "insert into storage.objects (bucket_id, name) values ('finance', 'bills/x.pdf')");
+  await assert.rejects(as(OTHER, "insert into storage.objects (bucket_id, name) values ('finance', 'bills/y.pdf')"));
+  await as(ADMIN, `delete from fin_costs where id='${c}'`); // the bill stays, without the link
+  assert.equal((await as(ADMIN, `select cost_id from fin_bills where id='${b}'`)).rows[0].cost_id, null);
+});
+
+test("roadmap: recurring tasks and «Später»", async () => {
+  const id = (await as(ADMIN, "insert into roadmap_items (scope, title, status, due, repeat) values ('qnh', 'MWST-Abrechnung', 'next', '2026-12-31', 'quarterly') returning id")).rows[0].id;
+  await as(ADMIN, `update roadmap_items set due='2027-03-31', last_done_at=now(), snoozed_until='2026-10-22' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update roadmap_items set repeat='daily' where id='${id}'`));
 });

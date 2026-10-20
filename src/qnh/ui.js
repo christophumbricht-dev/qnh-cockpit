@@ -1,6 +1,10 @@
 // Roadmap (board per app + QNH) and Hangar (quick links). Rendered inside main.js.
 import { esc } from "../format.js";
 import * as data from "./data.js";
+import { addDays, nextDue, zurichToday } from "../finance/calc.js";
+import { dueLabel, laneForDate } from "../today.js";
+
+export const REPEAT = { weekly: "wöchentlich", monthly: "monatlich", quarterly: "vierteljährlich", yearly: "jährlich" };
 
 export const COLUMNS = [["idea", "Ideen"], ["next", "Als Nächstes"], ["doing", "In Arbeit"], ["done", "Erledigt"]];
 const STATUS = Object.fromEntries(COLUMNS);
@@ -28,10 +32,30 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
   let t;
   const reloadSoon = () => { clearTimeout(t); t = setTimeout(() => load(true), 300); };
 
-  // items with a due date in the next 7 days (or overdue) – shown on "Heute"
+  // recurring tasks and «Später» need the columns from migration 20261021100000_finance.sql
+  const repeatSupported = () => (S.qnh.items ?? []).some((i) => "repeat" in i);
+  const snoozed = (i, today) => i.snoozed_until && i.snoozed_until > today;
+
+  // items with a due date in the next 7 days (or overdue), unless put off with «Später»
   function dueSoon() {
+    const today = zurichToday();
     const soon = Date.now() + 7 * 864e5;
-    return (S.qnh.items ?? []).filter((i) => i.status !== "done" && i.due && new Date(`${i.due}T23:59:59`).getTime() <= soon);
+    return (S.qnh.items ?? []).filter((i) => i.status !== "done" && i.due && !snoozed(i, today) && new Date(`${i.due}T23:59:59`).getTime() <= soon);
+  }
+
+  // «Heute»: overdue → Jetzt, due today → Heute, within 7 days → Diese Woche; one tap «Erledigt» / «Morgen»
+  function agenda(today = zurichToday()) {
+    return dueSoon().map((i) => {
+      const sc = scopeOf(i.scope);
+      const lane = laneForDate(i.due, today);
+      const actions = [{ action: "rm-done", id: i.id, label: i.repeat ? "Erledigt ↻" : "Erledigt ✓" }];
+      if (repeatSupported()) actions.push({ action: "rm-snooze", id: i.id, label: "Morgen" });
+      return {
+        key: `rm:${i.id}`, lane, tone: lane === "now" ? "alert" : "info", date: i.due, title: i.title,
+        sub: `${dueLabel(i.due, today)}${i.repeat ? ` · ↻ ${REPEAT[i.repeat]}` : ""}`,
+        where: sc.name, scope: i.scope, href: i.scope === "qnh" ? "#roadmap" : `#${i.scope}/roadmap`, actions,
+      };
+    }).filter((x) => x.lane);
   }
 
   // ---------- focus: one open task at a time ----------
@@ -138,7 +162,8 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
         <textarea name="rm-body" rows="4" maxlength="4000" placeholder="Details, Links, nächste Schritte …">${esc(i.body)}</textarea>
         <div class="row">${scopeSelect("rm-scope", i.scope)}
           <select name="rm-status">${COLUMNS.map(([k, l]) => `<option value="${k}"${k === i.status ? " selected" : ""}>${l}</option>`).join("")}</select>
-          <input type="date" name="rm-due" value="${esc(i.due ?? "")}" aria-label="Fällig am"></div>
+          <input type="date" name="rm-due" value="${esc(i.due ?? "")}" aria-label="Fällig am">
+          ${repeatSupported() ? `<select name="rm-repeat" aria-label="Wiederholen"><option value="">einmalig</option>${Object.entries(REPEAT).map(([k, l]) => `<option value="${k}"${k === i.repeat ? " selected" : ""}>↻ ${l}</option>`).join("")}</select>` : ""}</div>
         <div class="actions"><button class="btn">Speichern</button><button type="button" class="btn ghost" data-action="rm-cancel">Abbrechen</button>
           <button type="button" class="link danger" data-action="rm-delete" data-id="${i.id}">Löschen</button></div>
       </form>`;
@@ -151,6 +176,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
       ${i.body ? `<p class="rm-body">${esc(i.body.length > 160 ? `${i.body.slice(0, 160)}…` : i.body)}</p>` : ""}
       <div class="rm-meta">
         ${i.due ? `<span class="rm-due${overdue ? " late" : ""}">${overdue ? "überfällig · " : "bis "}${esc(new Date(`${i.due}T12:00:00`).toLocaleDateString("de-CH"))}</span>` : ""}
+        ${i.repeat ? `<span class="rm-src" title="wiederkehrend">↻ ${esc(REPEAT[i.repeat] ?? i.repeat)}</span>` : ""}
         ${i.source === "claude" ? `<span class="rm-src">von Claude</span>` : ""}
         <span class="rm-tools">
           <button class="icon-mini" data-action="rm-move" data-id="${i.id}" data-value="${idx - 1}" aria-label="nach links"${idx === 0 ? " disabled" : ""}>‹</button>
@@ -163,6 +189,12 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
 
   async function update(id, patch) {
     const item = S.qnh.items.find((x) => x.id === id);
+    // a recurring task is never «done»: it moves on to its next date
+    if (patch.status === "done" && item.repeat && item.status !== "done") {
+      const due = nextDue(item.due, item.repeat, zurichToday());
+      patch = { ...patch, status: item.status === "idea" ? "next" : item.status, due, last_done_at: new Date().toISOString(), snoozed_until: null };
+      toast(`Erledigt ✓ – nächstes Mal am ${new Date(`${due}T12:00:00`).toLocaleDateString("de-CH")}`);
+    }
     const before = { ...item };
     Object.assign(item, patch);
     render();
@@ -211,7 +243,8 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
         toast("Hinzugefügt");
       } else if (kind === "rm-edit") {
         S.qnh.editing = null;
-        await update(form.dataset.id, { title: f["rm-title"].value.trim(), body: f["rm-body"].value, scope: f["rm-scope"].value, status: f["rm-status"].value, due: f["rm-due"].value || null });
+        await update(form.dataset.id, { title: f["rm-title"].value.trim(), body: f["rm-body"].value, scope: f["rm-scope"].value, status: f["rm-status"].value, due: f["rm-due"].value || null,
+          ...(f["rm-repeat"] ? { repeat: f["rm-repeat"].value || null } : {}) });
       } else if (kind === "hg-save") {
         const saved = await data.saveLink({ id: form.dataset.id || undefined, title: f["hg-title"].value.trim(), url: f["hg-url"].value.trim(), grp: f["hg-grp"].value.trim(), note: f["hg-note"].value.trim() });
         const list = S.qnh.links;
@@ -235,6 +268,14 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
       case "rm-focus-close": st.focus = null; break;
       case "rm-focus-skip": st.focus.skipped.add(id); advanceFocus(); break;
       case "rm-focus-doing": await update(id, { status: "doing" }); return true;
+      // from «Heute»
+      case "rm-done": {
+        const item = st.items?.find((x) => x.id === id);
+        await update(id, { status: "done" });
+        if (item && !item.repeat) toast("Erledigt ✓");
+        return true;
+      }
+      case "rm-snooze": await update(id, { snoozed_until: addDays(zurichToday(), 1) }); toast("Auf morgen verschoben"); return true;
       case "rm-focus-done":
         await update(id, { status: "done" });
         if (st.focus) { st.focus.done++; toast("Erledigt ✓"); advanceFocus(); }
@@ -291,5 +332,5 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     return true;
   }
 
-  return { nextTask, startFocus, load, roadmapView, hangarView, dueSoon, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
+  return { nextTask, startFocus, load, roadmapView, hangarView, dueSoon, agenda, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
 }

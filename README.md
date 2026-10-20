@@ -1,10 +1,11 @@
 # QNH Cockpit
 
-Internes Dashboard der QNH GmbH: Übersicht, Verlauf, Feedback, Fehler, Beta, Verifizierung, Meldungen und **Social** (Instagram-Beiträge mit Freigabe).
+Internes Dashboard der QNH GmbH: **Heute** (alles Wichtige in einer Liste), Apps (Übersicht, Verlauf, Feedback, Fehler, Beta, Verifizierung, Meldungen, Store), **Social** (Instagram und YouTube mit Freigabe, Kommentare), **Finanzen** (Kosten, Abos, Rechnungen) und Roadmap.
 
 - **Starten:** `npm run dev` → <http://localhost:5185> (Demo ohne Anmeldung: <http://localhost:5185/?demo>)
 - **Online:** <https://cockpit.setqnh.ch> – Einrichtung: [docs/hosting.md](docs/hosting.md)
 - **Social einrichten:** [docs/social-setup.md](docs/social-setup.md) · Paketformat: [docs/social-paket.md](docs/social-paket.md)
+- **Finanzen:** [docs/finanzen.md](docs/finanzen.md)
 
 ## Tests
 

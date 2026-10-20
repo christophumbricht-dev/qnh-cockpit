@@ -8,9 +8,10 @@ const must = (r) => { if (r.error) throw Object.assign(new Error(r.error.message
 
 export const qnhReady = () => DEMO || Boolean(QNH.url && QNH.anonKey);
 
-const ITEM_FIELDS = ["scope", "title", "body", "status", "due", "sort"];
+// repeat / snoozed_until / last_done_at exist after migration 20261021100000_finance.sql (only sent when used)
+const ITEM_FIELDS = ["scope", "title", "body", "status", "due", "sort", "repeat", "snoozed_until", "last_done_at"];
 const LINK_FIELDS = ["grp", "title", "url", "note", "sort"];
-const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k] === "" && k === "due" ? null : o[k]]));
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k] === "" && ["due", "repeat", "snoozed_until"].includes(k) ? null : o[k]]));
 
 export async function loadRoadmap() {
   if (DEMO) return demo.roadmap();
