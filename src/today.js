@@ -19,6 +19,14 @@ export function laneForDate(date, today, { todayDays = 0, weekDays = 7 } = {}) {
   return null;
 }
 
+// ISO calendar week of a YYYY-MM-DD day (Monday starts the week; week 1 holds the first Thursday)
+export function isoWeek(iso) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7)); // Thursday of this week
+  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  return 1 + Math.round((d - jan4) / 864e5 / 7 - 0.5 + ((jan4.getUTCDay() + 6) % 7) / 7);
+}
+
 export function dueLabel(date, today) {
   if (!date) return "";
   const d = daysBetween(today, date);

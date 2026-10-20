@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAgenda, dueLabel, laneForDate, needsYou } from "../src/today.js";
+import { buildAgenda, dueLabel, isoWeek, laneForDate, needsYou } from "../src/today.js";
 import { financeDue, financeLane } from "../src/finance/calc.js";
 
 test("lanes from due dates", () => {
@@ -45,4 +45,13 @@ test("finance on «Heute»: a renewal reminder is for today once it has started 
   assert.deepEqual(lanes, { apple: "today", ins: "week", late: "now", soon: "today", week: "week", later: null });
   const agenda = buildAgenda(Object.entries(lanes).map(([key, lane]) => ({ key, lane, title: key })));
   assert.equal(needsYou(agenda), 3); // late + soon + the Apple reminder
+});
+
+test("calendar week (ISO, as on Swiss calendars)", () => {
+  assert.equal(isoWeek("2026-10-20"), 43);
+  assert.equal(isoWeek("2026-01-01"), 1); // a Thursday
+  assert.equal(isoWeek("2027-01-01"), 53); // a Friday: still week 53 of 2026
+  assert.equal(isoWeek("2027-01-04"), 1);
+  assert.equal(isoWeek("2025-12-29"), 1); // Monday of week 1 of 2026
+  assert.equal(isoWeek("2026-12-31"), 53);
 });

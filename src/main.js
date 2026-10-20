@@ -12,8 +12,9 @@ import { qnhReady } from "./qnh/data.js";
 import { createStore } from "./store/ui.js";
 import { createFinance } from "./finance/ui.js";
 import { financeConfigured } from "./finance/data.js";
-import { money, moneyList, monthlyTotals, sumBy, upcoming, zurichToday } from "./finance/calc.js";
-import { LANES, buildAgenda, laneForDate, needsYou } from "./today.js";
+import { money, moneyList, monthlyTotals, owedPrivately, sumBy, upcoming, zurichToday } from "./finance/calc.js";
+import { isOpen } from "./social/inbox.js";
+import { LANES, buildAgenda, isoWeek, laneForDate, needsYou } from "./today.js";
 
 const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365, "1 Jahr"]];
 const TAB_LABELS = { overview: "Übersicht", store: "Store & Builds", roadmap: "Roadmap", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
@@ -22,14 +23,6 @@ const ERROR_DAYS = [1, 7, 30];
 // Photos by Jürg Umbricht (@exploring_the_skies), retouched and published on flydownwind.ch with his OK.
 // Loaded from there (not copied into this public repo); credit on every use.
 const PHOTO_BASE = "https://flydownwind.ch/assets/photos/";
-// [file, vertical focus] – the banner is a thin strip, so each photo gets the part that reads at that size
-const PHOTOS = [["band", "38%"], ["hero-wide", "72%"], ["map", "45%"]];
-const photoOfDay = () => {
-  const d = new Date();
-  const day = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 864e5);
-  const [file, pos] = PHOTOS[day % PHOTOS.length];
-  return { url: PHOTO_BASE + file + ".webp", pos };
-};
 const photoCredit = () => `<a class="credit" href="https://www.instagram.com/exploring_the_skies" target="_blank" rel="noopener">Foto: Jürg Umbricht · @exploring_the_skies</a>`;
 
 const S = {
@@ -49,6 +42,7 @@ const S = {
   toast: "",
   lastLoad: 0,
   search: { open: false, q: "", sel: 0 },
+  sheet: null, // "menu" (phone: Hangar, search, theme …) | "new" (quick add) | null
   theme: readTheme(), // "light" | "dark" | null (= follow the system)
 };
 
@@ -62,7 +56,7 @@ const scopeBadge = (id) => appBadge(id === "qnh" ? { name: "QNH", color: "#0B728
 const finance = createFinance({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: () => SCOPES, scopeBadge });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
-const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar", "finance"];
+const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar", "finance", "apps"];
 const isAppPage = () => !GLOBAL_TABS.includes(S.tab);
 const appTabs = (a) => ["overview", ...(a.offline ? [] : a.tabs ?? []), ...(a.store ? ["store"] : []), "roadmap"];
 
@@ -126,7 +120,12 @@ function ensureData(force = false) {
 function route() {
   const [first, second] = location.hash.replace(/^#\/?/, "").split("/");
   const a = first && first !== QNH.id ? appById(first) : null;
-  if (first === "social") { S.tab = "social"; if (second === "kommentare") social.setMode("comments"); }
+  if (first === "social") {
+    S.tab = "social";
+    if (second === "kommentare") social.setMode("comments");
+    else if (second && [...APPS, ...BRANDS].some((b) => b.id === second)) S.social.filter = second; // a channel from the sidebar
+  }
+  else if (first === "apps") S.tab = "apps";
   else if (first === "roadmap") S.tab = "roadmap-all";
   else if (first === "hangar") S.tab = "hangar";
   else if (first === "finanzen") S.tab = "finance";
@@ -135,6 +134,7 @@ function route() {
     S.tab = appTabs(a).includes(second) ? second : "overview";
   } else S.tab = "today";
   closeSearch(false);
+  S.sheet = null;
   ensureData();
   render();
   document.querySelector(".main-col")?.scrollTo?.(0, 0);
@@ -167,27 +167,46 @@ function render(force = false) {
   social.afterRender();
 }
 
+// initials for the account button on the phone («christoph.umbricht@…» → «CU»)
+function initials() {
+  const user = S.users[QNH.id] ?? Object.values(S.users).find(Boolean) ?? (api.DEMO ? { email: "christoph.umbricht@setqnh.ch" } : null);
+  const parts = String(user?.email ?? "").split("@")[0].split(/[._-]+/).filter(Boolean);
+  return (parts.slice(0, 2).map((p) => p[0]).join("") || "Q").toUpperCase();
+}
+
+// Desktop: dark sidebar (work · apps · social channels · Hangar). Phone: the same items as a bottom bar with five
+// slots (Heute, Aufgaben, Apps, Social, Finanzen); Hangar, search and settings sit behind the initials up top.
 function shell() {
-  const todoCount = needsYou(agenda());
-  const navItem = (href, on, iconHtml, label, n, extra = "") =>
-    `<a href="${href}" class="nav-item${on ? " on" : ""}"${extra}>${iconHtml}<span class="nav-label">${esc(label)}</span>${n ? `<span class="badge">${n}</span>` : ""}</a>`;
-  const appItems = APPS.map((a) => navItem(`#${a.id}`, isAppPage() && S.appId === a.id, appBadge(a), a.name, todos(a).length, ` style="--app:${esc(a.color)}"`)).join("");
+  const lanes = agenda();
+  const todoCount = needsYou(lanes);
+  const navItem = (href, on, iconHtml, label, n, cls = "", extra = "") =>
+    `<a href="${href}" class="nav-item${cls ? ` ${cls}` : ""}${on ? " on" : ""}"${on ? ' aria-current="page"' : ""}${extra}>${iconHtml}<span class="nav-label">${Array.isArray(label) ? `<span class="desk-text">${esc(label[0])}</span><span class="phone-text">${esc(label[1])}</span>` : esc(label)}</span>${n ? `<span class="badge${cls.includes("hot") ? " hot" : ""}">${n}</span>` : ""}</a>`;
+  const appItems = APPS.map((a) => {
+    const n = todos(a).length;
+    return navItem(`#${a.id}`, isAppPage() && S.appId === a.id, appBadge(a), a.name, n, "desk-only", ` style="--app:${esc(a.color)}"`);
+  }).join("");
+  const appsBadge = APPS.reduce((n, a) => n + todos(a).length, 0);
+  const channels = socialConfigured() ? (S.social?.value?.accounts ?? []).filter((x) => x.active !== false) : [];
+  const channelItems = channels.map((c) => `<a class="nav-sub desk-only${S.tab === "social" && S.social.filter === c.app_id ? " on" : ""}" href="#social/${esc(c.app_id)}">${icon(c.platform === "youtube" ? "play" : "camera")}<span class="nav-label">${esc(c.platform === "youtube" ? c.handle || appById(c.app_id)?.name || "YouTube" : `@${c.handle}`)}</span></a>`).join("");
+  const finBadge = financeConfigured() ? finance.badge() : 0;
   return `<div class="shell">
     <aside class="side" aria-label="Navigation">
       <a href="#" class="brand" aria-label="QNH Cockpit – Heute">${logo()}<span>QNH <b>Cockpit</b></span></a>
       <button class="search-btn" data-action="search-open">${icon("search")}<span>Suchen</span><kbd>Ctrl K</kbd></button>
       <nav class="side-nav">
-        ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount)}
+        ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount, `slot-1${lanes.now.length ? " hot" : ""}`)}
+        ${qnhReady() ? navItem("#roadmap", S.tab === "roadmap-all", icon("tasks"), "Aufgaben", 0, "slot-2") : ""}
+        ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "slot-5 hot") : ""}
         <p class="side-label">Apps</p>
         ${appItems}
-        ${qnhReady() ? `<p class="side-label">QNH</p>
-          ${socialConfigured() ? navItem("#social", S.tab === "social", icon("social"), "Social", social.badge()) : ""}
-          ${navItem("#roadmap", S.tab === "roadmap-all", icon("flag"), "Roadmap", 0)}
-          ${financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finance.badge()) : ""}
-          ${navItem("#hangar", S.tab === "hangar", icon("grid"), "Hangar", 0)}` : ""}
-        <button class="nav-item nav-search" data-action="search-open">${icon("search")}<span class="nav-label">Suchen</span></button>
+        ${navItem("#apps", S.tab === "apps" || isAppPage(), icon("grid"), "Apps", appsBadge, "slot-3 phone-only")}
+        ${qnhReady() && socialConfigured() ? `<p class="side-label">Social</p>
+          ${navItem("#social", S.tab === "social" && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge(), "slot-4")}
+          ${channelItems}` : ""}
+        ${qnhReady() ? navItem("#hangar", S.tab === "hangar", icon("folder"), "Hangar", 0, "desk-only nav-bottom") : ""}
       </nav>
       <div class="side-foot">
+        <span class="avatar-chip" aria-hidden="true">${esc(initials())}</span>
         ${api.DEMO ? `<span class="demo">Demo-Daten</span>` : ""}
         <button class="icon-btn" data-action="theme" title="${darkNow() ? "Hell" : "Dunkel"}" aria-label="Farbschema wechseln">${icon(darkNow() ? "sun" : "moon")}</button>
         <button class="icon-btn" data-action="refresh" title="Aktualisieren" aria-label="Aktualisieren">${icon("refresh")}</button>
@@ -198,46 +217,68 @@ function shell() {
       <div class="mobile-top">
         <a href="#" class="brand">${logo()}<span>QNH <b>Cockpit</b></span></a>
         ${api.DEMO ? `<span class="demo">Demo</span>` : ""}
-        <button class="icon-btn" data-action="theme" aria-label="Farbschema wechseln">${icon(darkNow() ? "sun" : "moon")}</button>
-        <button class="icon-btn" data-action="refresh" aria-label="Aktualisieren">${icon("refresh")}</button>
+        <button class="top-btn" data-action="search-open" aria-label="Suchen">${icon("search")}</button>
+        <button class="top-btn avatar-btn" data-action="sheet" data-value="menu" aria-label="Menü: Hangar, Suchen, Einstellungen" aria-expanded="${S.sheet === "menu"}">${esc(initials())}</button>
       </div>
       ${pageHead()}
       <main class="page">${view()}</main>
     </div>
+    ${qnhReady() ? `<button class="fab" data-action="sheet" data-value="new" aria-label="Neu: Aufgabe, Rechnung oder Beitrag" aria-expanded="${S.sheet === "new"}">${icon("plus")}</button>` : ""}
   </div>
+  ${S.sheet ? sheet() : ""}
   ${S.search.open ? palette() : ""}
   ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ""}`;
+}
+
+// small menus: «Neu» (quick add from anywhere) and, on the phone, what does not fit in the bottom bar
+function sheet() {
+  const item = (attrs, ico, label, sub = "") => `<button class="sheet-item" ${attrs}>${icon(ico)}<span><b>${esc(label)}</b>${sub ? `<span class="muted small">${esc(sub)}</span>` : ""}</span></button>`;
+  const body = S.sheet === "new"
+    ? `<h2>Neu</h2>
+      ${item('data-action="quick-task"', "tasks", "Aufgabe", "in die Roadmap")}
+      ${financeConfigured() ? item('data-action="quick-bill"', "wallet", "Rechnung erfassen", "PDF oder Foto, QR-Rechnung wird gelesen") : ""}
+      ${socialConfigured() ? item('data-action="go-new-post"', "chat", "Beitrag", "Instagram oder YouTube") : ""}`
+    : `<h2>Menü</h2>
+      ${item('data-action="go" data-value="#hangar"', "folder", "Hangar", "Links und Ablage")}
+      ${item('data-action="search-open"', "search", "Suchen")}
+      ${item('data-action="theme"', darkNow() ? "sun" : "moon", darkNow() ? "Helles Farbschema" : "Dunkles Farbschema")}
+      ${item('data-action="refresh"', "refresh", "Aktualisieren")}
+      ${!api.DEMO && S.users[QNH.id] ? item(`data-action="sign-out" data-app="${QNH.id}"`, "logout", "Abmelden") : ""}`;
+  return `<div class="sheet-backdrop" data-action="sheet-close"><div class="sheet sheet-${S.sheet}" role="dialog" aria-modal="true" aria-label="${S.sheet === "new" ? "Neu" : "Menü"}">${body}
+    <button class="sheet-close btn ghost" data-action="sheet-close">Schliessen</button></div></div>`;
 }
 
 function pageHead() {
   if (S.tab === "today") {
     const user = S.users[QNH.id] ?? Object.values(S.users).find(Boolean) ?? (api.DEMO ? { email: "christoph@setqnh.ch" } : null);
     const name = firstName(user?.email);
-    const date = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "long", day: "numeric", month: "long" }).format(new Date());
-    const lanes = agenda();
-    const n = needsYou(lanes);
-    const later = lanes.week.length;
-    const photo = photoOfDay();
+    const day = zurichToday();
+    const d = new Date(`${day}T12:00:00`);
+    const eyebrow = `${d.toLocaleDateString("de-CH", { weekday: "short" }).replace(".", "").toUpperCase()} ${d.toLocaleDateString("de-CH")} · KW ${isoWeek(day)}`;
     return `<header class="page-head hello">
-      <div class="hero" style="--photo:url('${photo.url}');--photo-pos:center ${photo.pos}">
-        <p class="eyebrow">${esc(date)}</p>
-        <h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}.</h1>
-        <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute${lanes.now.length ? ` – ${lanes.now.length} davon sofort` : ""}.` : later ? `Heute ist alles erledigt. ${later} ${later === 1 ? "Sache kommt" : "Dinge kommen"} diese Woche.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>
-        ${photoCredit()}
+      <div class="hello-row">
+        <div><p class="eyebrow">${esc(eyebrow)}</p><h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}</h1><p class="lead">${esc(leadLine(agenda()))}</p></div>
+        <div class="hello-actions">
+          <button class="btn ghost" data-action="search-open">${icon("search")} Suchen <kbd>Ctrl K</kbd></button>
+          ${qnhReady() ? `<button class="btn" data-action="sheet" data-value="new">${icon("plus")} Neu</button>` : ""}
+        </div>
       </div>
     </header>`;
   }
   if (S.tab === "roadmap-all") {
-    return `<header class="page-head"><div class="ph-title">${icon("flag", "ph-icon")}<div><h1>Roadmap</h1><p class="muted">Ideen und nächste Schritte – für QNH und alle Apps.</p></div></div></header>`;
+    return `<header class="page-head"><div class="ph-title">${icon("tasks", "ph-icon")}<div><h1>Aufgaben</h1><p class="muted">Roadmap: Ideen und nächste Schritte – für QNH und alle Apps.</p></div></div></header>`;
+  }
+  if (S.tab === "apps") {
+    return `<header class="page-head"><div class="ph-title">${icon("grid", "ph-icon")}<div><h1>Apps</h1><p class="muted">Deine Apps – Zahlen, Store und Roadmap.</p></div></div></header>`;
   }
   if (S.tab === "hangar") {
-    return `<header class="page-head"><div class="ph-title">${icon("grid", "ph-icon")}<div><h1>Hangar</h1><p class="muted">Alle Werkzeuge und deine Ablage – ein Klick entfernt.</p></div></div></header>`;
+    return `<header class="page-head"><div class="ph-title">${icon("folder", "ph-icon")}<div><h1>Hangar</h1><p class="muted">Alle Werkzeuge und deine Ablage – ein Klick entfernt.</p></div></div></header>`;
   }
   if (S.tab === "finance") {
     return `<header class="page-head"><div class="ph-title">${icon("wallet", "ph-icon")}<div><h1>Finanzen</h1><p class="muted">Kosten, Abos und Rechnungen – bezahlt wird im E-Banking, hier behältst du den Überblick.</p></div></div></header>`;
   }
   if (S.tab === "social") {
-    return `<header class="page-head"><div class="ph-title">${icon("social", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram und YouTube aller Apps – du gibst jeden Beitrag frei und beantwortest Kommentare hier.</p></div></div></header>`;
+    return `<header class="page-head"><div class="ph-title">${icon("chat", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram und YouTube aller Apps – du gibst jeden Beitrag frei und beantwortest Kommentare hier.</p></div></div></header>`;
   }
   const a = app();
   const stats = S.data[`${a.id}:stats`]?.value;
@@ -272,6 +313,7 @@ function view() {
   if (S.tab === "social") return social.view();
   if (S.tab === "roadmap-all") return qnh.roadmapView(null);
   if (S.tab === "hangar") return qnh.hangarView();
+  if (S.tab === "apps") return `<div class="app-cards apps-page">${APPS.map(appCard).join("")}</div>`;
   if (S.tab === "finance") return api.DEMO || S.users[QNH.id] ? finance.view() : `<p class="note">Für die Finanzen bei QNH Core anmelden (Seite «Heute»).</p>`;
   const a = app();
   if (S.tab === "roadmap") return qnh.roadmapView(a.id);
@@ -290,6 +332,17 @@ function view() {
 }
 
 // ---- "Heute": what needs you, then the numbers ---------------------------------
+
+// «2 Dinge brauchen dich jetzt, 4 sind für heute. Der Rest kann warten.»
+function leadLine(lanes) {
+  const now = lanes.now.length, today = lanes.today.length, week = lanes.week.length;
+  const things = (n, verb) => `${n} ${n === 1 ? `Sache ${verb[0]}` : `Dinge ${verb[1]}`}`;
+  if (!now && !today) return week ? `Heute ist alles erledigt. ${things(week, ["kommt", "kommen"])} diese Woche.` : "CAVOK – alles ruhig, nichts wartet auf dich.";
+  const parts = [];
+  if (now) parts.push(`${things(now, ["braucht", "brauchen"])} dich jetzt`);
+  if (today) parts.push(now ? `${today} ${today === 1 ? "ist" : "sind"} für heute` : `${things(today, ["ist", "sind"])} für heute`);
+  return `${parts.join(", ")}.${week ? " Der Rest kann warten." : ""}`;
+}
 
 function todos(a) {
   if (!live(a)) return [];
@@ -357,30 +410,131 @@ function agenda() {
   return buildAgenda(items);
 }
 
-// "Als Nächstes": the first task of the focus order, one click into focus mode
+// "Als Nächstes": the first task of the focus order – done, tomorrow, or into focus mode
 function nextCard() {
   const t = qnh.nextTask();
   if (!t) return "";
   const sc = qnh.scopeOf(t.scope);
   const late = t.due && new Date(`${t.due}T23:59:59`) < new Date();
-  return `<section class="block"><h2 class="section-title">Als Nächstes</h2>
-    <div class="card next-card" style="--app:${esc(sc.color)}"><span class="rm-scope">${esc(sc.name)}</span>
-      <span class="next-title">${esc(t.title)}${t.due ? ` <span class="rm-due${late ? " late" : ""}">${late ? "überfällig" : "bis " + esc(new Date(`${t.due}T12:00:00`).toLocaleDateString("de-CH"))}</span>` : ""}</span>
-      <button class="btn" data-action="go-focus">Fokus starten</button></div></section>`;
+  const steps = String(t.body ?? "").split("\n").map((l) => l.match(/^\s*(?:[-•*]|\[[ x]?\])\s+(.*)$/i)?.[1]).filter(Boolean);
+  return `<section class="next-card" style="--app:${esc(sc.color)}" aria-labelledby="next-title">
+    <span class="next-eyebrow">Als Nächstes · ${esc(sc.name)}</span>
+    <h2 id="next-title">${esc(t.title)}</h2>
+    ${t.due ? `<span class="next-due${late ? " late" : ""}">${late ? "überfällig" : `bis ${esc(new Date(`${t.due}T12:00:00`).toLocaleDateString("de-CH"))}`}</span>` : ""}
+    ${steps.length ? `<ul class="next-steps">${steps.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${steps.length > 4 ? `<span class="next-more">+ ${steps.length - 4} weitere</span>` : ""}` : ""}
+    <div class="next-actions">
+      <button class="btn" data-action="rm-done" data-id="${esc(t.id)}">${icon("check")} Erledigt</button>
+      <button class="btn ghost" data-action="rm-snooze" data-id="${esc(t.id)}">Morgen</button>
+      <button class="link" data-action="go-focus">Fokus-Runde</button>
+    </div></section>`;
 }
 
-function agendaItem(t) {
+// the badge in front of a row: the app/brand, else an icon for where it comes from
+function rowBadge(t) {
+  if (t.scope) return scopeBadge(t.scope);
+  const ico = /social|instagram|youtube/i.test(t.where ?? "") ? "chat" : /finanz/i.test(t.where ?? "") ? "wallet" : "tasks";
+  return `<span class="row-icon" aria-hidden="true">${icon(ico)}</span>`;
+}
+
+function agendaItem(t, lane) {
   const sc = t.scope ? SCOPES.find((x) => x.id === t.scope) : null;
-  const color = sc?.color ?? "#0B7285";
   const label = !sc || t.where === sc.name ? t.where : `${t.where} · ${sc.name}`;
   const external = /^https?:/.test(t.href ?? "");
-  const acts = (t.actions ?? []).map((a) => `<button class="btn ghost small-btn" data-action="${esc(a.action)}"${a.id ? ` data-id="${esc(a.id)}"` : ""}${a.value ? ` data-value="${esc(a.value)}"` : ""}>${esc(a.label)}</button>`).join("");
+  const acts = (t.actions ?? []).map((a, i) => `<button class="btn${i === 0 && lane !== "week" ? "" : " ghost"} small-btn" data-action="${esc(a.action)}"${a.id ? ` data-id="${esc(a.id)}"` : ""}${a.value ? ` data-value="${esc(a.value)}"` : ""}>${esc(a.label)}</button>`).join("");
+  const sub = [label, t.sub].filter(Boolean).join(" · ");
   return `<li class="ag-item ${t.tone === "alert" ? "alert" : "info"}">
     <a class="ag-link" href="${esc(t.href ?? "#")}"${external ? ' target="_blank" rel="noopener"' : ""}>
-      <span class="todo-dot"></span>
-      <span class="ag-text"><span class="ag-title">${esc(t.title)}</span>${t.sub ? `<span class="ag-sub">${esc(t.sub)}</span>` : ""}</span>
-      <span class="todo-where" style="--app:${esc(color)}">${esc(label ?? "")}</span>
+      ${rowBadge(t)}
+      <span class="ag-text"><span class="ag-title">${esc(t.title)}</span>${sub ? `<span class="ag-sub">${esc(sub)}</span>` : ""}</span>
     </a>${acts ? `<span class="ag-actions">${acts}</span>` : ""}</li>`;
+}
+
+// «heute 18:00», «Do 12:00», «24.10. 18:00» (Swiss time)
+function shortWhen(iso) {
+  const d = new Date(iso);
+  const day = zurichToday(d), today = zurichToday();
+  const time = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(d);
+  const days = Math.round((Date.parse(`${day}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 864e5);
+  if (days === 0) return `heute ${time}`;
+  if (days === 1) return `morgen ${time}`;
+  if (days > 1 && days < 7) return `${new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "short" }).format(d).replace(".", "")} ${time}`;
+  return `${new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", day: "numeric", month: "numeric" }).format(d)} ${time}`;
+}
+
+// four instruments on top: where something burns
+function statusTiles(lanes) {
+  const all = [...lanes.now, ...lanes.today, ...lanes.week];
+  const tile = (href, label, value, sub, alert) => `<a class="instr${alert ? " alert" : ""}" href="${href}"><span class="instr-label"><span class="instr-dot"></span>${esc(label)}</span><span class="instr-value">${esc(value)}</span><span class="instr-sub">${esc(sub)}</span></a>`;
+  const out = [];
+  const appRows = all.filter((i) => /^(app|store):/.test(i.key));
+  const appNow = appRows.filter((i) => i.lane === "now");
+  out.push(tile("#apps", "Apps", appNow.length ? `${appNow.length} ${appNow.length === 1 ? "Störung" : "Störungen"}` : appRows.length ? `${appRows.length} offen` : "Alles grün",
+    (appNow[0] ?? appRows[0])?.title ?? APPS.map((a) => a.name).join(" · "), appNow.length > 0));
+  const v = S.social?.value;
+  if (socialConfigured() && v) {
+    const now = Date.now();
+    const failed = v.posts.filter((p) => p.status === "failed");
+    const planned = v.posts.filter((p) => p.status === "approved" && p.scheduled_at && new Date(p.scheduled_at).getTime() > now).sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+    const acc = (p) => v.accounts.find((x) => x.id === p.account_id);
+    out.push(tile("#social", "Social", failed.length ? `${failed.length} ${failed.length === 1 ? "Fehler" : "Fehler"}` : `${planned.length} geplant`,
+      planned[0] ? `nächster ${shortWhen(planned[0].scheduled_at)} · ${acc(planned[0])?.platform === "youtube" ? "YouTube" : "Instagram"}` : "nichts geplant", failed.length > 0));
+    const comments = (v.comments ?? []).filter(isOpen);
+    const ready = comments.filter((c) => String(c.draft ?? "").trim()).length;
+    out.push(tile("#social/kommentare", "Kommentare", comments.length ? `${comments.length} offen` : "keine offen",
+      ready ? `${ready} ${ready === 1 ? "Antwortvorschlag" : "Antwortvorschläge"} bereit` : comments.length ? "warten auf Antwort" : "alles beantwortet", false));
+  }
+  const f = financeConfigured() ? S.fin?.value : null;
+  if (f) {
+    const today = zurichToday();
+    const open = f.bills.filter((b) => b.status === "open");
+    const late = open.filter((b) => b.due_date && b.due_date < today);
+    out.push(tile("#finanzen", "Finanzen", late.length ? `${late.length} überfällig` : open.length ? `${open.length} offen` : "alles bezahlt",
+      late.length ? `${late[0].payee} · ${money(late[0].amount, late[0].currency)}` : open.length ? moneyList(sumBy(open)) : `Fixkosten ${moneyList(monthlyTotals(f.costs))} / Monat`, late.length > 0));
+  }
+  return `<div class="instruments">${out.join("")}</div>`;
+}
+
+// the posts of the next 7 days
+function airCard() {
+  const v = S.social?.value;
+  if (!socialConfigured() || !v) return "";
+  const now = Date.now();
+  const posts = v.posts.filter((p) => ["approved", "draft"].includes(p.status) && p.scheduled_at && new Date(p.scheduled_at).getTime() > now && new Date(p.scheduled_at).getTime() < now + 7 * 864e5)
+    .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)).slice(0, 5);
+  const acc = (p) => v.accounts.find((x) => x.id === p.account_id);
+  const today = zurichToday();
+  const dayLabel = (iso) => {
+    const day = zurichToday(new Date(iso));
+    if (day === today) return "Heute";
+    return new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "short" }).format(new Date(iso)).replace(".", "");
+  };
+  const time = (iso) => new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  const first = (p) => String(p.title || p.caption || "Story").split("\n").find(Boolean)?.slice(0, 60) ?? "";
+  return `<section class="side-card" aria-labelledby="air-title"><div class="side-card-head"><h2 id="air-title">Diese Woche auf Sendung</h2><a href="#social">Alle Beiträge</a></div>
+    ${posts.length ? `<ul class="air-list">${posts.map((p) => {
+      const a = acc(p);
+      return `<li><span class="air-when"><span>${esc(dayLabel(p.scheduled_at))}</span><b>${esc(time(p.scheduled_at))}</b></span>
+        <span class="air-what"><b>${esc(first(p))}</b><span class="muted small">${icon(a?.platform === "youtube" ? "play" : "camera")} ${esc(a?.platform === "youtube" ? `YouTube · ${a?.handle ?? ""}` : `Instagram · @${a?.handle ?? ""}`)}</span></span>
+        <span class="pill ${p.status === "approved" ? "approved" : "draft"}">${p.status === "approved" ? "freigegeben" : "Entwurf"}</span></li>`;
+    }).join("")}</ul>` : `<p class="muted small">Nichts geplant in den nächsten 7 Tagen.</p>`}
+  </section>`;
+}
+
+// money at a glance
+function moneyCard() {
+  const v = financeConfigured() ? S.fin?.value : null;
+  if (!v) return "";
+  const today = zurichToday();
+  const open = v.bills.filter((b) => b.status === "open");
+  const next = upcoming(v.costs, v.bills, today, 30)[0];
+  const owed = v.bills.filter(owedPrivately);
+  const row = (label, value, sub = "") => `<div class="money-row"><span class="muted small">${esc(label)}</span><b class="mono-num">${esc(value)}</b>${sub ? `<span class="small">${esc(sub)}</span>` : ""}</div>`;
+  return `<section class="side-card" aria-labelledby="money-title"><div class="side-card-head"><h2 id="money-title">Geld</h2><a href="#finanzen">Finanzen</a></div>
+    ${row("Fixkosten pro Monat", moneyList(monthlyTotals(v.costs)))}
+    ${row(`Offen · ${open.length} ${open.length === 1 ? "Rechnung" : "Rechnungen"}`, moneyList(sumBy(open)))}
+    ${owed.length ? row("Offen an Christoph", moneyList(sumBy(owed)), `${owed.length} privat bezahlt`) : ""}
+    ${next ? row(`Nächste Zahlung · ${new Date(`${next.date}T12:00:00`).toLocaleDateString("de-CH", { day: "numeric", month: "short" })}`, money(next.amount, next.currency), next.name) : ""}
+  </section>`;
 }
 
 function todayView() {
@@ -389,32 +543,17 @@ function todayView() {
   const laneHtml = LANES.map(([k, title, hint]) => {
     const list = lanes[k];
     if (!list.length && k !== "today") return "";
-    if (!list.length) return `<section class="lane lane-today"><h2 class="section-title">${title}</h2><p class="muted small lane-empty">Für heute ist alles erledigt ✓</p></section>`;
-    return `<section class="lane lane-${k}"><h2 class="section-title">${title} <span class="count-chip${k === "now" ? "" : " calm"}">${list.length}</span><span class="lane-hint">${hint}</span></h2>
-      <ul class="ag-list">${list.map(agendaItem).join("")}</ul></section>`;
+    const head = `<h2 class="lane-title"><span class="lane-dot"></span>${title}${list.length ? ` <span class="lane-count">${list.length}</span>` : ""}<span class="lane-hint">${hint}</span></h2>`;
+    if (!list.length) return `<section class="lane lane-today">${head}<p class="muted small lane-empty">Für heute ist alles erledigt ✓</p></section>`;
+    return `<section class="lane lane-${k}">${head}<ul class="ag-list">${list.map((t) => agendaItem(t, k)).join("")}</ul></section>`;
   }).join("");
   const calm = `<div class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Ruhiger Flug</h2><p class="muted">Nichts überfällig, nichts für heute, nichts diese Woche. Zeit zum Fliegen.</p></div></div>`;
-  return `<section class="block agenda">${total ? laneHtml : calm}</section>
-    ${nextCard()}
-    <section class="block"><h2 class="section-title">Apps</h2><div class="app-cards">${APPS.map(appCard).join("")}</div></section>
-    ${socialConfigured() ? `<section class="block"><h2 class="section-title">Social</h2>${socialSnapshot()}</section>` : ""}
-    ${financeConfigured() ? financeSnapshot() : ""}`;
-}
-
-function financeSnapshot() {
-  const v = S.fin?.value;
-  if (v === null) return "";
-  if (!v) return `<section class="block"><h2 class="section-title">Finanzen</h2><div class="card"><p class="muted loading">${S.fin?.error ? esc(errorText(S.fin.error)) : "Lädt …"}</p></div></section>`;
-  const today = zurichToday();
-  const open = v.bills.filter((b) => b.status === "open");
-  const next = upcoming(v.costs, v.bills, today, 30)[0];
-  return `<section class="block"><h2 class="section-title">Finanzen</h2><div class="card social-snap">
-    <div class="snap-stats fin-snap">
-      <a href="#finanzen"><b>${esc(moneyList(monthlyTotals(v.costs)))}</b><span>Fixkosten pro Monat</span></a>
-      <a href="#finanzen"><b>${open.length}</b><span>offene Rechnungen${open.length ? ` · ${esc(moneyList(sumBy(open)))}` : ""}</span></a>
-      ${next ? `<a href="#finanzen"><b>${esc(new Date(`${next.date}T12:00:00`).toLocaleDateString("de-CH", { day: "numeric", month: "short" }))}</b><span>nächste Belastung: ${esc(next.name)} · ${esc(money(next.amount, next.currency))}</span></a>` : ""}
-      <a class="btn ghost" href="#finanzen">Finanzen öffnen</a>
-    </div></div></section>`;
+  return `${statusTiles(lanes)}
+    <div class="today-grid">
+      <div class="today-main agenda">${total ? laneHtml : calm}</div>
+      <aside class="today-side">${nextCard()}${airCard()}${moneyCard()}</aside>
+      <section class="today-apps"><h2 class="section-title">Apps</h2><div class="app-cards">${APPS.map(appCard).join("")}</div></section>
+    </div>`;
 }
 
 function sparkFor(a, key, kind) {
@@ -450,24 +589,6 @@ function appCard(a) {
   </a>`;
 }
 
-function socialSnapshot() {
-  const v = S.social?.value;
-  if (!v) return `<div class="card"><p class="muted loading">${S.social?.error ? esc(errorText(S.social.error)) : "Lädt …"}</p></div>`;
-  const handle = (id) => v.accounts.find((x) => x.id === id)?.handle ?? "";
-  const planned = v.posts.filter((p) => p.status === "approved").sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at)).slice(0, 3);
-  const count = (st) => v.posts.filter((p) => p.status === st).length;
-  return `<div class="card social-snap">
-    <div class="snap-stats">
-      <a href="#social"><b>${count("approved")}</b><span>geplant</span></a>
-      <a href="#social"><b>${count("draft")}</b><span>Entwürfe</span></a>
-      <a href="#social"><b>${count("published")}</b><span>veröffentlicht</span></a>
-      <button class="btn" data-action="go-new-post">${icon("plus")} Neuer Beitrag</button>
-    </div>
-    ${planned.length ? `<ul class="snap-list">${planned.map((p) => `<li><a href="#social">${icon("clock")}<span class="snap-when">${esc(formatZurich(p.scheduled_at))}</span><span class="snap-what">@${esc(handle(p.account_id))} · ${esc(String(p.caption || "Story").split("\n")[0].slice(0, 70))}</span></a></li>`).join("")}</ul>`
-      : `<p class="muted small">Nichts geplant. Ein Paket aus dem Chat «Corporate Identity» oder ein neuer Beitrag füllt den Kalender.</p>`}
-  </div>`;
-}
-
 // ---- app page ------------------------------------------------------------------
 
 function appOverview(a) {
@@ -501,7 +622,7 @@ function searchGroups() {
     pages.push({ label: "Neuer Beitrag", sub: "Social", action: "go-new-post" });
   }
   if (qnhReady()) {
-    pages.push({ label: "Roadmap", sub: "QNH und alle Apps", href: "#roadmap" });
+    pages.push({ label: "Aufgaben", sub: "Roadmap von QNH und allen Apps", href: "#roadmap" });
     pages.push({ label: "Hangar", sub: "Links und Ablage", href: "#hangar" });
     if (financeConfigured()) pages.push({ label: "Finanzen", sub: "Kosten, Abos, Rechnungen", href: "#finanzen" });
     for (const l of S.qnh?.links ?? []) pages.push({ label: l.title, sub: `Hangar · ${l.grp}`, text: l.note + " " + l.url, external: l.url });
@@ -589,6 +710,19 @@ function toggleTheme() {
   try { localStorage.setItem("qnh-theme", S.theme); } catch { /* private mode */ }
   applyTheme();
   render();
+}
+
+// «Neu → Aufgabe»: the roadmap with the cursor in the title field
+function quickTask() {
+  S.sheet = null;
+  if (location.hash !== "#roadmap") location.hash = "#roadmap"; else render();
+  setTimeout(() => root.querySelector('[name="rm-title"]')?.focus(), 80);
+}
+// «Neu → Rechnung erfassen»: the bill form on Finanzen
+function quickBill() {
+  S.sheet = null;
+  if (location.hash !== "#finanzen") location.hash = "#finanzen";
+  setTimeout(() => finance.onClick("fin-new-bill", { dataset: {} }), 50);
 }
 
 function goNewPost() {
@@ -853,6 +987,12 @@ const ICONS = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   wallet: '<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1V7z"/><path d="M4 7l11-3v3"/><circle cx="16" cy="13.5" r="1.2" fill="currentColor"/>',
   plane: '<path d="M2 13l8-2 4-7h2l-2 7 6 1 2-2h1l-1 4 1 4h-1l-2-2-6 1 2 7h-2l-4-7-8-2z"/>',
+  tasks: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+  camera: '<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  play: '<circle cx="12" cy="12" r="8.5"/><path d="m10 8.8 5 3.2-5 3.2z"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  folder: '<path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5H12L10 5H4.5A1.5 1.5 0 0 0 3 6.5z"/>',
 };
 const icon = (name, cls = "") => `<svg class="ico${cls ? ` ${cls}` : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -926,6 +1066,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     return S.search.open ? closeSearch() : openSearch();
   }
+  if (S.sheet && e.key === "Escape" && !S.search.open) { S.sheet = null; return render(); }
   if (!S.search.open) return;
   if (e.key === "Escape") return closeSearch();
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -951,12 +1092,18 @@ root.addEventListener("click", async (e) => {
   if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
   if (action.startsWith("store-")) return store.onClick(el, APPS);
   if (action.startsWith("fin-")) return finance.onClick(action, el);
-  if (action === "search-open") return openSearch();
+  if (action === "search-open") { S.sheet = null; return openSearch(); }
   if (action === "search-close") return closeSearch();
   if (action === "pal-go") return activate(paletteResults[Number(el.dataset.i)]);
-  if (action === "theme") return toggleTheme();
-  if (action === "go-new-post") return goNewPost();
+  if (action === "theme") { S.sheet = null; return toggleTheme(); }
+  if (action === "go-new-post") { S.sheet = null; return goNewPost(); }
+  if (action === "sheet") { S.sheet = S.sheet === value ? null : value; return render(); }
+  if (action === "sheet-close") { if (el.classList.contains("sheet-backdrop") && e.target !== el) return; S.sheet = null; return render(); }
+  if (action === "go") { S.sheet = null; if (location.hash === value) render(); else location.hash = value; return; }
+  if (action === "quick-task") return quickTask();
+  if (action === "quick-bill") return quickBill();
   const a = el.dataset.app ? appById(el.dataset.app) : app();
+  if (S.sheet && (action === "refresh" || action === "sign-out")) S.sheet = null;
 
   switch (action) {
     case "refresh":
