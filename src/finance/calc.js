@@ -86,8 +86,13 @@ export function sumBy(rows, key = "currency") {
   return out;
 }
 
-const fmt = new Intl.NumberFormat("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-export const money = (amount, currency = "CHF") => (amount == null ? "–" : `${currency} ${fmt.format(Number(amount))}`);
+// 1234.5 → "1’234.50". Grouped by hand: Intl's de-CH separator differs between browsers and Node versions (’ or ').
+export function amountText(amount) {
+  const n = Number(amount);
+  const [int, dec] = Math.abs(n).toFixed(2).split(".");
+  return `${n < 0 ? "-" : ""}${int.replace(/\B(?=(\d{3})+(?!\d))/g, "’")}.${dec}`;
+}
+export const money = (amount, currency = "CHF") => (amount == null ? "–" : `${currency} ${amountText(amount)}`);
 export const moneyList = (totals) => Object.entries(totals).filter(([, v]) => v > 0.004).map(([cur, v]) => money(v, cur)).join(" + ") || money(0);
 
 // "1'234.50", "1 234,50", "CHF 99.–" → 1234.5 (null when empty)

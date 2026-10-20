@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addMonths, billDue, billFileType, bookingDay, exportPeriod, financeDue, inPeriod, monthly, monthlyTotals, moneyList, nextDue, nextRenewal, parseAmount, recurringDone, toCsv, upcoming, zurichDay } from "../src/finance/calc.js";
+import { addMonths, amountText, billDue, billFileType, bookingDay, exportPeriod, financeDue, inPeriod, monthly, monthlyTotals, moneyList, nextDue, nextRenewal, parseAmount, recurringDone, toCsv, upcoming, zurichDay } from "../src/finance/calc.js";
 
 const cost = (over) => ({ name: "Supabase", amount: 25, currency: "USD", interval: "monthly", next_due: "2026-01-08", notice_days: 0, active: true, scope: "qnh", ...over });
 
@@ -10,6 +10,14 @@ test("monthly equivalents and totals per currency", () => {
   assert.equal(monthly(cost({ interval: "once", amount: 30 })), 0);
   assert.deepEqual(monthlyTotals([cost({}), cost({ currency: "CHF", amount: 12, interval: "yearly" }), cost({ active: false })]), { USD: 25, CHF: 1 });
   assert.equal(moneyList({ CHF: 1234.5, USD: 0 }), "CHF 1’234.50");
+});
+
+test("amounts look the same in every browser (own thousands separator)", () => {
+  assert.equal(amountText(0), "0.00");
+  assert.equal(amountText(999.9), "999.90");
+  assert.equal(amountText(1000), "1’000.00");
+  assert.equal(amountText(1234567.891), "1’234’567.89");
+  assert.equal(amountText("59.4"), "59.40");
 });
 
 test("renewals roll forward without drifting the day of the month", () => {
