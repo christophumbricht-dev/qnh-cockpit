@@ -225,13 +225,23 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
   }
 
+  // post list: a still image only (videos would be downloaded just to show a frame)
+  function listThumb(p) {
+    const first = p.media?.[0];
+    if (!first) return `<span class="thumb empty"></span>`;
+    if (!/^video\//.test(first.type)) return thumb(first);
+    return p.cover_path
+      ? `<span class="video-thumb">${thumb({ path: p.cover_path, type: "image/jpeg", alt: "" })}<span class="play" aria-hidden="true">▶</span></span>`
+      : `<span class="thumb video-tile" aria-label="Video">▶</span>`;
+  }
+
   function thumb(item, cls = "thumb") {
     if (!item) return `<span class="${cls} empty"></span>`;
     const src = item.url ?? data.mediaUrl(item.path);
-    if (!/^video\//.test(item.type)) return `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy">`;
+    if (!/^video\//.test(item.type)) return `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy" decoding="async">`;
     // phone preview: playable with sound and controls (cover as poster); elsewhere a still frame with ▶
     const poster = item.poster ? ` poster="${esc(item.poster)}"` : "";
-    if (cls.includes("phone-img")) return `<video class="${cls}" src="${esc(src)}" controls playsinline loop preload="metadata"${poster}></video>`;
+    if (cls.includes("phone-img")) return `<video class="${cls}" src="${esc(src)}" controls playsinline loop preload="${item.poster ? "none" : "metadata"}"${poster}></video>`;
     return `<span class="video-thumb"><video class="${cls}" src="${esc(src)}#t=0.5" muted playsinline preload="metadata"${poster}></video><span class="play" aria-hidden="true">▶</span></span>`;
   }
 
@@ -290,7 +300,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (p.permalink) actions.push(`<a class="btn ghost" href="${esc(p.permalink)}" target="_blank" rel="noopener">Auf ${PLATFORM[a?.platform] ?? "Instagram"} öffnen</a>`);
     if (p.status === "draft") actions.push(btn("soc-delete", "Löschen"));
     return `<article class="item soc-item">
-      ${p.media_deleted_at ? `<span class="thumb empty"></span>` : thumb(p.media?.[0])}
+      ${p.media_deleted_at ? `<span class="thumb empty"></span>` : listThumb(p)}
       <div>
         <div class="meta"><b>${esc(accountLabel(a))}</b><span>${KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
@@ -774,7 +784,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const placeName = prompt("Name des Ortes (so erscheint er in deiner Liste), z. B. «Flugplatz Birrfeld»:")?.trim();
       const raw = placeName ? prompt("Facebook-Seiten-ID des Ortes (nur Ziffern) – oder den Link zur Facebook-Seite, wenn er «?id=…» enthält:")?.trim() : "";
       const pageId = (raw ?? "").match(/(?:[?&]id=)?(\d{5,25})/)?.[1];
-      if (!placeName || !pageId) { if (placeName) toast("Keine gültige ID gefunden – siehe Anleitung «Standort» in docs/social-setup.md."); render(); return true; }
+      if (!placeName || !pageId) { if (placeName) toast("Keine gültige ID gefunden – siehe Anleitung «Standort» in docs/social-setup.md."); render(true); return true; }
       try {
         await data.addLocation(pageId, placeName);
         ed.location = { id: pageId, name: placeName };

@@ -52,7 +52,7 @@ const root = document.getElementById("app");
 const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...APPS.map((a) => ({ id: a.id, name: a.name, color: a.color }))];
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
-const social = createSocial({ S, render: () => render(), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
+const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
   appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }) });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
@@ -144,12 +144,17 @@ function gateApp() {
   return QNH.url && QNH.anonKey ? QNH : APPS.find(live) ?? null;
 }
 
-function render() {
+let lastHtml = "";
+function render(force = false) {
   const focused = document.activeElement?.name;
   const gate = gateApp();
-  root.innerHTML = gate && !S.users[gate.id]
+  const html = gate && !S.users[gate.id]
     ? `<main class="gate" style="--photo:url('${PHOTO_BASE}band.webp')"><section class="gate-card">${logo()}<h1>QNH Cockpit</h1><p class="muted">intern</p>${loginForm(gate, true)}</section>${photoCredit()}</main>`
     : shell();
+  // many state changes (loading flags, realtime echoes) produce the same page: skip the costly rebuild
+  if (!force && html === lastHtml && root.childElementCount) return;
+  lastHtml = html;
+  root.innerHTML = html;
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
   social.afterRender();
 }
