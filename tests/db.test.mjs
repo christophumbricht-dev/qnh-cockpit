@@ -240,4 +240,6 @@ test("youtube title: stored with the post, frozen once approved, todo still edit
   await as(ADMIN, `update social_posts set status='draft' where id='${id}'`);
   await as(ADMIN, `update social_posts set title='other' where id='${id}'`);
   assert.equal((await as(ADMIN, `select title from social_posts where id='${id}'`)).rows[0].title, "other");
+  await as(ADMIN, `update social_posts set caption=repeat('x', 3000) where id='${id}'`); // a long YouTube description
+  await assert.rejects(as(ADMIN, `update social_posts set caption=repeat('x', 5001) where id='${id}'`));
 });

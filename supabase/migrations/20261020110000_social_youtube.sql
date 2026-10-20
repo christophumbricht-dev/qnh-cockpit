@@ -6,6 +6,11 @@
 alter table public.social_posts add column if not exists title text not null default ''
   check (char_length(title) <= 100);
 
+-- YouTube descriptions are longer than Instagram's 2200 characters (the cockpit checks each platform's own limit;
+-- characters here, so an emoji-rich Instagram caption is never refused for its bytes)
+alter table public.social_posts drop constraint if exists social_posts_caption_check;
+alter table public.social_posts add constraint social_posts_caption_check check (char_length(caption) <= 5000);
+
 create or replace function public.social_posts_guard()
 returns trigger language plpgsql set search_path = '' as $$
 begin

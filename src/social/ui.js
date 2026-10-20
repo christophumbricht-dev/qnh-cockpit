@@ -407,8 +407,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const tags = countHashtags(ed.caption);
     if (isYoutube(ed.account_id)) {
       const bytes = utf8Bytes(ed.caption);
-      const cls = bytes > YOUTUBE.descriptionBytes || tags > YOUTUBE.hashtagsMax ? "error" : "muted";
-      return `<span class="${cls}">${bytes} / ${YOUTUBE.descriptionBytes} Bytes · ${tags} Hashtag${tags === 1 ? "" : "s"} (höchstens ${YOUTUBE.hashtagsMax})</span>`;
+      const cls = bytes > YOUTUBE.descriptionBytes || tags > YOUTUBE.hashtagsMax ? "error" : tags > YOUTUBE.hashtagsWarn ? "warn" : "muted";
+      return `<span class="${cls}">${bytes} / ${YOUTUBE.descriptionBytes} Bytes · ${tags} Hashtag${tags === 1 ? "" : "s"}</span>`;
     }
     const cls = ed.caption.length > LIMITS.caption || tags > LIMITS.hashtagsMax ? "error" : tags > LIMITS.hashtagsWarn ? "warn" : "muted";
     return `<span class="${cls}">${ed.caption.length} / ${LIMITS.caption} Zeichen · ${tags} Hashtag${tags === 1 ? "" : "s"}</span>`;
@@ -466,7 +466,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
               <span class="small muted">${ed.kind === "reel" || ed.kind === "story" ? "Hochformat 9:16" : "JPEG, 4:5 / 1:1 / 1.91:1"} · Videos als MP4 (H.264)</span></div>`}
           <ul class="soc-files">${itemsHtml}</ul>
           ${yt ? `<label class="field">Titel <span class="counter" id="soc-title-counter">${titleCounter(ed)}</span>
-            <input name="soc-title" maxlength="${YOUTUBE.title + 20}" value="${esc(ed.title ?? "")}" placeholder="z. B. Föhn: Warum ist es in Altdorf so warm?"${dis}></label>` : ""}
+            <input name="soc-title" maxlength="${YOUTUBE.title}" value="${esc(ed.title ?? "")}" placeholder="z. B. Föhn: Warum ist es in Altdorf so warm?"${dis}></label>` : ""}
           ${ed.kind === "reel" && !yt ? `<div class="field">Titelbild (optional, JPEG)
             ${ed.cover ? `<div class="soc-file">${thumb({ ...ed.cover, url: ed.cover.url ?? data.mediaUrl(ed.cover.path ?? ed.cover.copyFrom) }, "thumb small")}${ro ? "" : `<button class="link" data-action="soc-remove-cover">Entfernen</button>`}</div>`
               : ro ? `<span class="muted small">keines</span>` : `<button class="btn ghost" data-action="soc-pick-cover">Titelbild wählen</button>`}</div>` : ""}
@@ -611,7 +611,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       Object.assign(it, { path, file: undefined, copyFrom: undefined });
     }
     let cover_path = null;
-    if (ed.kind === "reel" && ed.cover) {
+    if (ed.kind === "reel" && ed.cover && !isYoutube(ed.account_id)) { // YouTube: no cover through the API
       cover_path = ed.cover.path;
       if (ed.cover.file) cover_path = await data.uploadFile(ed.id, ed.cover.file, "cover");
       else if (ed.cover.copyFrom) cover_path = await data.copyFile(ed.cover.copyFrom, ed.id, "image/jpeg", "cover");
@@ -620,7 +620,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const row = {
       account_id: ed.account_id, kind: ed.kind, title: isYoutube(ed.account_id) ? String(ed.title ?? "").trim() : "", caption: ed.kind === "story" ? "" : ed.caption,
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
-      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" ? null : ed.location ?? null,
+      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row);
     ed.isNew = false;
@@ -674,7 +674,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const r = results.find((x) => x.id === id);
       if (r?.error) toast(r.error);
       else if (r?.status === "published") toast("Veröffentlicht");
-      else if (r?.status === "processing") toast("Instagram verarbeitet das Video noch – der Status aktualisiert sich von selbst.");
+      else if (r?.status === "processing") toast(isYoutube(ed.account_id) ? "YouTube-Upload läuft noch – der nächste Durchgang (alle 10 Minuten) macht weiter." : "Instagram verarbeitet das Video noch – der Status aktualisiert sich von selbst.");
+      else if (r?.status === "waiting") toast("Tageslimit erreicht – wird automatisch später veröffentlicht.");
       await load(true);
       if (S.social.editor?.id === id) S.social.editor.status = posts().find((p) => p.id === id)?.status ?? ed.status;
     });

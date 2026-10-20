@@ -18,6 +18,7 @@ export async function loadSocial() {
   ]);
   const rows = must(posts, "posts");
   if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; hasTitle = "title" in rows[0]; }
+  else hasTitle = !(await sb().from("social_posts").select("title").limit(1)).error; // empty table: ask for the column
   const places = hasLocation ? await sb().from("social_locations").select("id, page_id, name").order("name") : { data: [] };
   // what is already on Instagram (from the daily statistics; empty until that is set up)
   const seen = await sb().from("social_media_stats").select("media_id, account_id, caption, posted_at, permalink").order("day", { ascending: false }).limit(500);

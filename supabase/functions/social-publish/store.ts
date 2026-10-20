@@ -53,7 +53,7 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
       const rows = must(await db.from("social_posts").select("*, social_accounts!inner(platform)").eq("social_accounts.platform", "youtube")
         .eq("status", "published").is("remote_comment_id", null).not("remote_media_id", "is", null).neq("first_comment", "")
         .gte("published_at", since.toISOString()).limit(20), "youtube follow-up") as Array<Post & { social_accounts?: unknown }>;
-      return rows.map(({ social_accounts: _a, ...p }) => p as Post);
+      return rows.map(({ social_accounts: _a, ...p }) => p as Post).filter((p) => p.first_comment.trim()); // only spaces: nothing to write
     },
     async removeFiles(paths) {
       if (paths.length) must(await db.storage.from(BUCKET).remove(paths), "remove files");

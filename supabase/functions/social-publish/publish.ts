@@ -12,7 +12,7 @@ import { publishYoutube } from "./youtube.ts";
 export const MAX_ATTEMPTS = 3;
 
 export type UserTag = { username: string; x: number; y: number };
-export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null };
+export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null; duration?: number | null };
 
 // Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
 export function userTags(m: MediaItem): string | undefined {
@@ -79,7 +79,11 @@ export class FinalError extends Error {}
 export async function publishDue(deps: Deps, postId?: string): Promise<Result[]> {
   const posts = await deps.store.claim(postId);
   const results: Result[] = [];
-  for (const post of posts) results.push(await publishOne(deps, post));
+  for (const post of posts) {
+    // out of time: the rest stays «publishing» and the next run picks it up (not counted as a new attempt)
+    if (deps.deadline && deps.now().getTime() > deps.deadline) break;
+    results.push(await publishOne(deps, post));
+  }
   return results;
 }
 

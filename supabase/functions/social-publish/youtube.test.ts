@@ -1,7 +1,7 @@
 // Deno tests: YouTube publishing with a mocked Google API and a fake file in Storage (npm run test:functions)
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1";
 import { type Account, type Deps, publishDue, type Post, type Store } from "./publish.ts";
-import { followUpYoutube, nextOffset, videoResource } from "./youtube.ts";
+import { followUpYoutube, nextOffset, parseSession, videoResource } from "./youtube.ts";
 
 const NOW = new Date("2026-10-20T16:00:00Z");
 const YT: Account = { id: "yt1", app_id: "leesidelab", platform: "youtube", remote_id: "UCown", handle: "leesidelab", active: true, token_expires_at: null };
@@ -40,7 +40,9 @@ function fakeStore(posts: Post[]) {
   return store;
 }
 
-type Opts = { tokenError?: unknown; startError?: unknown; commentError?: boolean; lose?: number; expire?: boolean; privacy?: string };
+type Opts = { tokenError?: unknown; startError?: unknown; commentError?: boolean; lose?: number; privacy?: string; fail5xx?: number; chunk400?: boolean; oldDone?: boolean };
+const OLD = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=OLD";
+const oldSession = (fp = "different") => JSON.stringify({ s: OLD, fp, total: FILE.length });
 // Google + Storage: token, resumable session, pieces (308 + Range), final video; counts every call
 function mockGoogle(o: Opts = {}) {
   let received = 0; // bytes YouTube has
@@ -64,9 +66,12 @@ function mockGoogle(o: Opts = {}) {
       return new Response(null, { status: 200, headers: { Location: SESSION.replace("SESSION1", `SESSION${sessions}`) } });
     }
     if (url.startsWith("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=")) {
-      if (o.expire) return new Response("gone", { status: 404 });
+      assertEquals(init?.redirect, "manual"); // the bearer token never follows a redirect
       const range = headers["Content-Range"];
       const video = { id: "VID1", status: { privacyStatus: o.privacy ?? "public", uploadStatus: "uploaded" } };
+      if (url === OLD) return o.oldDone ? json({ ...video, id: "VIDOLD" }, 200) : range.startsWith("bytes */") ? new Response(null, { status: 308, headers: { Range: "bytes=0-1000" } }) : new Response("gone", { status: 404 });
+      if (o.chunk400 && !range.startsWith("bytes */")) return json({ error: { message: "Invalid Content-Range", errors: [{ reason: "badRequest" }] } }, 400);
+      if (o.fail5xx && !range.startsWith("bytes */") && o.fail5xx-- > 0) return new Response("busy", { status: 503 });
       if (range.startsWith("bytes */")) return received >= FILE.length ? json(video, 200) : new Response(null, { status: 308, headers: received ? { Range: `bytes=0-${received - 1}` } : {} });
       const [, start, end] = range.match(/bytes (\d+)-(\d+)\//)!.map(Number);
       assertEquals(start, received, "pieces in order, no gaps");
@@ -98,7 +103,8 @@ Deno.test("youtube: resumable upload in pieces → Short link → first comment;
   assertEquals([meta.snippet.categoryId, meta.status.privacyStatus, meta.status.selfDeclaredMadeForKids], ["27", "public", false]);
   assertEquals(start.headers["X-Upload-Content-Length"], String(FILE.length));
   assertEquals(start.headers.Authorization, "Bearer ACCESS");
-  assertEquals(posts[0].remote_container_id, SESSION); // session kept for a resume
+  assertEquals(parseSession(posts[0].remote_container_id)?.s, SESSION); // session kept for a resume
+  assertEquals(parseSession(posts[0].remote_container_id)?.total, FILE.length);
 });
 
 Deno.test("youtube: out of time mid-upload → next run continues the same session, no second video", async () => {
@@ -121,22 +127,53 @@ Deno.test("youtube: out of time mid-upload → next run continues the same sessi
   assertEquals(posts[0].attempts, 1); // continuing is not a new attempt
 });
 
-Deno.test("youtube: the final answer got lost → the session says done → no re-upload", async () => {
+Deno.test("youtube: the final answer got lost → the session says done → no re-upload, no lost attempt", async () => {
   const posts = [post()];
   const store = fakeStore(posts);
   const g = mockGoogle({ lose: 1 });
-  assertEquals((await publishDue(deps(store, g.fetchFn)))[0].status, "retry");
-  assertEquals(posts[0].status, "approved");
-  await publishDue(deps(store, g.fetchFn));
-  assertEquals([posts[0].status, posts[0].remote_media_id], ["published", "VID1"]);
+  assertEquals((await publishDue(deps(store, g.fetchFn)))[0].status, "published");
+  assertEquals([posts[0].remote_media_id, posts[0].attempts], ["VID1", 1]);
   assertEquals([g.sessions(), g.sent()], [1, 3]);
 });
 
-Deno.test("youtube: expired session starts a new upload", async () => {
-  const posts = [post({ status: "publishing", attempts: 1, remote_container_id: SESSION })];
-  const g = mockGoogle({ expire: true });
-  await publishDue(deps(fakeStore(posts), g.fetchFn));
+Deno.test("youtube: a Google hiccup (503) mid-upload → ask the session, go on from there", async () => {
+  const posts = [post()];
+  const g = mockGoogle({ fail5xx: 2 });
+  assertEquals((await publishDue(deps(fakeStore(posts), g.fetchFn)))[0].status, "published");
   assertEquals(g.sessions(), 1);
+});
+
+Deno.test("youtube: post edited after the upload had started → a fresh session with the new title", async () => {
+  const posts = [post({ status: "approved", attempts: 1, remote_container_id: oldSession() })];
+  const g = mockGoogle();
+  await publishDue(deps(fakeStore(posts), g.fetchFn));
+  assertEquals([posts[0].status, posts[0].remote_media_id, g.sessions()], ["published", "VID1", 1]);
+  assert(!g.calls.some((c) => c.url === OLD && !String(c.headers["Content-Range"]).startsWith("bytes */")), "no bytes into the old session");
+});
+
+Deno.test("youtube: an old session that had finished is taken (no second video), with a note", async () => {
+  const posts = [post({ status: "approved", attempts: 1, remote_container_id: oldSession() })];
+  const g = mockGoogle({ oldDone: true });
+  await publishDue(deps(fakeStore(posts), g.fetchFn));
+  assertEquals([posts[0].remote_media_id, g.sessions()], ["VIDOLD", 0]);
+  assertMatch(posts[0].last_error as string, /vor deiner letzten Änderung/);
+});
+
+Deno.test("youtube: a session that refuses the pieces is dropped → the retry starts clean", async () => {
+  const posts = [post()];
+  const g = mockGoogle({ chunk400: true });
+  await publishDue(deps(fakeStore(posts), g.fetchFn));
+  assertEquals([posts[0].status, posts[0].remote_container_id], ["failed", null]);
+});
+
+Deno.test("publish: out of time → the remaining claimed posts wait for the next run", async () => {
+  const posts = [post({ id: "a" }), post({ id: "b" })];
+  let t = NOW.getTime();
+  const g = mockGoogle();
+  const timed = async (u: string | URL, i?: RequestInit) => { t += 30_000; return await g.fetchFn(u, i); };
+  const r = await publishDue(deps(fakeStore(posts), timed, { now: () => new Date(t), deadline: NOW.getTime() + 60_000, chunkSize: 1024 * 1024 }));
+  assertEquals(r.length, 1);
+  assertEquals(posts[1].status, "publishing"); // claimed, untouched, resumed by the next run
 });
 
 Deno.test("youtube: daily quota → waits without counting an attempt; revoked access fails with a German message", async () => {
@@ -175,6 +212,21 @@ Deno.test("youtube: first comment refused while processing → follow-up writes 
   assertEquals(posts[0].remote_comment_id, "CT1");
   assertMatch(posts[0].last_error as string, /privat/);
   assert(!/Kommentar folgt/.test(posts[0].last_error as string));
+});
+
+Deno.test("youtube follow-up: at the end of the window it says «von Hand» once, and a later success removes it", async () => {
+  const posts = [post({ status: "published", remote_media_id: "VID1", published_at: NOW.toISOString(), last_error: "YouTube hat das Video als «private» gespeichert – in YouTube Studio prüfen. Der erste Kommentar folgt, sobald YouTube das Video fertig verarbeitet hat." })];
+  const store = fakeStore(posts);
+  const late = () => new Date(NOW.getTime() + 100 * 60_000);
+  let writes = 0;
+  const counting = { ...store, update: async (id: string, patch: Record<string, unknown>) => { writes++; await store.update(id, patch); } };
+  await followUpYoutube({ store: counting, fetch: mockGoogle({ commentError: true }).fetchFn, now: late, google: GOOGLE });
+  await followUpYoutube({ store: counting, fetch: mockGoogle({ commentError: true }).fetchFn, now: late, google: GOOGLE });
+  assertEquals(writes, 1);
+  assertMatch(posts[0].last_error as string, /privat.*von Hand schreiben/s);
+  assert(!/folgt/.test(posts[0].last_error as string));
+  await followUpYoutube({ store, fetch: mockGoogle().fetchFn, now: late, google: GOOGLE });
+  assertEquals(posts[0].last_error, "YouTube hat das Video als «private» gespeichert – in YouTube Studio prüfen.");
 });
 
 Deno.test("youtube: helpers", () => {

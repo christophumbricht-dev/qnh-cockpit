@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
     if (op === "publish") {
       const postId = !fromCron && typeof body.post_id === "string" ? body.post_id : undefined;
       const results = await publishDue(deps, postId);
-      if (!postId) results.push(...(await followUpYoutube({ store, fetch, now: deps.now, google })));
+      if (!postId) results.push(...(await followUpYoutube({ store, fetch, now: deps.now, google, deadline: deps.deadline })));
       return json({ results });
     }
     if (op === "refresh-tokens") return json({ results: await refreshTokens(deps) });

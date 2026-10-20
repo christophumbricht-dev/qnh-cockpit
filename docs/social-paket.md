@@ -34,7 +34,7 @@ Nach dem Posten: @exploring_the_skies markieren"
 | Feld | Pflicht | Bedeutung |
 |---|---|---|
 | `account` | ja | `app/plattform`, z. B. `downwind/instagram`, `secondseat/instagram`, `leesidelab/youtube`. Muss im Cockpit als Konto verbunden sein. |
-| `title` | bei YouTube | Videotitel, höchstens 100 Zeichen. Bei YouTube ist `caption` die Beschreibung (höchstens 5000 Bytes, höchstens 15 Hashtags). |
+| `title` | bei YouTube | Videotitel, höchstens 100 Zeichen. Bei YouTube ist `caption` die Beschreibung (höchstens 5000 Bytes; ab 15 Hashtags eine Warnung, bei mehr als 60 ignoriert YouTube alle). |
 | `kind` | ja | `image` (ein Bild), `carousel` (2–10 Bilder/Videos), `reel` (ein Video), `story` (ein Bild oder Video) |
 | `caption` | nein | Text, höchstens 2200 Zeichen, höchstens 30 Hashtags (ab 15 gibt es eine Warnung). Zeilenumbruch als `\n`. Bei Stories ignoriert. |
 | `first_comment` | nein | Erster Kommentar nach dem Veröffentlichen (z. B. die Hashtags). Bei Stories ignoriert. |
