@@ -10,6 +10,10 @@ import { formatZurich } from "./social/validate.js";
 import { createQnh } from "./qnh/ui.js";
 import { qnhReady } from "./qnh/data.js";
 import { createStore } from "./store/ui.js";
+import { createFinance } from "./finance/ui.js";
+import { financeConfigured } from "./finance/data.js";
+import { money, moneyList, monthlyTotals, sumBy, upcoming, zurichToday } from "./finance/calc.js";
+import { LANES, buildAgenda, laneForDate, needsYou } from "./today.js";
 
 const TREND_RANGES = [[30, "30 Tage"], [91, "3 Monate"], [182, "6 Monate"], [365, "1 Jahr"]];
 const TAB_LABELS = { overview: "Übersicht", store: "Store & Builds", roadmap: "Roadmap", trend: "Verlauf", feedback: "Feedback", errors: "Fehler", beta: "Beta", verify: "Verifizierung", reports: "Meldungen" };
@@ -49,14 +53,16 @@ const S = {
 };
 
 const root = document.getElementById("app");
-const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...APPS.map((a) => ({ id: a.id, name: a.name, color: a.color }))];
+const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...[...APPS, ...BRANDS].map((a) => ({ id: a.id, name: a.name, color: a.color }))];
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
   appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })) });
+const scopeBadge = (id) => appBadge(id === "qnh" ? { name: "QNH", color: "#0B7285" } : appById(id) ?? { name: id, color: "#627d98" });
+const finance = createFinance({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: () => SCOPES, scopeBadge });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
-const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar"];
+const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar", "finance"];
 const isAppPage = () => !GLOBAL_TABS.includes(S.tab);
 const appTabs = (a) => ["overview", ...(a.offline ? [] : a.tabs ?? []), ...(a.store ? ["store"] : []), "roadmap"];
 
@@ -106,6 +112,7 @@ function ensureData(force = false) {
   if (qnhReady() && (api.DEMO || S.users[QNH.id])) {
     qnh.load(force);
     store.load(APPS, force);
+    if (financeConfigured()) finance.load(force);
   }
   const a = app();
   if (!isAppPage() || !a || !S.users[a.id]) return;
@@ -122,6 +129,7 @@ function route() {
   if (first === "social") { S.tab = "social"; if (second === "kommentare") social.setMode("comments"); }
   else if (first === "roadmap") S.tab = "roadmap-all";
   else if (first === "hangar") S.tab = "hangar";
+  else if (first === "finanzen") S.tab = "finance";
   else if (a) {
     S.appId = a.id;
     S.tab = appTabs(a).includes(second) ? second : "overview";
@@ -160,7 +168,7 @@ function render(force = false) {
 }
 
 function shell() {
-  const todoCount = allTodos().length;
+  const todoCount = needsYou(agenda());
   const navItem = (href, on, iconHtml, label, n, extra = "") =>
     `<a href="${href}" class="nav-item${on ? " on" : ""}"${extra}>${iconHtml}<span class="nav-label">${esc(label)}</span>${n ? `<span class="badge">${n}</span>` : ""}</a>`;
   const appItems = APPS.map((a) => navItem(`#${a.id}`, isAppPage() && S.appId === a.id, appBadge(a), a.name, todos(a).length, ` style="--app:${esc(a.color)}"`)).join("");
@@ -175,6 +183,7 @@ function shell() {
         ${qnhReady() ? `<p class="side-label">QNH</p>
           ${socialConfigured() ? navItem("#social", S.tab === "social", icon("social"), "Social", social.badge()) : ""}
           ${navItem("#roadmap", S.tab === "roadmap-all", icon("flag"), "Roadmap", 0)}
+          ${financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finance.badge()) : ""}
           ${navItem("#hangar", S.tab === "hangar", icon("grid"), "Hangar", 0)}` : ""}
         <button class="nav-item nav-search" data-action="search-open">${icon("search")}<span class="nav-label">Suchen</span></button>
       </nav>
@@ -205,13 +214,15 @@ function pageHead() {
     const user = S.users[QNH.id] ?? Object.values(S.users).find(Boolean) ?? (api.DEMO ? { email: "christoph@setqnh.ch" } : null);
     const name = firstName(user?.email);
     const date = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "long", day: "numeric", month: "long" }).format(new Date());
-    const n = allTodos().length;
+    const lanes = agenda();
+    const n = needsYou(lanes);
+    const later = lanes.week.length;
     const photo = photoOfDay();
     return `<header class="page-head hello">
       <div class="hero" style="--photo:url('${photo.url}');--photo-pos:center ${photo.pos}">
         <p class="eyebrow">${esc(date)}</p>
         <h1>${esc(greeting())}${name ? `, ${esc(name)}` : ""}.</h1>
-        <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>
+        <p class="lead">${n ? `${n} ${n === 1 ? "Sache braucht" : "Dinge brauchen"} dich heute${lanes.now.length ? ` – ${lanes.now.length} davon sofort` : ""}.` : later ? `Heute ist alles erledigt. ${later} ${later === 1 ? "Sache kommt" : "Dinge kommen"} diese Woche.` : "CAVOK – alles ruhig, nichts wartet auf dich."}</p>
         ${photoCredit()}
       </div>
     </header>`;
@@ -221,6 +232,9 @@ function pageHead() {
   }
   if (S.tab === "hangar") {
     return `<header class="page-head"><div class="ph-title">${icon("grid", "ph-icon")}<div><h1>Hangar</h1><p class="muted">Alle Werkzeuge und deine Ablage – ein Klick entfernt.</p></div></div></header>`;
+  }
+  if (S.tab === "finance") {
+    return `<header class="page-head"><div class="ph-title">${icon("wallet", "ph-icon")}<div><h1>Finanzen</h1><p class="muted">Kosten, Abos und Rechnungen – bezahlt wird im E-Banking, hier behältst du den Überblick.</p></div></div></header>`;
   }
   if (S.tab === "social") {
     return `<header class="page-head"><div class="ph-title">${icon("social", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram und YouTube aller Apps – du gibst jeden Beitrag frei und beantwortest Kommentare hier.</p></div></div></header>`;
@@ -258,6 +272,7 @@ function view() {
   if (S.tab === "social") return social.view();
   if (S.tab === "roadmap-all") return qnh.roadmapView(null);
   if (S.tab === "hangar") return qnh.hangarView();
+  if (S.tab === "finance") return api.DEMO || S.users[QNH.id] ? finance.view() : `<p class="note">Für die Finanzen bei QNH Core anmelden (Seite «Heute»).</p>`;
   const a = app();
   if (S.tab === "roadmap") return qnh.roadmapView(a.id);
   if (S.tab === "store") return api.DEMO || S.users[QNH.id] ? store.view(a) : `<p class="note">Für Store & Builds bei QNH Core anmelden (Seite «Heute»).</p>`;
@@ -278,54 +293,69 @@ function view() {
 
 function todos(a) {
   if (!live(a)) return [];
-  if (!S.users[a.id]) return [{ app: a, tone: "info", label: `Bei ${a.name} anmelden`, href: `#${a.id}` }];
+  if (!S.users[a.id]) return [{ app: a, tone: "info", lane: "now", label: `Bei ${a.name} anmelden`, href: `#${a.id}` }];
   const s = S.data[`${a.id}:stats`]?.value;
   const out = [];
-  const add = (n, one, many, tab, tone = "alert") => { if (n > 0) out.push({ app: a, tone, n, label: `${n} ${n === 1 ? one : many}`, href: `#${a.id}/${tab}` }); };
+  const add = (n, one, many, tab, tone = "alert", lane = "today") => { if (n > 0) out.push({ app: a, tone, lane, n, label: `${n} ${n === 1 ? one : many}`, href: `#${a.id}/${tab}` }); };
   if (s) {
     add(s.feedback_new, "neues Feedback", "neue Feedbacks", "feedback");
-    add(s.errors_24h, "Fehler in den letzten 24 h", "Fehler in den letzten 24 h", "errors");
+    add(s.errors_24h, "Fehler in den letzten 24 h", "Fehler in den letzten 24 h", "errors", "alert", "now");
     add(s.beta_new, "neue Beta-Anmeldung", "neue Beta-Anmeldungen", "beta", "info");
   }
   for (const t of a.stats ?? []) {
     if (!t.list) continue;
     const v = tileValue(a, t, s);
-    if (v > 0) out.push({ app: a, tone: "alert", n: v, label: `${v} ${v === 1 && t.one ? t.one : t.label}`, href: `#${a.id}/${t.tab}` });
+    if (v > 0) out.push({ app: a, tone: "alert", lane: "today", n: v, label: `${v} ${v === 1 && t.one ? t.one : t.label}`, href: `#${a.id}/${t.tab}` });
   }
   return out;
 }
 
-function socialTodos() {
+// Social on «Heute»: broken posts and drafts that would miss their time first, the rest by date
+function socialItems(today) {
   const v = S.social?.value;
   if (!v) return [];
   const out = [];
-  const failed = v.posts.filter((p) => p.status === "failed").length;
-  const drafts = v.posts.filter((p) => p.status === "draft").length;
-  if (failed) out.push({ tone: "alert", label: `${failed} Beitrag${failed === 1 ? "" : "e"} mit Fehler`, href: "#social", where: "Social" });
-  if (drafts) out.push({ tone: "info", label: `${drafts} Entw${drafts === 1 ? "urf wartet" : "ürfe warten"} auf Freigabe`, href: "#social", where: "Social" });
-  const comments = social.commentCount();
-  if (comments) out.push({ tone: "info", label: `${comments} Kommentar${comments === 1 ? " wartet" : "e warten"} auf Antwort`, href: "#social/kommentare", where: "Social" });
-  const soon = Date.now() + 2 * 864e5;
-  for (const p of v.posts) {
-    if (!["draft", "approved"].includes(p.status) || !p.scheduled_at || !social.todoOpen(p.todo) || new Date(p.scheduled_at) > soon) continue;
-    out.push({ tone: "info", label: `Von Hand auf Instagram (${formatZurich(p.scheduled_at)}): ${p.todo.trim().split("\n")[0].slice(0, 90)}`, href: "#social", where: "Social" });
+  const now = Date.now();
+  const first = (p) => String(p.title || p.caption || "Story").split("\n").find(Boolean)?.slice(0, 70) ?? "";
+  const acc = (p) => v.accounts.find((x) => x.id === p.account_id);
+  const where = (p) => (acc(p)?.platform === "youtube" ? "YouTube" : "Instagram");
+  for (const p of v.posts.filter((x) => x.status === "failed")) {
+    out.push({ key: `post:${p.id}`, lane: "now", tone: "alert", title: `Beitrag mit Fehler: «${first(p)}»`, sub: p.last_error?.slice(0, 120), where: where(p), scope: acc(p)?.app_id, href: "#social" });
   }
-  for (const acc of v.accounts) {
-    const days = acc.token_expires_at ? Math.floor((new Date(acc.token_expires_at) - Date.now()) / 864e5) : null;
-    if (acc.active && days !== null && days < 14) out.push({ tone: "alert", label: `Instagram-Token @${acc.handle} läuft in ${Math.max(days, 0)} Tagen ab`, href: "#social", where: "Social" });
+  const drafts = v.posts.filter((p) => p.status === "draft");
+  const urgent = drafts.filter((p) => p.scheduled_at && new Date(p.scheduled_at).getTime() < now + 864e5);
+  for (const p of urgent) {
+    out.push({ key: `draft:${p.id}`, lane: "now", tone: "alert", title: `Noch nicht freigegeben: «${first(p)}»`, sub: `geplant ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+  }
+  const rest = drafts.length - urgent.length;
+  if (rest) out.push({ key: "drafts", lane: "week", tone: "info", title: `${rest} Entw${rest === 1 ? "urf wartet" : "ürfe warten"} auf Freigabe`, sub: "Social → Freigabe-Runde", where: "Social", href: "#social" });
+  const comments = social.commentCount();
+  if (comments) out.push({ key: "comments", lane: "today", tone: "info", title: `${comments} Kommentar${comments === 1 ? " wartet" : "e warten"} auf Antwort`, where: "Social", href: "#social/kommentare" });
+  for (const p of v.posts) {
+    if (!["draft", "approved"].includes(p.status) || !p.scheduled_at || !social.todoOpen(p.todo)) continue;
+    const day = zurichToday(new Date(p.scheduled_at));
+    const lane = laneForDate(day, today, { weekDays: 2 });
+    if (!lane) continue;
+    out.push({ key: `hand:${p.id}`, lane, tone: "info", date: day, title: `Von Hand: ${p.todo.trim().split("\n")[0].slice(0, 90)}`, sub: `${where(p)} · ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+  }
+  for (const a of v.accounts) {
+    const days = a.token_expires_at ? Math.floor((new Date(a.token_expires_at) - now) / 864e5) : null;
+    if (!a.active || days === null || days >= 14) continue;
+    out.push({ key: `token:${a.id}`, lane: days < 3 ? "now" : "week", tone: "alert", title: `Instagram-Token @${a.handle} läuft in ${Math.max(days, 0)} Tagen ab`, sub: "neuen Token eintragen (docs/social-setup.md)", where: "Social", href: "#social" });
   }
   return out;
 }
 
-function roadmapTodos() {
-  return qnh.dueSoon().map((i) => {
-    const sc = qnh.scopeOf(i.scope);
-    const late = new Date(`${i.due}T23:59:59`) < new Date();
-    return { tone: late ? "alert" : "info", label: `${late ? "Überfällig" : "Bald fällig"}: ${i.title}`, href: i.scope === "qnh" ? "#roadmap" : `#${i.scope}/roadmap`, where: sc.name, app: i.scope === "qnh" ? null : appById(i.scope) };
-  });
+// everything for «Heute», in lanes (src/today.js)
+function agenda() {
+  const today = zurichToday();
+  const items = [];
+  for (const a of APPS) for (const t of todos(a)) items.push({ key: `app:${a.id}:${t.href}:${t.label}`, lane: t.lane ?? "today", tone: t.tone, title: t.label, where: a.name, scope: a.id, href: t.href });
+  for (const t of store.todos(APPS)) items.push({ key: `store:${t.app.id}:${t.label}`, lane: t.tone === "alert" ? "now" : "today", tone: t.tone, title: t.label, where: t.app.name, scope: t.app.id, href: t.href });
+  items.push(...socialItems(today), ...qnh.agenda(today));
+  if (financeConfigured()) items.push(...finance.agenda(today));
+  return buildAgenda(items);
 }
-
-const allTodos = () => [...APPS.flatMap(todos), ...store.todos(APPS), ...socialTodos(), ...roadmapTodos()];
 
 // "Als Nächstes": the first task of the focus order, one click into focus mode
 function nextCard() {
@@ -339,17 +369,52 @@ function nextCard() {
       <button class="btn" data-action="go-focus">Fokus starten</button></div></section>`;
 }
 
+function agendaItem(t) {
+  const sc = t.scope ? SCOPES.find((x) => x.id === t.scope) : null;
+  const color = sc?.color ?? "#0B7285";
+  const label = !sc || t.where === sc.name ? t.where : `${t.where} · ${sc.name}`;
+  const external = /^https?:/.test(t.href ?? "");
+  const acts = (t.actions ?? []).map((a) => `<button class="btn ghost small-btn" data-action="${esc(a.action)}"${a.id ? ` data-id="${esc(a.id)}"` : ""}${a.value ? ` data-value="${esc(a.value)}"` : ""}>${esc(a.label)}</button>`).join("");
+  return `<li class="ag-item ${t.tone === "alert" ? "alert" : "info"}">
+    <a class="ag-link" href="${esc(t.href ?? "#")}"${external ? ' target="_blank" rel="noopener"' : ""}>
+      <span class="todo-dot"></span>
+      <span class="ag-text"><span class="ag-title">${esc(t.title)}</span>${t.sub ? `<span class="ag-sub">${esc(t.sub)}</span>` : ""}</span>
+      <span class="todo-where" style="--app:${esc(color)}">${esc(label ?? "")}</span>
+    </a>${acts ? `<span class="ag-actions">${acts}</span>` : ""}</li>`;
+}
+
 function todayView() {
-  const items = allTodos();
-  const todoList = items.length
-    ? `<ul class="todo">${items.map((t) => `<li><a class="todo-item ${t.tone}" href="${t.href}">
-        <span class="todo-dot"></span><span class="todo-label">${esc(t.label)}</span>
-        <span class="todo-where"${t.app ? ` style="--app:${esc(t.app.color)}"` : ""}>${esc(t.app?.name ?? t.where ?? "")}</span>${icon("arrow", "todo-arrow")}</a></li>`).join("")}</ul>`
-    : `<div class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Ruhiger Flug</h2><p class="muted">Kein neues Feedback, keine Fehler, nichts offen. Zeit zum Fliegen.</p></div></div>`;
-  return `<section class="block"><h2 class="section-title">Braucht dich${items.length ? ` <span class="count-chip">${items.length}</span>` : ""}</h2>${todoList}</section>
+  const lanes = agenda();
+  const total = lanes.now.length + lanes.today.length + lanes.week.length;
+  const laneHtml = LANES.map(([k, title, hint]) => {
+    const list = lanes[k];
+    if (!list.length && k !== "today") return "";
+    if (!list.length) return `<section class="lane lane-today"><h2 class="section-title">${title}</h2><p class="muted small lane-empty">Für heute ist alles erledigt ✓</p></section>`;
+    return `<section class="lane lane-${k}"><h2 class="section-title">${title} <span class="count-chip${k === "now" ? "" : " calm"}">${list.length}</span><span class="lane-hint">${hint}</span></h2>
+      <ul class="ag-list">${list.map(agendaItem).join("")}</ul></section>`;
+  }).join("");
+  const calm = `<div class="card calm-card">${icon("plane", "calm-icon")}<div><h2>Ruhiger Flug</h2><p class="muted">Nichts überfällig, nichts für heute, nichts diese Woche. Zeit zum Fliegen.</p></div></div>`;
+  return `<section class="block agenda">${total ? laneHtml : calm}</section>
     ${nextCard()}
     <section class="block"><h2 class="section-title">Apps</h2><div class="app-cards">${APPS.map(appCard).join("")}</div></section>
-    ${socialConfigured() ? `<section class="block"><h2 class="section-title">Social</h2>${socialSnapshot()}</section>` : ""}`;
+    ${socialConfigured() ? `<section class="block"><h2 class="section-title">Social</h2>${socialSnapshot()}</section>` : ""}
+    ${financeConfigured() ? financeSnapshot() : ""}`;
+}
+
+function financeSnapshot() {
+  const v = S.fin?.value;
+  if (v === null) return "";
+  if (!v) return `<section class="block"><h2 class="section-title">Finanzen</h2><div class="card"><p class="muted loading">${S.fin?.error ? esc(errorText(S.fin.error)) : "Lädt …"}</p></div></section>`;
+  const today = zurichToday();
+  const open = v.bills.filter((b) => b.status === "open");
+  const next = upcoming(v.costs, v.bills, today, 30)[0];
+  return `<section class="block"><h2 class="section-title">Finanzen</h2><div class="card social-snap">
+    <div class="snap-stats fin-snap">
+      <a href="#finanzen"><b>${esc(moneyList(monthlyTotals(v.costs)))}</b><span>Fixkosten pro Monat</span></a>
+      <a href="#finanzen"><b>${open.length}</b><span>offene Rechnungen${open.length ? ` · ${esc(moneyList(sumBy(open)))}` : ""}</span></a>
+      ${next ? `<a href="#finanzen"><b>${esc(new Date(`${next.date}T12:00:00`).toLocaleDateString("de-CH", { day: "numeric", month: "short" }))}</b><span>nächste Belastung: ${esc(next.name)} · ${esc(money(next.amount, next.currency))}</span></a>` : ""}
+      <a class="btn ghost" href="#finanzen">Finanzen öffnen</a>
+    </div></div></section>`;
 }
 
 function sparkFor(a, key, kind) {
@@ -438,6 +503,7 @@ function searchGroups() {
   if (qnhReady()) {
     pages.push({ label: "Roadmap", sub: "QNH und alle Apps", href: "#roadmap" });
     pages.push({ label: "Hangar", sub: "Links und Ablage", href: "#hangar" });
+    if (financeConfigured()) pages.push({ label: "Finanzen", sub: "Kosten, Abos, Rechnungen", href: "#finanzen" });
     for (const l of S.qnh?.links ?? []) pages.push({ label: l.title, sub: `Hangar · ${l.grp}`, text: l.note + " " + l.url, external: l.url });
   }
   pages.push({ label: darkNow() ? "Helles Farbschema" : "Dunkles Farbschema", sub: "Darstellung", action: "theme" });
@@ -785,6 +851,7 @@ const ICONS = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  wallet: '<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1V7z"/><path d="M4 7l11-3v3"/><circle cx="16" cy="13.5" r="1.2" fill="currentColor"/>',
   plane: '<path d="M2 13l8-2 4-7h2l-2 7 6 1 2-2h1l-1 4 1 4h-1l-2-2-6 1 2 7h-2l-4-7-8-2z"/>',
 };
 const icon = (name, cls = "") => `<svg class="ico${cls ? ` ${cls}` : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -807,6 +874,7 @@ root.addEventListener("submit", async (e) => {
   if (!form) return;
   e.preventDefault();
   if (/^(rm|hg)-/.test(form.dataset.form)) return qnh.onSubmit(form);
+  if (form.dataset.form.startsWith("fin-")) return finance.onSubmit(form);
   const a = appById(form.dataset.app);
   const l = (S.login[a.id] ??= { step: "email", email: "" });
   l.busy = true;
@@ -838,16 +906,18 @@ root.addEventListener("input", (e) => {
     S.search.sel = 0;
     return refreshPalette();
   }
+  if (finance.onInput(e)) return;
   social.onInput(e);
 });
 // scroll does not bubble: listen in the capture phase (carousel preview swipe)
 root.addEventListener("scroll", (e) => social.onScroll(e), true);
 root.addEventListener("dragstart", (e) => qnh.onDragStart(e) || social.onDragStart(e));
-root.addEventListener("dragover", (e) => qnh.onDragOver(e) || social.onDragOver(e));
+root.addEventListener("dragover", (e) => qnh.onDragOver(e) || finance.onDragOver(e) || social.onDragOver(e));
 root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col], [data-cal-day]")?.classList.remove("over"));
-root.addEventListener("drop", (e) => qnh.onDrop(e) || social.onDrop(e));
+root.addEventListener("drop", (e) => qnh.onDrop(e) || finance.onDrop(e) || social.onDrop(e));
 
 root.addEventListener("change", async (e) => {
+  if (finance.onInput(e)) return;
   await social.onChange(e);
 });
 
@@ -880,6 +950,7 @@ root.addEventListener("click", async (e) => {
   if (action === "go-focus") { qnh.startFocus("all"); if (location.hash === "#roadmap") render(); else location.hash = "#roadmap"; return; }
   if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
   if (action.startsWith("store-")) return store.onClick(el, APPS);
+  if (action.startsWith("fin-")) return finance.onClick(action, el);
   if (action === "search-open") return openSearch();
   if (action === "search-close") return closeSearch();
   if (action === "pal-go") return activate(paletteResults[Number(el.dataset.i)]);
