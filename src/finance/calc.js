@@ -170,6 +170,9 @@ export function upcoming(costs, bills, today, days = 30) {
 
 // CSV export for the Treuhänder: which bills belong to a period. A paid bill counts on the day it was paid
 // (Swiss day), an open or cancelled one on its due date, one without any date on the day it was entered.
+// paid by Christoph himself (before the founding or later): the company still owes it to him until reimbursed_at is set
+export const owedPrivately = (b) => b.paid_by === "privat" && !b.reimbursed_at && b.status !== "cancelled";
+
 export const bookingDay = (b) => (b.status === "paid" && b.paid_at ? zurichDay(b.paid_at) : b.due_date || zurichDay(b.created_at));
 // "year" | "last-year" | "all" → { from, to, label } (inclusive Swiss days; all = no limits)
 export function exportPeriod(kind, today) {

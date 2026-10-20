@@ -26,11 +26,15 @@ const bills = [
   { id: "b4", payee: "Handelsregisteramt", amount: 600, currency: "CHF", due_date: addDays(today, -20), status: "paid", iban: null, reference: "", message: "Eintrag GmbH", invoice_no: "", scope: "qnh", category: "Gründung", cost_id: null, file_path: null, note: "", source: "cockpit", paid_at: ago(18), created_at: ago(40) },
   // no due date: «Fälligkeit geschätzt» (30 days after it was entered)
   { id: "b5", payee: "Grafikbüro Leeside", amount: 240, currency: "CHF", due_date: null, status: "open", iban: "CH9300762011623852957", reference: "", message: "Logo-Überarbeitung", invoice_no: "", scope: "leesidelab", category: "Werbung", cost_id: null, file_path: null, note: "", source: "cockpit", paid_at: null, created_at: ago(25) },
+  // paid privately by Christoph – the company pays it back (invented)
+  { id: "b8", payee: "Beispiel KI Ltd", amount: 21.62, currency: "USD", due_date: addDays(today, -15), status: "paid", net: 20, vat: 1.62, paid_by: "privat", paid_with: "Kreditkarte", reimbursed_at: null, iban: null, reference: "", message: "Zusatzguthaben", invoice_no: "D-201", scope: "downwind", category: "KI-Werkzeuge", cost_id: null, file_path: null, note: "", source: "claude", paid_at: `${addDays(today, -15)}T10:00:00Z` },
+  { id: "b9", payee: "Domain-Shop Beispiel", amount: 18.5, currency: "CHF", due_date: addDays(today, -12), status: "paid", net: 17.12, vat: 1.38, paid_by: "privat", paid_with: "Twint", reimbursed_at: null, iban: null, reference: "", message: "Domain beispiel.ch (1 Jahr)", invoice_no: "D-202", scope: "qnh", category: "Domains & Hosting", cost_id: null, file_path: null, note: "", source: "claude", paid_at: `${addDays(today, -12)}T10:00:00Z` },
   // last year (only in the CSV export, not on the page)
   { id: "b6", payee: "Treuhand Muster AG", amount: 420, currency: "CHF", due_date: `${lastYear}-12-20`, status: "paid", iban: "CH9300762011623852957", reference: "", message: "Beratung Gründung", invoice_no: "T-88", scope: "qnh", category: "Treuhand", cost_id: null, file_path: null, note: "", source: "cockpit", paid_at: `${lastYear}-12-18T09:00:00Z`, created_at: `${lastYear}-11-30T09:00:00Z`, archived: true },
 ];
 
-export const load = () => wait({ costs, bills: bills.filter((b) => !b.archived) });
+export const load = () => wait({ costs, bills: bills.filter((b) => !b.archived), privateOk: true });
+export async function setReimbursed(ids, at) { for (const b of bills) if (ids.includes(b.id)) b.reimbursed_at = at; emit(); }
 export const exportBills = (period) => wait(bills.filter((b) => inPeriod(b, period)), 300);
 export async function saveCost(row) {
   let c = costs.find((x) => x.id === row.id);

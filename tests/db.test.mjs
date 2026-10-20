@@ -14,6 +14,7 @@ const SQL5 = readFileSync(new URL("../supabase/migrations/20261019120000_social_
 const SQL6 = readFileSync(new URL("../supabase/migrations/20261020100000_social_comments.sql", import.meta.url), "utf8");
 const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_youtube.sql", import.meta.url), "utf8");
 const SQL8 = readFileSync(new URL("../supabase/migrations/20261021100000_finance.sql", import.meta.url), "utf8");
+const SQL9 = readFileSync(new URL("../supabase/migrations/20261021120000_finance_private.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -52,6 +53,8 @@ await db.exec(SQL7);
 await db.exec(SQL7);
 await db.exec(SQL8);
 await db.exec(SQL8);
+await db.exec(SQL9);
+await db.exec(SQL9);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -272,6 +275,20 @@ test("finance: admins only; paid_at follows the status; the bill bucket is priva
   await assert.rejects(as(ADMIN, `update fin_bills set reference=repeat('1', 41) where id='${b}'`));
   await as(ADMIN, `delete from fin_costs where id='${c}'`); // the bill stays, without the link
   assert.equal((await as(ADMIN, `select cost_id from fin_bills where id='${b}'`)).rows[0].cost_id, null);
+});
+
+test("finance: receipts paid privately (to pay back), each receipt only once", async () => {
+  const r = (await as(ADMIN, "insert into fin_bills (payee, amount, currency, due_date, status, net, vat, paid_by, paid_with, invoice_no, source) values ('Beispiel AG', 10.81, 'USD', '2026-01-05', 'paid', 10, 0.81, 'privat', 'Kreditkarte', 'T-1', 'claude') returning id, paid_at")).rows[0];
+  assert.ok(r.paid_at);
+  assert.equal((await as(ADMIN, "select paid_by from fin_bills where payee='Infomaniak'")).rows[0].paid_by, "firma"); // older rows: the company paid
+  await assert.rejects(as(ADMIN, "insert into fin_bills (payee, amount, invoice_no) values ('beispiel ag', 10.81, 'T-1')")); // same receipt again
+  await as(ADMIN, "insert into fin_bills (payee, amount, invoice_no) values ('Beispiel AG', 5, '')"); // no number: no check
+  await as(ADMIN, "insert into fin_bills (payee, amount, invoice_no) values ('Beispiel AG', 5, '')");
+  await assert.rejects(as(ADMIN, "insert into fin_bills (payee, paid_by) values ('x', 'christoph')"));
+  await assert.rejects(as(ADMIN, "insert into fin_bills (payee, vat) values ('x', -1)"));
+  await as(ADMIN, `update fin_bills set reimbursed_at=now() where id='${r.id}'`);
+  assert.ok((await as(ADMIN, `select reimbursed_at from fin_bills where id='${r.id}'`)).rows[0].reimbursed_at);
+  await assert.rejects(as(OTHER, "insert into fin_bills (payee, paid_by) values ('x', 'privat')"));
 });
 
 test("roadmap: recurring tasks and «Später»", async () => {

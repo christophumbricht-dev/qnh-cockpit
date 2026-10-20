@@ -26,6 +26,17 @@ Das legt an: Tabellen `fin_costs` (Abos und feste Kosten) und `fin_bills` (Rechn
 - Übersicht: Fixkosten pro Monat und Jahr (je Währung, keine erfundenen Wechselkurse), nächste 30 Tage (ist die Rechnung einer Verlängerung schon erfasst, zählt sie nur einmal – als Rechnung), Fixkosten pro App/Marke.
 - Verlängerungen bleiben auf ihrem Tag: ein Abo vom 31.1. verlängert sich am 28.2., dann wieder am 31.3.
 
+## Privat bezahlt (Vorgründung und später)
+Einmal im SQL-Editor `supabase/migrations/20261021120000_finance_private.sql` ausführen. Danach:
+- Beim Erfassen **«Bezahlt von: Christoph privat»** wählen – die Rechnung gilt als bezahlt, und die GmbH schuldet dir den Betrag. Dazu MWST und «Bezahlt mit» (Kreditkarte, Twint …).
+- Oben steht **«Offen an Christoph»** (pro Währung, nie umgerechnet), darunter die Liste. Überweist dir die GmbH das Geld: **«Zurückbezahlt ✓»** (einzeln oder alle auf einmal).
+- Viele Belege auf einmal: am Laptop eine `ausgaben.json` neben die PDFs legen und
+  `npm.cmd run finanzen -- import "C:\Projects\QNH-Ablage\Buchhaltung\<Ordner>\ausgaben.json"` ausführen (zuerst mit `--dry` als Probelauf).
+  Lädt jeden Beleg mit seinem PDF hoch, legt wiederkehrende Kosten als Abo an und überspringt, was schon im Cockpit ist – darf also mehrmals laufen. Einträge mit `"reimburse": false` (privat, nicht abrechnen) werden nicht übernommen. Format: siehe Kopf von `scripts/finanzen-lib.mjs`.
+- `npm.cmd run finanzen -- offen` zeigt, was die GmbH dir noch schuldet.
+
+Die Originale bleiben in der Ablage (kDrive / `QNH-Ablage`) – das Cockpit hat nur eine Kopie. Echte Beträge, Belegnummern und PDFs kommen nie ins (öffentliche) Git.
+
 ## Export für den Treuhänder
 Unten auf der Seite: **Zeitraum** wählen (dieses Jahr, letztes Jahr, alles), dann **Rechnungen als CSV** – das sind **alle** Rechnungen des Zeitraums (auch ältere, die auf der Seite nicht mehr stehen): bezahlte nach dem Zahlungstag, offene und stornierte nach der Fälligkeit. **Kosten als CSV** listet die Abos, wie sie jetzt sind. Excel-tauglich (Semikolon, Umlaute ok, nichts wird als Formel ausgeführt).
 

@@ -11,19 +11,27 @@ const must = (r, what) => { if (r.error) throw Object.assign(new Error(r.error.m
 export const financeConfigured = () => DEMO || Boolean(QNH.url && QNH.anonKey);
 
 const COST_FIELDS = ["name", "provider", "scope", "category", "amount", "currency", "interval", "next_due", "notice_days", "payment", "url", "note", "active", "ack_until"];
-const BILL_FIELDS = ["payee", "amount", "currency", "due_date", "status", "iban", "reference", "message", "invoice_no", "scope", "category", "cost_id", "file_path", "note", "source"];
-const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k] === "" && ["next_due", "due_date", "url", "iban", "cost_id", "ack_until", "file_path"].includes(k) ? null : o[k]]));
+const BILL_FIELDS = ["payee", "amount", "currency", "due_date", "status", "iban", "reference", "message", "invoice_no", "scope", "category", "cost_id", "file_path", "note", "source",
+  "paid_by", "reimbursed_at", "net", "vat", "paid_with"]; // the last five: migration 20261021120000_finance_private.sql
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k] === "" && ["next_due", "due_date", "url", "iban", "cost_id", "ack_until", "file_path", "reimbursed_at", "net", "vat"].includes(k) ? null : o[k]]));
 
 // null = not set up yet (migration 20261021100000_finance.sql missing).
 // For the page: open bills and what changed in the last 400 days (the CSV export loads its own, complete list).
+// privateOk: the columns for receipts Christoph paid himself exist (migration 20261021120000_finance_private.sql);
+// those stay loaded until they are paid back, however old.
 export async function loadFinance() {
   if (DEMO) return demo.load();
-  const [costs, bills] = await Promise.all([
+  const [costs, probe] = await Promise.all([
     sb().from("fin_costs").select("*").order("name"),
-    sb().from("fin_bills").select("*").or(`status.eq.open,updated_at.gte.${new Date(Date.now() - 400 * 864e5).toISOString()}`).order("due_date", { ascending: true, nullsFirst: false }).limit(500),
+    sb().from("fin_bills").select("paid_by").limit(1),
   ]);
   if (costs.error && /does not exist|could not find/i.test(costs.error.message)) return null;
-  return { costs: must(costs, "costs"), bills: must(bills, "bills") };
+  const privateOk = !probe.error;
+  const since = new Date(Date.now() - 400 * 864e5).toISOString();
+  const bills = await sb().from("fin_bills").select("*")
+    .or(`status.eq.open,updated_at.gte.${since}${privateOk ? ",and(paid_by.eq.privat,reimbursed_at.is.null)" : ""}`)
+    .order("due_date", { ascending: true, nullsFirst: false }).limit(1000);
+  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk };
 }
 
 export async function saveCost(row) {
@@ -66,6 +74,11 @@ export async function saveBill(row) {
     : must(await sb().from("fin_bills").insert(r).select().single(), "bill");
 }
 export const setBillStatus = (id, status) => saveBill({ id, status });
+// paid back to Christoph (at = now) or not yet (at = null), for one or several receipts
+export async function setReimbursed(ids, at) {
+  if (DEMO) return demo.setReimbursed(ids, at);
+  must(await sb().from("fin_bills").update({ reimbursed_at: at }).in("id", ids), "bill");
+}
 export async function deleteBill(bill) {
   if (DEMO) return demo.deleteBill(bill.id);
   must(await sb().from("fin_bills").delete().eq("id", bill.id), "bill");
