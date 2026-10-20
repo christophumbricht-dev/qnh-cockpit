@@ -2,7 +2,7 @@
 // Paying happens in e-banking – here Christoph keeps track and marks «Bezahlt».
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { BILL_FILE_ACCEPT, INTERVALS, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
+import { BILL_FILE_ACCEPT, INTERVALS, amountText, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, owedPrivately, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
 import { QrBillError, formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
 
 const CURRENCIES = ["CHF", "EUR", "USD"];
@@ -97,6 +97,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     const due = (b) => billDue(b, today).date;
     const open = bs.filter((b) => b.status === "open").sort((a, b) => due(a).localeCompare(due(b)));
     const late = open.filter((b) => due(b) < today);
+    const owed = bs.filter(owedPrivately);
     const next30 = upcoming(cs, bs, today, 30);
     const perMonth = monthlyTotals(cs);
     const tile = (label, value, sub, alert = false) => `<div class="tile${alert ? " alert" : ""}"><span class="tile-label">${label}</span><span class="tile-num fin-num">${value}</span>${sub ? `<span class="tile-sub">${sub}</span>` : ""}</div>`;
@@ -113,12 +114,14 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         ${tile("Offene Rechnungen", String(open.length), esc(moneyList(sumBy(open))))}
         ${tile("Nächste 30 Tage", String(next30.length), esc(moneyList(sumBy(next30))))}
         ${late.length ? tile("Überfällig", String(late.length), esc(moneyList(sumBy(late))), true) : ""}
+        ${owed.length ? tile("Offen an Christoph", esc(moneyList(sumBy(owed))), owed.length === 1 ? "1 privat bezahlter Beleg" : `${owed.length} privat bezahlte Belege`) : ""}
       </div>
       <section class="block"><h2 class="section-title">Rechnungen${open.length ? ` <span class="count-chip${late.length ? "" : " calm"}">${open.length}</span>` : ""}</h2>
         ${open.length ? open.map((b) => billItem(b, today)).join("") : `<div class="card calm-card"><div><h3>Keine offenen Rechnungen</h3><p class="muted">PDF oder Foto einer QR-Rechnung hierher ziehen oder «Rechnung erfassen».</p></div></div>`}
         <div class="dropzone fin-drop" data-drop="fin-bill" data-action="fin-pick-bill" role="button" tabindex="0"><b>Rechnung hierher ziehen</b> oder klicken <span class="small muted">PDF oder Foto · die QR-Rechnung wird gelesen (auf deinem Gerät)</span></div>
         ${paidList(bs)}
       </section>
+      ${owedBlock(owed)}
       <section class="block"><h2 class="section-title">Kosten &amp; Abos</h2>${costList(cs, today)}</section>
       <section class="block"><h2 class="section-title">Nächste 30 Tage</h2>${next30.length ? `<ul class="fin-timeline">${next30.map((u) => `<li><span class="fin-when">${esc(shortDate(u.date))}</span><span>${esc(u.name)} ${u.kind === "bill" ? `<span class="pill">Rechnung</span>` : `<span class="pill draft">Abo</span>`}</span><span class="fin-amount">${esc(money(u.amount, u.currency))}</span></li>`).join("")}</ul>` : `<p class="muted">Nichts in den nächsten 30 Tagen.</p>`}</section>
       ${scopeBars(cs)}
@@ -139,6 +142,12 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       </div>`;
   }
 
+  const paidText = (b) => {
+    const when = esc(fmtDate(zurichDay(b.paid_at)));
+    if (b.paid_by !== "privat") return `bezahlt ${when}${b.paid_with ? ` (${esc(b.paid_with)})` : ""}`;
+    return `privat bezahlt ${when}${b.paid_with ? ` (${esc(b.paid_with)})` : ""} · ${b.reimbursed_at ? `zurückbezahlt ${esc(fmtDate(zurichDay(b.reimbursed_at)))}` : "Rückzahlung offen"}`;
+  };
+
   function billItem(b, today) {
     // open bills without a due date: 30 days after they were entered («geschätzt»)
     const due = b.status === "open" ? billDue(b, today) : { date: b.due_date, estimated: false };
@@ -152,11 +161,13 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       <div class="fin-date${tone}${due.estimated ? " est" : ""}"${due.estimated ? ' title="Fälligkeit geschätzt"' : ""}><b>${due.date ? esc(new Date(`${due.date}T12:00:00`).getDate()) : "–"}</b><span>${due.date ? esc(new Date(`${due.date}T12:00:00`).toLocaleDateString("de-CH", { month: "short" })) : "offen"}</span></div>
       <div class="fin-main">
         <div class="meta"><b>${esc(b.payee)}</b>${scopeBadge(b.scope)}<span>${esc(scopeName(b.scope))}</span>${b.category ? `<span>${esc(b.category)}</span>` : ""}${b.invoice_no ? `<span>Nr. ${esc(b.invoice_no)}</span>` : ""}</div>
-        <p class="fin-line"><span class="fin-amount">${esc(money(b.amount, b.currency))}</span> <span class="${late ? "error" : "muted"} small">${b.status === "open" ? `${esc(dueText(days))}${due.estimated ? " · Fälligkeit geschätzt" : ""}` : b.status === "paid" ? `bezahlt ${esc(fmtDate(zurichDay(b.paid_at)))}` : "storniert"}</span></p>
+        <p class="fin-line"><span class="fin-amount">${esc(money(b.amount, b.currency))}</span>${b.vat != null ? ` <span class="muted small">inkl. MWST ${esc(amountText(b.vat))}</span>` : ""} <span class="${late ? "error" : "muted"} small">${b.status === "open" ? `${esc(dueText(days))}${due.estimated ? " · Fälligkeit geschätzt" : ""}` : b.status === "paid" ? paidText(b) : "storniert"}</span></p>
         ${b.message ? `<p class="small muted">${esc(b.message)}</p>` : ""}
         ${payOpen ? `<div class="fin-pay">${b.iban ? copy("IBAN", formatIban(b.iban)) : ""}${b.reference ? copy("Referenz", formatReference(b.reference)) : ""}${b.amount != null ? copy("Betrag", Number(b.amount).toFixed(2)) : ""}${b.message ? copy("Mitteilung", b.message) : ""}${!b.iban ? `<span class="muted small">Keine Zahlungsdaten erfasst.</span>` : ""}</div>` : ""}
         <div class="actions">
-          ${b.status === "open" ? `<button class="btn" data-action="fin-paid" data-id="${b.id}">Bezahlt ✓</button>` : `<button class="btn ghost" data-action="fin-reopen" data-id="${b.id}">Wieder offen</button>`}
+          ${b.status === "open" ? `<button class="btn" data-action="fin-paid" data-id="${b.id}">Bezahlt ✓</button>`
+            : b.paid_by === "privat" && b.status === "paid" ? (b.reimbursed_at ? `<button class="btn ghost" data-action="fin-unreimburse" data-id="${b.id}">Rückzahlung wieder offen</button>` : `<button class="btn" data-action="fin-reimbursed" data-id="${b.id}">Zurückbezahlt ✓</button>`)
+            : `<button class="btn ghost" data-action="fin-reopen" data-id="${b.id}">Wieder offen</button>`}
           ${b.iban || b.reference ? `<button class="btn ghost" data-action="fin-pay" data-id="${b.id}">${payOpen ? "Zahlungsdaten ausblenden" : "Zahlungsdaten"}</button>` : ""}
           ${b.file_path ? `<button class="btn ghost" data-action="fin-file" data-id="${b.id}">Rechnung ansehen ↗</button>` : ""}
           <button class="btn ghost" data-action="fin-edit-bill" data-id="${b.id}">Bearbeiten</button>
@@ -165,8 +176,24 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     </article>`;
   }
 
+  // receipts Christoph paid himself: the company pays them back (per currency, never converted)
+  function owedBlock(list) {
+    if (!list.length) return "";
+    const rows = [...list].sort((a, b) => String(a.due_date ?? "").localeCompare(String(b.due_date ?? "")) || String(a.payee).localeCompare(String(b.payee)));
+    return `<section class="block"><h2 class="section-title">Privat bezahlt – offen an Christoph <span class="count-chip calm">${list.length}</span></h2>
+      <div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Datum</th><th>Beleg</th><th>App/Marke</th><th>Betrag</th><th></th></tr></thead><tbody>
+      ${rows.map((b) => `<tr><td>${esc(b.due_date ? new Date(`${b.due_date}T12:00:00`).toLocaleDateString("de-CH") : "–")}</td>
+        <td><b>${esc(b.payee)}</b>${b.message ? `<br><span class="muted small">${esc(b.message)}</span>` : ""}${b.invoice_no ? `<br><span class="muted small">Nr. ${esc(b.invoice_no)}${b.paid_with ? ` · ${esc(b.paid_with)}` : ""}</span>` : ""}</td>
+        <td>${scopeBadge(b.scope)} <span class="small">${esc(scopeName(b.scope))}</span></td>
+        <td class="fin-amount">${esc(money(b.amount, b.currency))}${b.vat != null ? `<br><span class="muted small">inkl. MWST ${esc(amountText(b.vat))}</span>` : ""}</td>
+        <td class="fin-row-actions">${b.file_path ? `<button class="link" data-action="fin-file" data-id="${b.id}">Beleg ↗</button>` : ""}<button class="link" data-action="fin-reimbursed" data-id="${b.id}">Zurückbezahlt ✓</button><button class="link" data-action="fin-edit-bill" data-id="${b.id}">Bearbeiten</button></td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="3"><b>Total offen</b></td><td colspan="2"><b>${esc(moneyList(sumBy(list)))}</b></td></tr></tfoot></table></div>
+      <div class="actions"><button class="btn ghost" data-action="fin-reimbursed-all">Alle ${list.length} als zurückbezahlt markieren</button></div>
+      <p class="hint">Belege, die du privat bezahlt hast (auch vor der Gründung). Überweist dir die GmbH den Betrag: «Zurückbezahlt». Beträge pro Währung, ohne Umrechnung.</p></section>`;
+  }
+
   function paidList(bs) {
-    const paid = bs.filter((b) => b.status === "paid").sort((a, b) => String(b.paid_at ?? "").localeCompare(String(a.paid_at ?? "")));
+    const paid = bs.filter((b) => b.status === "paid" && !owedPrivately(b)).sort((a, b) => String(b.paid_at ?? "").localeCompare(String(a.paid_at ?? "")));
     if (!paid.length) return "";
     if (!st().showPaid) return `<button class="link" data-action="fin-show-paid">${paid.length} bezahlte anzeigen</button>`;
     return `<h3 class="group">Bezahlt <span class="muted">${paid.length}</span></h3>${paid.slice(0, 50).map((b) => billItem(b, zurichToday())).join("")}`;
@@ -239,6 +266,9 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
           ${field("Rechnungsnummer", `<input name="fin-invoice" value="${esc(v.invoice_no ?? "")}" maxlength="40">`)}
           ${field("Mitteilung", `<input name="fin-message" value="${esc(v.message ?? "")}" maxlength="140">`, true)}
           ${field("Kategorie", `<input name="fin-category" value="${esc(v.category ?? "")}" maxlength="40" list="fin-categories">`)}
+          ${st().value?.privateOk ? `${field("Bezahlt von", `<select name="fin-paid-by"><option value="firma"${v.paid_by !== "privat" ? " selected" : ""}>der Firma</option><option value="privat"${v.paid_by === "privat" ? " selected" : ""}>Christoph privat (Rückzahlung)</option></select>`)}
+          ${field("davon MWST", `<input name="fin-vat" value="${esc(v.vat ?? "")}" inputmode="decimal" placeholder="z. B. 8.20">`)}
+          ${field("Bezahlt mit", `<input name="fin-paid-with" value="${esc(v.paid_with ?? "")}" maxlength="60" placeholder="Kreditkarte, Twint …">`)}` : ""}
           ${field("Gehört zum Abo", `<select name="fin-cost"><option value="">–</option>${costs().map((c) => `<option value="${c.id}"${c.id === v.cost_id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`)}
           ${field("Notiz", `<textarea name="fin-note" rows="2" maxlength="1000">${esc(v.note ?? "")}</textarea>`, true)}
         </div>
@@ -337,11 +367,21 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       if (Number.isNaN(amount)) throw new Error("Der Betrag ist keine Zahl (z. B. 59.40).");
       if (iban && !ibanValid(iban)) throw new Error("Die IBAN stimmt nicht (Prüfziffer) – bitte kontrollieren.");
       if (val("fin-reference").replace(/\s+/g, "").length > 40) throw new Error("Die Referenz ist zu lang (höchstens 40 Zeichen).");
-      return {
+      const row = {
         payee: val("fin-payee"), amount, currency: val("fin-currency"), due_date: val("fin-due") || null, scope: val("fin-scope"), iban: iban || null,
         reference: val("fin-reference").replace(/\s+/g, ""), invoice_no: val("fin-invoice"), message: val("fin-message"), category: val("fin-category"),
         cost_id: val("fin-cost") || null, note: e["fin-note"].value,
       };
+      if (e["fin-paid-by"]) {
+        const vat = parseAmount(val("fin-vat"));
+        if (Number.isNaN(vat)) throw new Error("Die MWST ist keine Zahl (z. B. 8.20).");
+        if (vat != null && amount != null && vat > amount) throw new Error("Die MWST ist grösser als der Betrag.");
+        Object.assign(row, { paid_by: e["fin-paid-by"].value, vat, net: vat != null && amount != null ? Math.round((amount - vat) * 100) / 100 : null, paid_with: val("fin-paid-with") });
+        // paid by Christoph himself: the bill is paid (the company only owes it to him)
+        const was = st().form?.row?.status;
+        if (row.paid_by === "privat" && (!was || was === "open")) row.status = "paid";
+      }
+      return row;
     }
     const amount = parseAmount(val("fin-amount"));
     if (amount == null || Number.isNaN(amount)) throw new Error("Bitte einen Betrag eingeben (z. B. 99.00, gratis = 0).");
@@ -459,6 +499,28 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
           await load(true);
         } catch (err) { toast(errorText(err)); await load(true); }
         return true;
+      case "fin-reimbursed": case "fin-unreimburse": {
+        if (!bill) return true;
+        const before = bill.reimbursed_at ?? null;
+        bill.reimbursed_at = action === "fin-reimbursed" ? new Date().toISOString() : null; // at once on screen
+        render();
+        try {
+          await data.setReimbursed([id], bill.reimbursed_at);
+          toast(bill.reimbursed_at ? `${bill.payee}: zurückbezahlt ✓` : "Rückzahlung wieder offen");
+          await load(true);
+        } catch (err) { bill.reimbursed_at = before; toast(errorText(err)); render(); }
+        return true;
+      }
+      case "fin-reimbursed-all": {
+        const list = bills().filter(inScope).filter(owedPrivately);
+        if (!list.length || !confirm(`Alle ${list.length} Belege als zurückbezahlt markieren (${moneyList(sumBy(list))})?`)) return true;
+        try {
+          await data.setReimbursed(list.map((b) => b.id), new Date().toISOString());
+          toast(`${list.length} Belege zurückbezahlt ✓`);
+          await load(true);
+        } catch (err) { toast(errorText(err)); }
+        return true;
+      }
       case "fin-keep": {
         // stored with the cost (fin_costs.ack_until): gone on every device, back for the next renewal
         const [cid, date] = el.dataset.value.split(":");
@@ -504,8 +566,9 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
           render();
           try {
             const rows = (await data.exportBills(period)).sort((a, b) => bookingDay(a).localeCompare(bookingDay(b)) || String(a.payee).localeCompare(String(b.payee)));
-            download(`rechnungen-${period.label}${period.from ? "" : `-${today}`}.csv`, toCsv(["Empfänger", "Betrag", "Währung", "Fällig", "Status", "Bezahlt am", "App/Marke", "Kategorie", "Rechnungsnr.", "IBAN", "Referenz", "Mitteilung", "Notiz"],
-              rows.map((b) => [b.payee, b.amount, b.currency, b.due_date, b.status === "paid" ? "bezahlt" : b.status === "open" ? "offen" : "storniert", zurichDay(b.paid_at), scopeName(b.scope), b.category, b.invoice_no, b.iban, b.reference, b.message, b.note])));
+            download(`rechnungen-${period.label}${period.from ? "" : `-${today}`}.csv`, toCsv(["Empfänger", "Betrag", "Währung", "Netto", "MWST", "Fällig", "Status", "Bezahlt am", "Bezahlt von", "Bezahlt mit", "Zurückbezahlt am", "App/Marke", "Kategorie", "Rechnungsnr.", "IBAN", "Referenz", "Mitteilung", "Notiz"],
+              rows.map((b) => [b.payee, b.amount, b.currency, b.net, b.vat, b.due_date, b.status === "paid" ? "bezahlt" : b.status === "open" ? "offen" : "storniert", zurichDay(b.paid_at),
+                b.paid_by === "privat" ? "Christoph privat" : "Firma", b.paid_with, zurichDay(b.reimbursed_at), scopeName(b.scope), b.category, b.invoice_no, b.iban, b.reference, b.message, b.note])));
             toast(`${rows.length} ${rows.length === 1 ? "Rechnung" : "Rechnungen"} exportiert (${period.from ? period.label : "alle"})`);
           } catch (err) { toast(errorText(err)); }
           st().exporting = false;
@@ -542,7 +605,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
   // every field goes into the form state (a re-render, e.g. after reading a QR-bill, keeps what was typed)
   const FIELD_KEYS = {
     "fin-payee": "payee", "fin-amount": "amount", "fin-currency": "currency", "fin-due": "due_date", "fin-scope": "scope", "fin-iban": "iban",
-    "fin-reference": "reference", "fin-invoice": "invoice_no", "fin-message": "message", "fin-category": "category", "fin-cost": "cost_id", "fin-note": "note",
+    "fin-reference": "reference", "fin-invoice": "invoice_no", "fin-message": "message", "fin-category": "category", "fin-cost": "cost_id", "fin-note": "note", "fin-paid-by": "paid_by", "fin-vat": "vat", "fin-paid-with": "paid_with",
     "fin-name": "name", "fin-provider": "provider", "fin-interval": "interval", "fin-next": "next_due", "fin-notice": "notice_days", "fin-payment": "payment", "fin-url": "url", "fin-active": "active",
   };
   function onInput(e) {
