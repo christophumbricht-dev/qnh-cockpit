@@ -2,8 +2,8 @@
 // Paying happens in e-banking – here Christoph keeps track and marks «Bezahlt».
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { INTERVALS, addDays, daysBetween, financeDue, monthly, monthlyTotals, money, moneyList, nextRenewal, parseAmount, sumBy, toCsv, upcoming, zurichToday } from "./calc.js";
-import { formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
+import { BILL_FILE_ACCEPT, INTERVALS, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
+import { QrBillError, formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
 
 const CURRENCIES = ["CHF", "EUR", "USD"];
 const CATEGORIES = ["Software", "Server", "Entwicklung", "Web", "Büro", "Telefon", "Versicherung", "Treuhand", "Gründung", "Werbung", "Merchandise", "Reisen", "Diverses"];
@@ -20,7 +20,6 @@ const TEMPLATES = [
   { name: "Betriebshaftpflicht", provider: "", category: "Versicherung", interval: "yearly", notice_days: 60 },
   { name: "Treuhand / Buchhaltung", provider: "", category: "Treuhand", interval: "yearly" },
 ];
-const SEEN_KEY = "qnh-fin-seen"; // renewal reminders Christoph dismissed («Behalten»), per browser
 const fmtDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("de-CH", { weekday: "short", day: "numeric", month: "numeric", year: "numeric" }) : "");
 const shortDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("de-CH", { day: "numeric", month: "short" }) : "");
 const web = (u) => (/^https?:\/\//i.test(String(u ?? "")) ? u : null);
@@ -35,14 +34,13 @@ export function dueText(days) {
 }
 
 export function createFinance({ S, render, toast, errorText, scopes, scopeBadge }) {
-  S.fin = { value: undefined, loading: false, error: null, scope: "all", form: null, showPaid: false, pay: new Set(), reading: false };
+  S.fin = { value: undefined, loading: false, error: null, scope: "all", form: null, showPaid: false, pay: new Set(), reading: false, csvPeriod: "year", exporting: false };
   let unsubscribe = null, timer;
   const st = () => S.fin;
   const scopeName = (id) => scopes().find((s) => s.id === id)?.name ?? id;
   const costs = () => st().value?.costs ?? [];
   const bills = () => st().value?.bills ?? [];
   const inScope = (r) => st().scope === "all" || r.scope === st().scope;
-  const seen = () => { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]")); } catch { return new Set(); } };
 
   async function load(force = false) {
     if (!data.financeConfigured() || st().loading || (st().value !== undefined && !force)) return;
@@ -61,32 +59,32 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
   // ---------- for «Heute» ----------
   function agenda(today = zurichToday()) {
     if (!st().value) return [];
-    const hide = seen();
     const out = [];
     for (const d of financeDue(costs(), bills(), today)) {
+      const lane = financeLane(d, today);
+      if (!lane) continue;
       if (d.kind === "bill") {
         const b = d.row;
-        const lane = d.days == null ? "week" : d.days < 0 ? "now" : d.days <= 2 ? "today" : d.days <= 7 ? "week" : null;
-        if (!lane) continue;
         out.push({
-          key: `bill:${b.id}`, lane, date: b.due_date, tone: lane === "now" ? "alert" : "info", where: "Finanzen", scope: b.scope,
-          title: `Rechnung ${b.payee}${b.amount != null ? ` · ${money(b.amount, b.currency)}` : ""}`, sub: dueText(d.days), href: "#finanzen",
+          key: `bill:${b.id}`, lane, date: d.date, tone: lane === "now" ? "alert" : "info", where: "Finanzen", scope: b.scope,
+          title: `Rechnung ${b.payee}${b.amount != null ? ` · ${money(b.amount, b.currency)}` : ""}`, sub: `${dueText(d.days)}${d.estimated ? " · Fälligkeit geschätzt" : ""}`, href: "#finanzen",
           actions: [{ action: "fin-paid", id: b.id, label: "Bezahlt ✓" }],
         });
       } else {
+        // once its notice period has started it is for today (until «Behalten»)
         const c = d.row;
-        if (hide.has(`${c.id}:${d.date}`)) continue;
         out.push({
-          key: `renewal:${c.id}:${d.date}`, lane: d.days <= 3 ? "today" : "week", date: addDays(d.date, -c.notice_days), tone: "info", where: "Finanzen", scope: c.scope,
-          title: `${c.name} verlängert sich am ${shortDate(d.date)} (${money(c.amount, c.currency)})`, sub: "behalten oder rechtzeitig kündigen", href: web(c.url) ?? "#finanzen",
+          key: `renewal:${c.id}:${d.date}`, lane, date: d.remindFrom, tone: "info", where: "Finanzen", scope: c.scope,
+          title: `${c.name} verlängert sich am ${shortDate(d.date)} (${money(c.amount, c.currency)})`,
+          sub: lane === "today" ? "behalten oder rechtzeitig kündigen" : `Erinnerung ab ${shortDate(d.remindFrom)} · behalten oder rechtzeitig kündigen`, href: web(c.url) ?? "#finanzen",
           actions: [{ action: "fin-keep", value: `${c.id}:${d.date}`, label: "Behalten" }],
         });
       }
     }
     return out;
   }
-  // nav badge: overdue or due within 2 days
-  const badge = () => financeDue(costs(), bills(), zurichToday()).filter((d) => d.kind === "bill" && d.days != null && d.days <= 2).length;
+  // nav badge: what is for now or today (overdue bills, bills due within 2 days, renewal reminders that started)
+  const badge = () => agenda().filter((i) => i.lane === "now" || i.lane === "today").length;
 
   // ---------- page ----------
   function view() {
@@ -96,8 +94,9 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     if (st().form) return st().form.kind === "bill" ? billForm(st().form) : costForm(st().form);
     const today = zurichToday();
     const cs = costs().filter(inScope), bs = bills().filter(inScope);
-    const open = bs.filter((b) => b.status === "open").sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
-    const late = open.filter((b) => b.due_date && b.due_date < today);
+    const due = (b) => billDue(b, today).date;
+    const open = bs.filter((b) => b.status === "open").sort((a, b) => due(a).localeCompare(due(b)));
+    const late = open.filter((b) => due(b) < today);
     const next30 = upcoming(cs, bs, today, 30);
     const perMonth = monthlyTotals(cs);
     const tile = (label, value, sub, alert = false) => `<div class="tile${alert ? " alert" : ""}"><span class="tile-label">${label}</span><span class="tile-num fin-num">${value}</span>${sub ? `<span class="tile-sub">${sub}</span>` : ""}</div>`;
@@ -123,21 +122,37 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       <section class="block"><h2 class="section-title">Kosten &amp; Abos</h2>${costList(cs, today)}</section>
       <section class="block"><h2 class="section-title">Nächste 30 Tage</h2>${next30.length ? `<ul class="fin-timeline">${next30.map((u) => `<li><span class="fin-when">${esc(shortDate(u.date))}</span><span>${esc(u.name)} ${u.kind === "bill" ? `<span class="pill">Rechnung</span>` : `<span class="pill draft">Abo</span>`}</span><span class="fin-amount">${esc(money(u.amount, u.currency))}</span></li>`).join("")}</ul>` : `<p class="muted">Nichts in den nächsten 30 Tagen.</p>`}</section>
       ${scopeBars(cs)}
-      <p class="hint">Bezahlt wird im E-Banking (QR-Rechnung dort scannen oder die Zahlungsdaten kopieren). Abo-Erinnerungen kommen so viele Tage vor der Verlängerung auf «Heute», wie beim Abo eingestellt. Export für den Treuhänder:
-        <button class="link" data-action="fin-csv" data-value="bills">Rechnungen als CSV</button> · <button class="link" data-action="fin-csv" data-value="costs">Kosten als CSV</button></p>`;
+      <section class="block"><h2 class="section-title">Export für den Treuhänder</h2>${exportBox(today)}</section>
+      <p class="hint">Bezahlt wird im E-Banking (QR-Rechnung dort scannen oder die Zahlungsdaten kopieren). Abo-Erinnerungen kommen so viele Tage vor der Verlängerung auf «Heute», wie beim Abo eingestellt.</p>`;
+  }
+
+  // CSV: every bill of the chosen period (loaded completely for the export), costs as they are now
+  function exportBox(today) {
+    const y = Number(today.slice(0, 4));
+    const opts = [["year", `Dieses Jahr (${y})`], ["last-year", `Letztes Jahr (${y - 1})`], ["all", "Alles"]]
+      .map(([v, l]) => `<option value="${v}"${st().csvPeriod === v ? " selected" : ""}>${l}</option>`).join("");
+    return `<div class="card fin-export">
+        <label class="field">Zeitraum<select name="fin-csv-period">${opts}</select></label>
+        <button class="btn ghost" data-action="fin-csv" data-value="bills"${st().exporting ? " disabled" : ""}>${st().exporting ? "Exportiert …" : "Rechnungen als CSV"}</button>
+        <button class="btn ghost" data-action="fin-csv" data-value="costs">Kosten als CSV</button>
+        <p class="muted small">Alle Rechnungen des Zeitraums: bezahlte nach Zahlungstag, offene nach Fälligkeit. Excel-tauglich (Semikolon).</p>
+      </div>`;
   }
 
   function billItem(b, today) {
-    const days = b.due_date ? daysBetween(today, b.due_date) : null;
-    const tone = days == null ? "" : days < 0 ? " late" : days <= 2 ? " soon" : "";
+    // open bills without a due date: 30 days after they were entered («geschätzt»)
+    const due = b.status === "open" ? billDue(b, today) : { date: b.due_date, estimated: false };
+    const days = due.date ? daysBetween(today, due.date) : null;
+    const late = b.status === "open" && days != null && days < 0;
+    const tone = b.status !== "open" || days == null ? "" : late ? " late" : days <= 2 ? " soon" : "";
     const payOpen = st().pay.has(b.id);
     // IBAN and reference are copied without the display spaces (e-banking fields take them either way)
     const copy = (label, value) => `<span class="fin-copy"><span class="muted small">${label}</span><b>${esc(value)}</b><button class="link" data-action="fin-copy" data-value="${esc(["IBAN", "Referenz"].includes(label) ? value.replace(/\s+/g, "") : value)}">kopieren</button></span>`;
     return `<article class="item fin-bill${b.status !== "open" ? " done" : ""}">
-      <div class="fin-date${tone}"><b>${b.due_date ? esc(new Date(`${b.due_date}T12:00:00`).getDate()) : "–"}</b><span>${b.due_date ? esc(new Date(`${b.due_date}T12:00:00`).toLocaleDateString("de-CH", { month: "short" })) : "offen"}</span></div>
+      <div class="fin-date${tone}${due.estimated ? " est" : ""}"${due.estimated ? ' title="Fälligkeit geschätzt"' : ""}><b>${due.date ? esc(new Date(`${due.date}T12:00:00`).getDate()) : "–"}</b><span>${due.date ? esc(new Date(`${due.date}T12:00:00`).toLocaleDateString("de-CH", { month: "short" })) : "offen"}</span></div>
       <div class="fin-main">
         <div class="meta"><b>${esc(b.payee)}</b>${scopeBadge(b.scope)}<span>${esc(scopeName(b.scope))}</span>${b.category ? `<span>${esc(b.category)}</span>` : ""}${b.invoice_no ? `<span>Nr. ${esc(b.invoice_no)}</span>` : ""}</div>
-        <p class="fin-line"><span class="fin-amount">${esc(money(b.amount, b.currency))}</span> <span class="${days != null && days < 0 ? "error" : "muted"} small">${b.status === "open" ? esc(dueText(days)) : `bezahlt ${esc(fmtDate(String(b.paid_at ?? "").slice(0, 10)))}`}</span></p>
+        <p class="fin-line"><span class="fin-amount">${esc(money(b.amount, b.currency))}</span> <span class="${late ? "error" : "muted"} small">${b.status === "open" ? `${esc(dueText(days))}${due.estimated ? " · Fälligkeit geschätzt" : ""}` : b.status === "paid" ? `bezahlt ${esc(fmtDate(zurichDay(b.paid_at)))}` : "storniert"}</span></p>
         ${b.message ? `<p class="small muted">${esc(b.message)}</p>` : ""}
         ${payOpen ? `<div class="fin-pay">${b.iban ? copy("IBAN", formatIban(b.iban)) : ""}${b.reference ? copy("Referenz", formatReference(b.reference)) : ""}${b.amount != null ? copy("Betrag", Number(b.amount).toFixed(2)) : ""}${b.message ? copy("Mitteilung", b.message) : ""}${!b.iban ? `<span class="muted small">Keine Zahlungsdaten erfasst.</span>` : ""}</div>` : ""}
         <div class="actions">
@@ -203,12 +218,16 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
 
   function billForm(f) {
     const v = f.row;
+    const hasFile = Boolean(v.file_path) && !f.removeFile;
     return `<div class="toolbar"><button class="link" data-action="fin-close">← Zurück zu den Finanzen</button><span class="muted">${v.id ? "Rechnung bearbeiten" : "Neue Rechnung"}</span></div>
       <form class="card fin-form" data-form="fin-bill">
         <div class="dropzone" data-drop="fin-bill" data-action="fin-pick-bill" role="button" tabindex="0">
-          <b>${f.file ? `📎 ${esc(f.file.name)}` : v.file_path ? "📎 Datei gespeichert" : "PDF oder Foto der Rechnung"}</b> ${st().reading ? "– lese QR-Rechnung …" : f.file || v.file_path ? "– andere Datei wählen" : "hierher ziehen oder klicken"}
-          <span class="small muted">Die QR-Rechnung wird direkt auf deinem Gerät gelesen; die Datei wird privat gespeichert (nur für dich sichtbar).</span></div>
+          <b>${f.file ? `📎 ${esc(f.file.name)}` : hasFile ? "📎 Datei gespeichert" : "PDF oder Foto der Rechnung"}</b> ${st().reading ? "– lese QR-Rechnung …" : f.file || hasFile ? "– andere Datei wählen" : "hierher ziehen oder klicken"}
+          <span class="small muted">PDF, JPG, PNG, HEIC oder WebP. Die QR-Rechnung wird direkt auf deinem Gerät gelesen; die Datei wird privat gespeichert (nur für dich sichtbar).</span></div>
+        ${f.file || hasFile ? `<p class="small"><button type="button" class="link danger" data-action="fin-remove-file">Datei entfernen</button></p>` : ""}
+        ${f.removeFile && !f.file ? `<p class="warn small">Die gespeicherte Datei wird beim Speichern gelöscht.</p>` : ""}
         ${f.note ? `<p class="${f.noteOk ? "ok" : "warn"} small">${esc(f.note)}</p>` : ""}
+        ${(f.warnings ?? []).map((w) => `<p class="warn small">⚠ ${esc(w)}</p>`).join("")}
         <div class="fin-grid">
           ${field("Empfänger", `<input name="fin-payee" value="${esc(v.payee ?? "")}" maxlength="120" required>`, true)}
           ${field("Betrag", `<input name="fin-amount" value="${esc(v.amount ?? "")}" inputmode="decimal" placeholder="z. B. 59.40">`)}
@@ -256,11 +275,27 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       </form>`;
   }
 
+  // pdf.js / image errors → a short German sentence (never the sign-in text of errorText)
+  function readError(err) {
+    if (err instanceof QrBillError) return err.message;
+    if (/Failed to fetch|dynamically imported|Load failed|NetworkError/i.test(err?.message ?? "")) return "Der Leser liess sich nicht laden – Verbindung prüfen und nochmals versuchen.";
+    if (/password/i.test(err?.name ?? "")) return "Das PDF ist mit einem Passwort geschützt.";
+    if (/InvalidPDF|MissingPDF/i.test(err?.name ?? "")) return "Die Datei ist kein lesbares PDF.";
+    if (/decode|InvalidState|EncodingError/i.test(`${err?.name} ${err?.message}`)) return "Das Bild lässt sich auf diesem Gerät nicht öffnen (HEIC? Dann als JPG senden).";
+    return "Die Datei liess sich nicht lesen.";
+  }
+
+  const DUE_NOTE = { terms: "aus den Zahlungsbedingungen", "terms-today": "Zahlungsfrist ab heute gerechnet (Rechnungsdatum fehlt)", "invoice-date": "angenommen: Rechnungsdatum + 30 Tage", assumed: "angenommen: heute + 30 Tage" };
+  const same = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+
   // file → QR-bill → fields (only empty ones are filled when Christoph already typed something)
   async function takeFile(file) {
     const f = st().form?.kind === "bill" ? st().form : (st().form = { kind: "bill", row: { currency: "CHF", scope: st().scope === "all" ? "qnh" : st().scope } });
+    f.warnings = [];
+    if (!billFileType(file)) { f.note = `«${file.name}» geht nicht – nur PDF, JPG, PNG, HEIC oder WebP.`; f.noteOk = false; return render(); }
     if (file.size > 10 * 1024 * 1024) { f.note = "Die Datei ist grösser als 10 MB."; f.noteOk = false; return render(); }
     f.file = file;
+    f.removeFile = false;
     st().reading = true;
     render();
     try {
@@ -274,14 +309,19 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         set("payee", q.payee); set("amount", q.amount); set("currency", q.currency); set("iban", q.iban); set("reference", q.reference);
         set("message", q.message); set("invoice_no", q.invoiceNo); set("due_date", q.dueDate);
         v.source = "qr";
-        // a known subscription with the same payee → link it
-        const match = costs().find((c) => c.provider && q.payee.toLowerCase().includes(c.provider.toLowerCase()));
-        if (match && !v.cost_id) { v.cost_id = match.id; v.scope = match.scope; v.category = v.category || match.category; }
-        f.note = `QR-Rechnung gelesen: ${q.payee}${q.amount != null ? `, ${money(q.amount, q.currency)}` : " (Betrag offen)"}. Fälligkeit ${q.invoiceDate ? "aus den Zahlungsbedingungen" : "angenommen: 30 Tage"} – bitte prüfen.`;
-        f.noteOk = true;
+        // a known subscription: only when the payee is exactly its provider or name (no guessing)
+        const match = costs().find((c) => (c.provider && same(c.provider, q.payee)) || same(c.name, q.payee));
+        if (match && !v.cost_id) {
+          v.cost_id = match.id;
+          if (!f.typed?.has("scope")) v.scope = match.scope; // never over a scope Christoph chose
+          v.category = v.category || match.category;
+        }
+        f.note = `QR-Rechnung gelesen: ${q.payee}${q.amount != null ? `, ${money(q.amount, q.currency)}` : " (Betrag offen)"}. Fälligkeit ${DUE_NOTE[q.dueSource]} – bitte prüfen.`;
+        f.noteOk = !q.warnings.length;
+        f.warnings = q.warnings;
       }
     } catch (err) {
-      f.note = `QR-Rechnung nicht lesbar: ${errorText(err)}`;
+      f.note = `QR-Rechnung nicht lesbar: ${readError(err)}`;
       f.noteOk = false;
     }
     st().reading = false;
@@ -296,6 +336,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       const iban = val("fin-iban").replace(/\s+/g, "").toUpperCase();
       if (Number.isNaN(amount)) throw new Error("Der Betrag ist keine Zahl (z. B. 59.40).");
       if (iban && !ibanValid(iban)) throw new Error("Die IBAN stimmt nicht (Prüfziffer) – bitte kontrollieren.");
+      if (val("fin-reference").replace(/\s+/g, "").length > 40) throw new Error("Die Referenz ist zu lang (höchstens 40 Zeichen).");
       return {
         payee: val("fin-payee"), amount, currency: val("fin-currency"), due_date: val("fin-due") || null, scope: val("fin-scope"), iban: iban || null,
         reference: val("fin-reference").replace(/\s+/g, ""), invoice_no: val("fin-invoice"), message: val("fin-message"), category: val("fin-category"),
@@ -313,6 +354,31 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     };
   }
 
+  // bill: save the row first, then upload the file and link it – a failed save leaves no file behind, and a
+  // retry updates the same bill (and links an already uploaded file instead of uploading it again)
+  async function saveBillForm(f, row) {
+    if (f.row.source && !f.row.id) row.source = f.row.source;
+    const dropOld = f.removeFile && !f.file && f.row.file_path;
+    if (dropOld) row.file_path = null;
+    const saved = await data.saveBill(row);
+    f.row.id = saved.id;
+    if (dropOld) { data.removeBillFile(f.row.file_path).catch(() => {}); f.row.file_path = null; f.removeFile = false; }
+    if (!f.file) return;
+    let path;
+    try {
+      path = f.uploaded ?? (f.uploaded = await data.uploadBillFile(f.file));
+      await data.saveBill({ id: saved.id, file_path: path });
+    } catch (err) {
+      // not linked: take the upload back (if that fails too, the retry links it)
+      if (f.uploaded) await data.removeBillFile(f.uploaded).then(() => { f.uploaded = null; }, () => {});
+      throw Object.assign(err, { savedWithoutFile: true });
+    }
+    const old = f.row.file_path;
+    Object.assign(f, { file: null, uploaded: null });
+    f.row.file_path = path;
+    if (old && old !== path) data.removeBillFile(old).catch(() => {}); // replaced: the old file goes
+  }
+
   async function onSubmit(form) {
     const f = st().form;
     if (!f || f.busy) return;
@@ -321,16 +387,18 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     f.busy = true;
     render();
     try {
-      if (f.kind === "bill") {
-        if (f.file) row.file_path = await data.uploadBillFile(f.file);
-        if (f.row.source && !f.row.id) row.source = f.row.source;
-        await data.saveBill(row);
-      } else await data.saveCost(row);
+      if (f.kind === "bill") await saveBillForm(f, row);
+      else {
+        // a new renewal date or interval: an earlier «Behalten» no longer applies
+        const was = costs().find((c) => c.id === row.id);
+        if (was && (was.next_due !== row.next_due || was.interval !== row.interval)) row.ack_until = null;
+        await data.saveCost(row);
+      }
       toast("Gespeichert");
       st().form = null;
       await load(true);
     } catch (err) {
-      toast(errorText(err));
+      toast(err.savedWithoutFile ? `Rechnung gespeichert, die Datei aber nicht (${errorText(err)}). «Speichern» versucht es nochmals.` : errorText(err));
       f.busy = false;
     }
     render();
@@ -345,7 +413,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
 
   function pickFile() {
     return new Promise((resolve) => {
-      const input = Object.assign(document.createElement("input"), { type: "file", accept: "application/pdf,image/*", hidden: true });
+      const input = Object.assign(document.createElement("input"), { type: "file", accept: BILL_FILE_ACCEPT, hidden: true }); // = the bucket's types
       const done = (file) => { input.remove(); resolve(file); };
       input.addEventListener("change", () => done(input.files[0]), { once: true });
       input.addEventListener("cancel", () => done(null), { once: true });
@@ -368,7 +436,18 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       }
       case "fin-edit-bill": st().form = { kind: "bill", row: { ...bill } }; break;
       case "fin-edit-cost": st().form = { kind: "cost", row: { ...costs().find((c) => c.id === id) } }; break;
-      case "fin-close": st().form = null; break;
+      case "fin-close":
+        if (st().form?.uploaded) data.removeBillFile(st().form.uploaded).catch(() => {}); // uploaded, never linked
+        st().form = null;
+        break;
+      case "fin-remove-file": {
+        const f = st().form;
+        if (!f) return true;
+        if (f.uploaded) { data.removeBillFile(f.uploaded).catch(() => {}); f.uploaded = null; }
+        f.file = null;
+        f.removeFile = Boolean(f.row.file_path);
+        break;
+      }
       case "fin-pick-bill": { const file = await pickFile(); if (file) await takeFile(file); return true; }
       case "fin-paid": case "fin-reopen":
         if (!bill) return true;
@@ -381,19 +460,32 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         } catch (err) { toast(errorText(err)); await load(true); }
         return true;
       case "fin-keep": {
-        const s = seen();
-        s.add(el.dataset.value);
-        try { localStorage.setItem(SEEN_KEY, JSON.stringify([...s].slice(-200))); } catch { /* private mode: shows again next time */ }
-        toast("Behalten – Erinnerung ausgeblendet");
-        break;
+        // stored with the cost (fin_costs.ack_until): gone on every device, back for the next renewal
+        const [cid, date] = el.dataset.value.split(":");
+        const c = costs().find((x) => x.id === cid);
+        if (!c) return true;
+        const before = c.ack_until ?? null;
+        c.ack_until = date;
+        render();
+        try {
+          await data.saveCost({ id: cid, ack_until: date });
+          toast(`Behalten ✓ – ${c.name} erinnert erst vor der nächsten Verlängerung wieder`);
+        } catch (err) { c.ack_until = before; toast(errorText(err)); }
+        return true;
       }
       case "fin-pay": if (st().pay.has(id)) st().pay.delete(id); else st().pay.add(id); break;
       case "fin-copy":
         try { await navigator.clipboard.writeText(el.dataset.value); toast("Kopiert"); } catch { prompt("Kopieren:", el.dataset.value); }
         return true;
-      case "fin-file":
-        try { window.open(await data.fileUrl(bill.file_path), "_blank", "noopener"); } catch (err) { toast(errorText(err)); }
+      case "fin-file": {
+        // open the tab right in the tap (Safari/iPhone blocks window.open after an await), then point it to the file
+        const win = window.open("about:blank", "_blank");
+        try {
+          const url = await data.fileUrl(bill.file_path);
+          if (win) { win.opener = null; win.location.href = url; } else location.assign(url);
+        } catch (err) { win?.close(); toast(errorText(err)); }
         return true;
+      }
       case "fin-show-paid": st().showPaid = true; break;
       case "fin-delete-bill":
         if (!confirm("Diese Rechnung löschen (mit der gespeicherten Datei)?")) return true;
@@ -406,11 +498,21 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       case "fin-csv": {
         const today = zurichToday();
         if (el.dataset.value === "bills") {
-          download(`rechnungen-${today}.csv`, toCsv(["Empfänger", "Betrag", "Währung", "Fällig", "Status", "Bezahlt am", "App/Marke", "Kategorie", "Rechnungsnr.", "IBAN", "Referenz", "Mitteilung", "Notiz"],
-            bills().map((b) => [b.payee, b.amount, b.currency, b.due_date, b.status === "paid" ? "bezahlt" : b.status === "open" ? "offen" : "storniert", String(b.paid_at ?? "").slice(0, 10), scopeName(b.scope), b.category, b.invoice_no, b.iban, b.reference, b.message, b.note])));
+          if (st().exporting) return true;
+          const period = exportPeriod(st().csvPeriod, today);
+          st().exporting = true;
+          render();
+          try {
+            const rows = (await data.exportBills(period)).sort((a, b) => bookingDay(a).localeCompare(bookingDay(b)) || String(a.payee).localeCompare(String(b.payee)));
+            download(`rechnungen-${period.label}${period.from ? "" : `-${today}`}.csv`, toCsv(["Empfänger", "Betrag", "Währung", "Fällig", "Status", "Bezahlt am", "App/Marke", "Kategorie", "Rechnungsnr.", "IBAN", "Referenz", "Mitteilung", "Notiz"],
+              rows.map((b) => [b.payee, b.amount, b.currency, b.due_date, b.status === "paid" ? "bezahlt" : b.status === "open" ? "offen" : "storniert", zurichDay(b.paid_at), scopeName(b.scope), b.category, b.invoice_no, b.iban, b.reference, b.message, b.note])));
+            toast(`${rows.length} ${rows.length === 1 ? "Rechnung" : "Rechnungen"} exportiert (${period.from ? period.label : "alle"})`);
+          } catch (err) { toast(errorText(err)); }
+          st().exporting = false;
+          render();
         } else {
           download(`kosten-${today}.csv`, toCsv(["Name", "Anbieter", "App/Marke", "Kategorie", "Betrag", "Währung", "Intervall", "pro Monat", "Nächste Verlängerung", "Zahlungsart", "aktiv"],
-            costs().map((c) => [c.name, c.provider, scopeName(c.scope), c.category, c.amount, c.currency, INTERVALS[c.interval], monthly(c).toFixed(2), nextRenewal(c, today), c.payment, c.active === false ? "nein" : "ja"])));
+            costs().map((c) => [c.name, c.provider, scopeName(c.scope), c.category, c.amount, c.currency, INTERVALS[c.interval], Number(monthly(c).toFixed(2)), nextRenewal(c, today), c.payment, c.active === false ? "nein" : "ja"])));
         }
         return true;
       }
@@ -444,6 +546,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     "fin-name": "name", "fin-provider": "provider", "fin-interval": "interval", "fin-next": "next_due", "fin-notice": "notice_days", "fin-payment": "payment", "fin-url": "url", "fin-active": "active",
   };
   function onInput(e) {
+    if (e.target.name === "fin-csv-period") { st().csvPeriod = e.target.value; return true; }
     const f = st().form;
     const k = FIELD_KEYS[e.target.name];
     if (!f || !k) return false;

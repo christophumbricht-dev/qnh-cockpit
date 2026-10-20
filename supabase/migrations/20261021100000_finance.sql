@@ -13,12 +13,13 @@ create table if not exists public.fin_costs (
   amount      numeric(12, 2) not null check (amount >= 0 and amount < 10000000),
   currency    text not null default 'CHF' check (currency ~ '^[A-Z]{3}$'),
   interval    text not null default 'monthly' check (interval in ('monthly', 'quarterly', 'yearly', 'once')),
-  next_due    date,                                                                      -- a renewal date; the cockpit rolls it forward
+  next_due    date,                                                                      -- a renewal date (anchor); later ones are computed from it
   notice_days int not null default 0 check (notice_days between 0 and 365),             -- remind this many days before (to cancel in time)
   payment     text not null default '' check (char_length(payment) <= 60),             -- e.g. «Kreditkarte», «Rechnung», «LSV»
   url         text check (url is null or (url ~ '^https?://' and char_length(url) <= 500)), -- where to manage / cancel it
   note        text not null default '' check (char_length(note) <= 1000),
   active      boolean not null default true,
+  ack_until   date,                                                                      -- «Behalten»: reminder done up to this renewal date
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
@@ -99,3 +100,7 @@ alter table public.roadmap_items add column if not exists repeat text
   check (repeat is null or repeat in ('weekly', 'monthly', 'quarterly', 'yearly'));
 alter table public.roadmap_items add column if not exists snoozed_until date;   -- hidden on «Heute» until then
 alter table public.roadmap_items add column if not exists last_done_at timestamptz; -- a recurring task was last done
+-- day of the month a monthly/quarterly/yearly task stays on (31 = always the last day of the month), so the
+-- date does not drift at month ends (31.3. → 30.6. → 30.9. → 31.12.); set from the due date chosen in the editor
+alter table public.roadmap_items add column if not exists repeat_day smallint
+  check (repeat_day is null or repeat_day between 1 and 31);

@@ -3,6 +3,9 @@
 import jsQR from "jsqr";
 
 const MAX_SIDE = 2400; // photos from the phone are big; the QR is still sharp enough at this size
+// decoders for scanned PDFs (CCITT G4, JBIG2, JPEG 2000): WebAssembly files served by the «qnh-pdfjs-wasm»
+// plugin (vite.config.js) – an absolute folder URL ending in "/", so the worker resolves it the same way
+const WASM_URL = new URL(`${import.meta.env.BASE_URL}pdfjs-wasm/`, location.href).href;
 
 function canvasOf(w, h) {
   const c = document.createElement("canvas");
@@ -37,7 +40,7 @@ async function fromPdf(file) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const { default: worker } = await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url");
   pdfjs.GlobalWorkerOptions.workerSrc = worker;
-  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false });
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, wasmUrl: WASM_URL });
   const doc = await task.promise;
   try {
     // the QR-bill is usually on the last page

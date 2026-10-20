@@ -720,3 +720,7 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
   .fin-timeline .fin-amount { grid-column: 2; }
 }
 .fin-cur { font-weight: 600; letter-spacing: 0.06em; margin-top: 4px; }
+.fin-date.est { border-style: dashed; }
+.fin-export { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; }
+.fin-export .field { min-width: 200px; }
+.fin-export p { flex-basis: 100%; margin: 0; }

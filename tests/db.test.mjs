@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
+import { setPatch } from "../scripts/roadmap-lib.mjs";
 
 const SQL = readFileSync(new URL("../supabase/migrations/20261013100000_social.sql", import.meta.url), "utf8");
 const SQL2 = readFileSync(new URL("../supabase/migrations/20261014100000_roadmap_hangar.sql", import.meta.url), "utf8");
@@ -263,12 +264,32 @@ test("finance: admins only; paid_at follows the status; the bill bucket is priva
   assert.equal((await db.query("select public from storage.buckets where id='finance'")).rows[0].public, false);
   await as(ADMIN, "insert into storage.objects (bucket_id, name) values ('finance', 'bills/x.pdf')");
   await assert.rejects(as(OTHER, "insert into storage.objects (bucket_id, name) values ('finance', 'bills/y.pdf')"));
+  // «Behalten» is stored with the cost (every device), by admins only
+  await as(ADMIN, `update fin_costs set ack_until='2027-01-15' where id='${c}'`);
+  assert.equal((await as(ADMIN, `select ack_until::text a from fin_costs where id='${c}'`)).rows[0].a, "2027-01-15");
+  await as(OTHER, `update fin_costs set ack_until=null where id='${c}'`); // RLS: no row for others
+  assert.equal((await as(ADMIN, `select ack_until::text a from fin_costs where id='${c}'`)).rows[0].a, "2027-01-15");
+  await assert.rejects(as(ADMIN, `update fin_bills set reference=repeat('1', 41) where id='${b}'`));
   await as(ADMIN, `delete from fin_costs where id='${c}'`); // the bill stays, without the link
   assert.equal((await as(ADMIN, `select cost_id from fin_bills where id='${b}'`)).rows[0].cost_id, null);
 });
 
 test("roadmap: recurring tasks and «Später»", async () => {
-  const id = (await as(ADMIN, "insert into roadmap_items (scope, title, status, due, repeat) values ('qnh', 'MWST-Abrechnung', 'next', '2026-12-31', 'quarterly') returning id")).rows[0].id;
+  const id = (await as(ADMIN, "insert into roadmap_items (scope, title, status, due, repeat, repeat_day) values ('qnh', 'MWST-Abrechnung', 'next', '2026-12-31', 'quarterly', 31) returning id")).rows[0].id;
   await as(ADMIN, `update roadmap_items set due='2027-03-31', last_done_at=now(), snoozed_until='2026-10-22' where id='${id}'`);
   await assert.rejects(as(ADMIN, `update roadmap_items set repeat='daily' where id='${id}'`));
+  await assert.rejects(as(ADMIN, `update roadmap_items set repeat_day=32 where id='${id}'`));
+  await assert.rejects(as(ADMIN, `update roadmap_items set repeat_day=0 where id='${id}'`));
+  await as(ADMIN, `update roadmap_items set repeat=null, repeat_day=null, status='done' where id='${id}'`);
+});
+
+test("roadmap: what the CLI writes for «done» fits the table (roll forward, --final)", async () => {
+  const sql = (v) => (v === null ? "null" : `'${String(v).replace(/'/g, "''")}'`);
+  const apply = async (id, patch) => as(ADMIN, `update roadmap_items set ${Object.entries(patch).map(([k, v]) => `${k}=${sql(v)}`).join(", ")} where id='${id}' returning status, due::text, repeat, repeat_day`);
+  const item = (await as(ADMIN, "insert into roadmap_items (scope, title, status, due, repeat, repeat_day) values ('qnh', 'MWST', 'next', '2026-09-30', 'quarterly', 31) returning *")).rows[0];
+  item.due = "2026-09-30";
+  const rolled = (await apply(item.id, setPatch(item, { status: "done" }, "2026-10-20").patch)).rows[0];
+  assert.deepEqual(rolled, { status: "next", due: "2026-12-31", repeat: "quarterly", repeat_day: 31 });
+  const closed = (await apply(item.id, setPatch({ ...item, ...rolled }, { status: "done", final: true }, "2026-10-20").patch)).rows[0];
+  assert.deepEqual(closed, { status: "done", due: "2026-12-31", repeat: null, repeat_day: null });
 });

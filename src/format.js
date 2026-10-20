@@ -46,6 +46,8 @@ export const sourceLabel = (s) => SOURCES[s] ?? s ?? "";
 // Turns a Supabase/Postgres error into a German sentence for the cockpit.
 export function errorText(err) {
   if (!err) return "";
+  // QR-bill and form checks carry their own German message (never «Der Code ist falsch …», which is about sign-in)
+  if (err.name === "QrBillError") return err.message;
   if (err.code === "42501" || /Only admins/i.test(err.message ?? "")) return "Dieses Konto ist kein Admin dieser App.";
   if (err.code === "PGRST202") return "Diese Funktion fehlt noch in der Datenbank: In Supabase den SQL-Code aus supabase/apply-pending.sql von Downwind ausführen.";
   if (/Failed to fetch|NetworkError|Load failed/i.test(err.message ?? "")) return "Keine Verbindung zum Server.";

@@ -1,7 +1,7 @@
 // Roadmap (board per app + QNH) and Hangar (quick links). Rendered inside main.js.
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { addDays, nextDue, zurichToday } from "../finance/calc.js";
+import { addDays, dayOfMonth, recurringDone, zurichToday } from "../finance/calc.js";
 import { dueLabel, laneForDate } from "../today.js";
 
 export const REPEAT = { weekly: "wöchentlich", monthly: "monatlich", quarterly: "vierteljährlich", yearly: "jährlich" };
@@ -68,15 +68,18 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
   }
   const nextTask = (scope = null) => focusQueue(scope)[0] ?? null;
 
+  // skipped = «Später»; handled = done in this round (a recurring task stays open with its next date – not again)
   function startFocus(scope) {
-    S.qnh.focus = { scope, skipped: new Set(), done: 0, id: null };
+    S.qnh.focus = { scope, skipped: new Set(), handled: new Set(), done: 0, id: null };
     advanceFocus();
   }
-  function advanceFocus() {
+  const inRound = (f) => (i) => !f.skipped.has(i.id) && !f.handled.has(i.id);
+  // `said`: a toast just shown (e.g. «nächstes Mal am …») – kept in the end-of-round message instead of replaced
+  function advanceFocus(said = "") {
     const f = S.qnh.focus;
-    const next = focusQueue(f.scope).find((i) => !f.skipped.has(i.id));
+    const next = focusQueue(f.scope).find(inRound(f));
     if (next) { f.id = next.id; return; }
-    toast(`Fokus-Runde fertig: ${f.done} erledigt${f.skipped.size ? `, ${f.skipped.size} auf später` : ""}.`);
+    toast(`${said ? `${said} · ` : ""}Fokus-Runde fertig: ${f.done} erledigt${f.skipped.size ? `, ${f.skipped.size} auf später` : ""}.`);
     S.qnh.focus = null;
   }
 
@@ -100,7 +103,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     const i = (S.qnh.items ?? []).find((x) => x.id === f.id);
     if (!i) { advanceFocus(); return f && S.qnh.focus ? focusView() : roadmapView(f?.scope === "all" ? null : f?.scope); }
     const sc = scopeOf(i.scope);
-    const left = focusQueue(f.scope).filter((x) => !f.skipped.has(x.id)).length;
+    const left = focusQueue(f.scope).filter(inRound(f)).length;
     const overdue = i.due && new Date(`${i.due}T23:59:59`) < new Date();
     return `<div class="review-bar"><b>Fokus</b><span class="muted">${f.done} erledigt · noch ${left} offen</span>
         <span class="row-right"><button class="link" data-action="rm-focus-close">Schliessen</button></span></div>
@@ -111,7 +114,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
         <h2 class="focus-title">${esc(i.title)}</h2>
         <div class="focus-body">${i.body ? richBody(i.body) : `<p class="muted">Keine Details. Mit «Bearbeiten» Schritte oder Links ergänzen.</p>`}</div>
         <div class="actions">
-          <button class="btn" data-action="rm-focus-done" data-id="${i.id}">Erledigt ✓</button>
+          <button class="btn" data-action="rm-focus-done" data-id="${i.id}">${i.repeat ? "Erledigt ↻" : "Erledigt ✓"}</button>
           ${i.status === "next" ? `<button class="btn ghost" data-action="rm-focus-doing" data-id="${i.id}">Ich fange an</button>` : ""}
           <button class="btn ghost" data-action="rm-focus-skip" data-id="${i.id}">Später ›</button>
           <button class="btn ghost" data-action="rm-focus-edit" data-id="${i.id}">Bearbeiten</button>
@@ -176,7 +179,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
       ${i.body ? `<p class="rm-body">${esc(i.body.length > 160 ? `${i.body.slice(0, 160)}…` : i.body)}</p>` : ""}
       <div class="rm-meta">
         ${i.due ? `<span class="rm-due${overdue ? " late" : ""}">${overdue ? "überfällig · " : "bis "}${esc(new Date(`${i.due}T12:00:00`).toLocaleDateString("de-CH"))}</span>` : ""}
-        ${i.repeat ? `<span class="rm-src" title="wiederkehrend">↻ ${esc(REPEAT[i.repeat] ?? i.repeat)}</span>` : ""}
+        ${i.repeat ? `<span class="rm-src" title="wiederkehrend">↻ ${esc(REPEAT[i.repeat] ?? i.repeat)}${i.repeat !== "weekly" && i.repeat_day === 31 ? ", Monatsende" : ""}</span>` : ""}
         ${i.source === "claude" ? `<span class="rm-src">von Claude</span>` : ""}
         <span class="rm-tools">
           <button class="icon-mini" data-action="rm-move" data-id="${i.id}" data-value="${idx - 1}" aria-label="nach links"${idx === 0 ? " disabled" : ""}>‹</button>
@@ -187,13 +190,16 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     </article>`;
   }
 
+  // → { ok, said } – said = the toast shown when a recurring task rolled forward
   async function update(id, patch) {
     const item = S.qnh.items.find((x) => x.id === id);
-    // a recurring task is never «done»: it moves on to its next date
-    if (patch.status === "done" && item.repeat && item.status !== "done") {
-      const due = nextDue(item.due, item.repeat, zurichToday());
-      patch = { ...patch, status: item.status === "idea" ? "next" : item.status, due, last_done_at: new Date().toISOString(), snoozed_until: null };
-      toast(`Erledigt ✓ – nächstes Mal am ${new Date(`${due}T12:00:00`).toLocaleDateString("de-CH")}`);
+    // a recurring task is never «done»: it moves on to its next date (unless this edit makes it «einmalig»)
+    const rolled = recurringDone(item, patch, zurichToday());
+    let said = "";
+    if (rolled) {
+      patch = rolled;
+      said = `Erledigt ✓ – nächstes Mal am ${new Date(`${rolled.due}T12:00:00`).toLocaleDateString("de-CH")}`;
+      toast(said);
     }
     const before = { ...item };
     Object.assign(item, patch);
@@ -203,8 +209,18 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     } catch (err) {
       Object.assign(item, before);
       toast(errorText(err));
+      render();
+      return { ok: false };
     }
     render();
+    return { ok: true, said };
+  }
+
+  // the editor's due date sets the day a monthly/quarterly/yearly task stays on (31 = Monatsende); unchanged
+  // date and rhythm keep the stored day (e.g. 30.6. of a task that is due at every month end)
+  function repeatDay(item, due, repeat) {
+    if (!repeat || repeat === "weekly" || !due) return null;
+    return due === item.due && repeat === item.repeat && item.repeat_day ? item.repeat_day : dayOfMonth(due);
   }
 
   // ---------- hangar ----------
@@ -243,8 +259,11 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
         toast("Hinzugefügt");
       } else if (kind === "rm-edit") {
         S.qnh.editing = null;
-        await update(form.dataset.id, { title: f["rm-title"].value.trim(), body: f["rm-body"].value, scope: f["rm-scope"].value, status: f["rm-status"].value, due: f["rm-due"].value || null,
-          ...(f["rm-repeat"] ? { repeat: f["rm-repeat"].value || null } : {}) });
+        const item = S.qnh.items.find((x) => x.id === form.dataset.id);
+        const due = f["rm-due"].value || null;
+        const repeat = f["rm-repeat"] ? f["rm-repeat"].value || null : undefined;
+        await update(form.dataset.id, { title: f["rm-title"].value.trim(), body: f["rm-body"].value, scope: f["rm-scope"].value, status: f["rm-status"].value, due,
+          ...(repeat !== undefined ? { repeat, repeat_day: repeatDay(item, due, repeat) } : {}) });
       } else if (kind === "hg-save") {
         const saved = await data.saveLink({ id: form.dataset.id || undefined, title: f["hg-title"].value.trim(), url: f["hg-url"].value.trim(), grp: f["hg-grp"].value.trim(), note: f["hg-note"].value.trim() });
         const list = S.qnh.links;
@@ -270,16 +289,21 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
       case "rm-focus-doing": await update(id, { status: "doing" }); return true;
       // from «Heute»
       case "rm-done": {
-        const item = st.items?.find((x) => x.id === id);
-        await update(id, { status: "done" });
-        if (item && !item.repeat) toast("Erledigt ✓");
+        const r = await update(id, { status: "done" });
+        if (r.ok && !r.said) toast("Erledigt ✓");
         return true;
       }
       case "rm-snooze": await update(id, { snoozed_until: addDays(zurichToday(), 1) }); toast("Auf morgen verschoben"); return true;
-      case "rm-focus-done":
-        await update(id, { status: "done" });
-        if (st.focus) { st.focus.done++; toast("Erledigt ✓"); advanceFocus(); }
+      case "rm-focus-done": {
+        const r = await update(id, { status: "done" }); // a recurring task shows «nächstes Mal am …» itself
+        if (r.ok && st.focus) {
+          st.focus.done++;
+          st.focus.handled.add(id); // still open when recurring: the round moves on anyway
+          if (!r.said) toast("Erledigt ✓");
+          advanceFocus(r.said);
+        }
         break;
+      }
       case "rm-focus-edit": st.focus = null; st.editing = id; break;
       case "rm-show-done": st.showDone = true; break;
       case "rm-edit": st.editing = id; break;
