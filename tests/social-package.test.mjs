@@ -82,3 +82,13 @@ test("location: a saved place by name, or a Facebook Page ID with name", async (
   assert.deepEqual((await parsePackage(entries({ ...POST, location: { id: 112233445566, name: "Birrfeld" } }), ACCOUNTS)).location, { id: "112233445566", name: "Birrfeld" });
   await assert.rejects(parsePackage(entries({ ...POST, location: { id: "birrfeld" } }), ACCOUNTS), /Facebook-Seiten-ID/);
 });
+
+test("YouTube package: title for the video, longer than 100 characters is refused", async () => {
+  const accounts = [...ACCOUNTS, { id: "acc-ly", app_id: "leesidelab", platform: "youtube", handle: "leesidelab" }];
+  const yt = { account: "leesidelab/youtube", kind: "reel", title: " Föhn, part 1 ", caption: "Why is it warm?", media: ["v.mp4"] };
+  const files = (post) => new Map([["post.json", new File([JSON.stringify(post)], "post.json")], ["v.mp4", new File([new Uint8Array(10)], "v.mp4", { type: "video/mp4" })]]);
+  const p = await parsePackage(files(yt), accounts);
+  assert.equal(p.account.id, "acc-ly");
+  assert.equal(p.title, "Föhn, part 1");
+  await assert.rejects(parsePackage(files({ ...yt, title: "x".repeat(101) }), accounts), /höchstens 100/);
+});

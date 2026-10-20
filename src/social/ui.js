@@ -2,7 +2,7 @@
 // Nothing is ever approved automatically – only the "Freigeben" button (and the database checks that too).
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
-import { KINDS, LIMITS, aspectLabel, countHashtags, formatZurich, formatZurichDate, parseTagList, utcToZurichLocal, validatePost, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, parseTagList, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
 import { readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
@@ -42,8 +42,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   const accounts = () => S.social.value?.accounts ?? [];
-  // accounts the editor can publish to (YouTube: comments only for now)
-  const publishable = () => accounts().filter((a) => a.platform !== "youtube");
+  // accounts the editor can publish to (YouTube needs the title column from 20261020110000_social_youtube.sql)
+  const publishable = () => accounts().filter((a) => a.platform !== "youtube" || data.titleSupported());
+  const isYoutube = (accountId) => account(accountId)?.platform === "youtube";
+  const platformName = (accountId) => PLATFORM[account(accountId)?.platform] ?? "Instagram";
   const posts = () => S.social.value?.posts ?? [];
   const places = () => S.social.value?.locations ?? [];
   // not yet published post that looks like something already on Instagram → warning
@@ -201,7 +203,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         const a = account(p.account_id);
         const movable = ["draft", "failed", "approved"].includes(p.status);
         const time = utcToZurichLocal(p.published_at ?? p.scheduled_at).slice(11, 16);
-        return `<button class="cal-post ${p.status}" data-action="soc-open" data-id="${p.id}"${movable ? ` draggable="true" data-cal-post="${p.id}"` : ""} title="${esc((firstLines(p.caption, 1) || KINDS[p.kind]) + (todoOpen(p.todo) ? `\n\nVon Hand: ${p.todo}` : ""))}"><b>${esc(time)}</b>${todoOpen(p.todo) ? " ✋" : ""} ${esc(KINDS[p.kind])} · @${esc(a?.handle ?? "")}</button>`;
+        return `<button class="cal-post ${p.status}" data-action="soc-open" data-id="${p.id}"${movable ? ` draggable="true" data-cal-post="${p.id}"` : ""} title="${esc((firstLines(p.caption, 1) || KINDS[p.kind]) + (todoOpen(p.todo) ? `\n\nVon Hand: ${p.todo}` : ""))}"><b>${esc(time)}</b>${todoOpen(p.todo) ? " ✋" : ""} ${esc(a?.platform === "youtube" ? "YouTube" : KINDS[p.kind])} · @${esc(a?.handle ?? "")}</button>`;
       }).join("");
       const cls = `cal-day${k.slice(0, 7) !== month ? " other" : ""}${k === today ? " today" : ""}${k < today ? " past" : ""}`;
       const add = k >= today ? `<button class="cal-add" data-action="soc-new-on" data-value="${k}" aria-label="Neuer Beitrag am ${k}">+</button>` : "";
@@ -299,7 +301,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const found = HOWTO.filter(([a, b]) => String(t).split("\n").some((line) => a.test(line) && b.test(line)));
     return found.map(([, , title, steps]) => `<details class="howto"><summary>So geht's: ${title}</summary><ol>${steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></details>`).join("");
   }
-  const todoBox = (t) => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in Instagram erledigen</b><p>${todoHtml(t)}</p>${howtoHtml(t)}</div>` : "");
+  const todoBox = (t, where = "Instagram") => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in ${esc(where)} erledigen</b><p>${todoHtml(t)}</p>${howtoHtml(t)}</div>` : "");
 
   function postItem(p) {
     const a = account(p.account_id);
@@ -321,9 +323,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
           ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
           ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
+        ${p.title ? `<p class="text"><b>${esc(p.title)}</b></p>` : ""}
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
         ${twinHtml(twinOf(p))}
-        ${todoBox(p.todo)}
+        ${todoBox(p.todo, PLATFORM[a?.platform] ?? "Instagram")}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
         <div class="actions">${actions.join("")}</div>
       </div>
@@ -368,7 +371,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       isNew: !post || duplicate,
       status: post && !duplicate ? post.status : "draft",
       account_id: post?.account_id ?? fallback?.id,
-      kind: post?.kind ?? "image",
+      kind: post?.kind ?? (fallback?.platform === "youtube" ? "reel" : "image"),
+      title: post?.title ?? "",
       caption: post?.caption ?? "",
       first_comment: post?.first_comment ?? "",
       todo: duplicate ? "" : post?.todo ?? "",
@@ -390,7 +394,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   const readonly = (ed) => !ed.isNew && LOCKED.includes(ed.status);
   const checks = (ed, forApproval = false) =>
-    validatePost({ kind: ed.kind, items: ed.items, caption: ed.caption, first_comment: ed.first_comment },
+    validatePost({ kind: ed.kind, items: ed.items, caption: ed.caption, first_comment: ed.first_comment, platform: account(ed.account_id)?.platform, title: ed.title },
       { forApproval, scheduledAt: zurichToUtc(ed.scheduledLocal) });
 
   function checksHtml(ed) {
@@ -401,15 +405,27 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   function counterHtml(ed) {
     const tags = countHashtags(ed.caption);
+    if (isYoutube(ed.account_id)) {
+      const bytes = utf8Bytes(ed.caption);
+      const cls = bytes > YOUTUBE.descriptionBytes || tags > YOUTUBE.hashtagsMax ? "error" : "muted";
+      return `<span class="${cls}">${bytes} / ${YOUTUBE.descriptionBytes} Bytes · ${tags} Hashtag${tags === 1 ? "" : "s"} (höchstens ${YOUTUBE.hashtagsMax})</span>`;
+    }
     const cls = ed.caption.length > LIMITS.caption || tags > LIMITS.hashtagsMax ? "error" : tags > LIMITS.hashtagsWarn ? "warn" : "muted";
     return `<span class="${cls}">${ed.caption.length} / ${LIMITS.caption} Zeichen · ${tags} Hashtag${tags === 1 ? "" : "s"}</span>`;
+  }
+
+  function titleCounter(ed) {
+    const n = String(ed.title ?? "").trim().length;
+    return `<span class="${n > YOUTUBE.title || !n ? "error" : "muted"}">${n} / ${YOUTUBE.title} Zeichen</span>`;
   }
 
   function editorView(ed) {
     const ro = readonly(ed);
     const dis = ro || ed.busy ? " disabled" : "";
     const acc = account(ed.account_id);
-    const kinds = Object.entries(KINDS).map(([k, l]) =>
+    const yt = isYoutube(ed.account_id);
+    const where = platformName(ed.account_id);
+    const kinds = Object.entries(yt ? { reel: "Video (Short)" } : KINDS).map(([k, l]) =>
       `<button class="chip${ed.kind === k ? " on" : ""}" data-action="soc-kind" data-value="${k}"${dis}>${l}</button>`).join("");
     const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,video/mp4,video/quicktime";
     const itemsHtml = ed.items.map((it, i) => `<li class="soc-file">
@@ -427,7 +443,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (!ed.isNew && ed.status === "approved") actions.push(`<button class="btn ghost" data-action="soc-withdraw" data-id="${ed.id}"${ed.busy ? " disabled" : ""}>Zurückziehen</button>`);
     if (["draft", "approved", "failed"].includes(ed.status)) actions.push(`<button class="btn ghost" data-action="soc-publish-now" data-id="${ed.id}"${ed.busy ? " disabled" : ""}>Jetzt veröffentlichen …</button>`);
     if (!ed.isNew) actions.push(`<button class="btn ghost" data-action="soc-duplicate" data-id="${ed.id}">Duplizieren</button>`);
-    if (ed.permalink) actions.push(`<a class="btn ghost" href="${esc(ed.permalink)}" target="_blank" rel="noopener">Auf Instagram öffnen</a>`);
+    if (ed.permalink) actions.push(`<a class="btn ghost" href="${esc(ed.permalink)}" target="_blank" rel="noopener">Auf ${esc(where)} öffnen</a>`);
 
     const rv = S.social.review;
     const rvBar = rv && !ed.isNew ? (() => {
@@ -449,14 +465,16 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
               <b>${ed.kind === "carousel" ? "Bilder oder Videos" : ed.kind === "reel" ? "Video" : ed.kind === "story" ? "Bild oder Video" : "Bild"} hierher ziehen</b> oder klicken
               <span class="small muted">${ed.kind === "reel" || ed.kind === "story" ? "Hochformat 9:16" : "JPEG, 4:5 / 1:1 / 1.91:1"} · Videos als MP4 (H.264)</span></div>`}
           <ul class="soc-files">${itemsHtml}</ul>
-          ${ed.kind === "reel" ? `<div class="field">Titelbild (optional, JPEG)
+          ${yt ? `<label class="field">Titel <span class="counter" id="soc-title-counter">${titleCounter(ed)}</span>
+            <input name="soc-title" maxlength="${YOUTUBE.title + 20}" value="${esc(ed.title ?? "")}" placeholder="z. B. Föhn: Warum ist es in Altdorf so warm?"${dis}></label>` : ""}
+          ${ed.kind === "reel" && !yt ? `<div class="field">Titelbild (optional, JPEG)
             ${ed.cover ? `<div class="soc-file">${thumb({ ...ed.cover, url: ed.cover.url ?? data.mediaUrl(ed.cover.path ?? ed.cover.copyFrom) }, "thumb small")}${ro ? "" : `<button class="link" data-action="soc-remove-cover">Entfernen</button>`}</div>`
               : ro ? `<span class="muted small">keines</span>` : `<button class="btn ghost" data-action="soc-pick-cover">Titelbild wählen</button>`}</div>` : ""}
-          ${ed.kind === "story" ? "" : `<label class="field">Text <span class="counter" id="soc-counter">${counterHtml(ed)}</span>
-            <textarea name="soc-caption" rows="7" maxlength="2400"${dis}>${esc(ed.caption)}</textarea></label>
-          <label class="field">Erster Kommentar (optional, z. B. Hashtags)
+          ${ed.kind === "story" ? "" : `<label class="field">${yt ? "Beschreibung" : "Text"} <span class="counter" id="soc-counter">${counterHtml(ed)}</span>
+            <textarea name="soc-caption" rows="7" maxlength="${yt ? 5200 : 2400}"${dis}>${esc(ed.caption)}</textarea></label>
+          <label class="field">${yt ? "Erster Kommentar (optional – anpinnen geht nur in YouTube von Hand)" : "Erster Kommentar (optional, z. B. Hashtags)"}
             <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>`}
-          ${data.locationSupported() && ed.kind !== "story" ? `<label class="field">Standort (optional)
+          ${data.locationSupported() && ed.kind !== "story" && !yt ? `<label class="field">Standort (optional)
             <select name="soc-location"${dis}>
               <option value="">Kein Standort</option>
               ${[...places().map((p) => [p.page_id, p.name]), ...(ed.location && !places().some((p) => p.page_id === ed.location.id) ? [[ed.location.id, ed.location.name || ed.location.id]] : [])]
@@ -465,7 +483,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
             </select></label>` : ""}
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
-          ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in Instagram erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
+          ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in ${esc(where)} erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
             ${todoOpen(ed.todo) ? `<p class="soc-todo-preview">${todoHtml(ed.todo)}</p>${howtoHtml(ed.todo)}` : ""}
             <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
             ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
@@ -498,9 +516,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       <div class="phone-head"><span class="avatar"></span><b>${esc(handle)}</b>${ed.kind === "story" ? `<span class="muted small">Story</span>` : ""}</div>
       <div class="phone-media${slider ? " slider" : ""}" style="aspect-ratio:${ratio}">${media}</div>
       ${dots}
+      ${isYoutube(ed.account_id) ? `<div class="phone-caption"><b>${esc(ed.title || "(Titel fehlt)")}</b><br><span class="muted small">@${esc(handle)} · YouTube Short</span></div>` : ""}
       ${vertical ? "" : `<div class="phone-caption"><b>${esc(handle)}</b> ${cap}</div>${ed.first_comment.trim() ? `<div class="phone-comment"><b>${esc(handle)}</b> ${esc(ed.first_comment.slice(0, 80))}</div>` : ""}`}
     </div>
-    <p class="small muted">Vorschau, ungefähr wie auf dem iPhone. Instagram schneidet Feed-Bilder auf 4:5 bis 1.91:1 zu.</p>`;
+    <p class="small muted">${isYoutube(ed.account_id) ? "Vorschau, ungefähr wie ein YouTube Short auf dem iPhone. Das Titelbild wählt YouTube selbst (ändern geht in der YouTube-App)." : "Vorschau, ungefähr wie auf dem iPhone. Instagram schneidet Feed-Bilder auf 4:5 bis 1.91:1 zu."}</p>`;
   }
 
   function refreshBits() {
@@ -508,6 +527,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (!ed) return;
     const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
     set("soc-counter", counterHtml(ed));
+    set("soc-title-counter", titleCounter(ed));
     set("soc-checks", checksHtml(ed));
     set("soc-preview", previewHtml(ed, account(ed.account_id)));
     syncSlider(false);
@@ -598,8 +618,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       Object.assign(ed.cover, { path: cover_path, file: undefined, copyFrom: undefined });
     }
     const row = {
-      account_id: ed.account_id, kind: ed.kind, caption: ed.kind === "story" ? "" : ed.caption,
-      first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path,
+      account_id: ed.account_id, kind: ed.kind, title: isYoutube(ed.account_id) ? String(ed.title ?? "").trim() : "", caption: ed.kind === "story" ? "" : ed.caption,
+      first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
       scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" ? null : ed.location ?? null,
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row);
@@ -612,7 +632,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function confirmText(title, ed) {
     const acc = account(ed.account_id);
     const lines = firstLines(ed.caption) || (ed.kind === "story" ? "(Story)" : "(kein Text)");
-    return `${title}\n\nKonto: ${accountLabel(acc)}\nArt: ${KINDS[ed.kind]}\nZeit: ${formatZurich(zurichToUtc(ed.scheduledLocal))}\n\n${lines}`;
+    const yt = acc?.platform === "youtube";
+    return `${title}\n\nKonto: ${accountLabel(acc)}\nArt: ${yt ? "YouTube-Video" : KINDS[ed.kind]}\nZeit: ${formatZurich(zurichToUtc(ed.scheduledLocal))}\n\n${yt ? `«${ed.title}»\n` : ""}${lines}`;
   }
 
   async function busy(ed, fn) {
@@ -631,7 +652,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const ed = S.social.editor;
     if (ed && ed.id === id) return ed;
     const p = posts().find((x) => x.id === id);
-    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, caption: p.caption, first_comment: p.first_comment, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
+    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
   };
 
   async function publishNow(id) {
@@ -779,6 +800,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const name = e.target.name ?? "";
     if (!ed || !name.startsWith("soc-")) return false;
     if (name === "soc-caption") ed.caption = e.target.value;
+    else if (name === "soc-title") ed.title = e.target.value;
     else if (name === "soc-comment") ed.first_comment = e.target.value;
     else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
     else if (name === "soc-time") ed.scheduledLocal = e.target.value;
@@ -794,7 +816,15 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (inbox.onChange(e)) return true;
     const name = e.target.name ?? "";
     const ed = S.social.editor;
-    if (name === "soc-account" && ed) { ed.account_id = e.target.value; ed.dirty = true; refreshBits(); return true; }
+    if (name === "soc-account" && ed) {
+      const wasYt = isYoutube(ed.account_id);
+      ed.account_id = e.target.value;
+      ed.dirty = true;
+      // YouTube takes one video; switching platform changes the form → full render
+      if (isYoutube(ed.account_id)) { ed.kind = "reel"; ed.items = ed.items.filter((i) => /^video\//.test(i.type)).slice(0, 1); }
+      if (wasYt !== isYoutube(ed.account_id)) render(); else refreshBits();
+      return true;
+    }
     if (name === "soc-location" && ed) {
       const v = e.target.value;
       if (v !== "__new") { const p = places().find((x) => x.page_id === v); ed.location = v ? { id: v, name: p?.name ?? ed.location?.name ?? v } : null; ed.dirty = true; return true; }
@@ -871,7 +901,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };

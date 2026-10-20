@@ -33,7 +33,8 @@ Nach dem Posten: @exploring_the_skies markieren"
 
 | Feld | Pflicht | Bedeutung |
 |---|---|---|
-| `account` | ja | `app/plattform`, z. B. `downwind/instagram`, `secondseat/instagram`. Muss im Cockpit als Konto verbunden sein. |
+| `account` | ja | `app/plattform`, z. B. `downwind/instagram`, `secondseat/instagram`, `leesidelab/youtube`. Muss im Cockpit als Konto verbunden sein. |
+| `title` | bei YouTube | Videotitel, höchstens 100 Zeichen. Bei YouTube ist `caption` die Beschreibung (höchstens 5000 Bytes, höchstens 15 Hashtags). |
 | `kind` | ja | `image` (ein Bild), `carousel` (2–10 Bilder/Videos), `reel` (ein Video), `story` (ein Bild oder Video) |
 | `caption` | nein | Text, höchstens 2200 Zeichen, höchstens 30 Hashtags (ab 15 gibt es eine Warnung). Zeilenumbruch als `\n`. Bei Stories ignoriert. |
 | `first_comment` | nein | Erster Kommentar nach dem Veröffentlichen (z. B. die Hashtags). Bei Stories ignoriert. |
@@ -58,6 +59,24 @@ Nach dem Posten: @exploring_the_skies markieren"
 | alle | höchstens 50 MB pro Datei (Supabase-Gratisplan), Paket zusammen höchstens 200 MB |
 
 Das Cockpit prüft alles beim Import und zeigt Fehler im Editor an. Ein Paket mit Fehlern wird trotzdem als Entwurf angelegt, damit du es dort korrigieren kannst – freigeben lässt es sich erst, wenn alles stimmt.
+
+### YouTube (Short)
+
+```json
+{
+  "account": "leesidelab/youtube",
+  "kind": "reel",
+  "title": "Föhn: why is it 23 °C in Altdorf while Ticino gets rain?",
+  "caption": "Part 1 of 3 – how the Alps turn a rainy south wind into warm, dry gusts.\n\n#foehn #aviationweather #pilot",
+  "first_comment": "Where have you felt Föhn? 👇",
+  "suggested_time": "2026-10-23T18:00",
+  "media": ["1.mp4"]
+}
+```
+- Nur `kind: "reel"` (ein Video). Hochformat bis 3 Minuten wird ein **Short**.
+- `cover` wird bei YouTube nicht verwendet (das Titelbild eines Shorts wählt man in der YouTube-App).
+- Den ersten Kommentar schreibt das Cockpit nach dem Hochladen; **anpinnen** geht nur von Hand in YouTube.
+- Für Instagram und YouTube je ein eigenes Paket (eigener Ordner), z. B. `…-nebel-1` und `…-nebel-1-yt`.
 
 ## Vorlage für den Claude-Chat
 

@@ -23,7 +23,8 @@ export class GoogleError extends Error {
   }
 }
 
-async function parse(res: Response) {
+// JSON body of a Google response, or a GoogleError (also used for the upload session in youtube.ts)
+export async function parse(res: Response) {
   if (res.status === 204) return {};
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body?.error) {

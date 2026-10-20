@@ -6,6 +6,8 @@
 // published again, and a container that Instagram reports as PUBLISHED is matched instead of re-published.
 
 import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, scrubToken, type FetchFn } from "./graph.ts";
+import { GoogleError, googleGerman, type GoogleConfig } from "./google.ts";
+import { publishYoutube } from "./youtube.ts";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -24,6 +26,7 @@ export type Post = {
   id: string;
   account_id: string;
   kind: "image" | "carousel" | "reel" | "story";
+  title?: string; // YouTube: video title (caption = description)
   caption: string;
   first_comment: string;
   media: MediaItem[];
@@ -63,6 +66,9 @@ export type Deps = {
   facebookEnabled?: boolean;
   pollMs?: number; // between status checks of a video container
   maxPolls?: number; // per run; afterwards the post stays "publishing" and the next run continues
+  google?: GoogleConfig | null; // YouTube (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)
+  deadline?: number; // ms timestamp: a YouTube upload stops here and the next run continues
+  chunkSize?: number; // YouTube upload piece (tests use small ones)
 };
 
 export type Result = { id: string; status: string; error?: string };
@@ -82,7 +88,7 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
   try {
     const account = await store.account(post.account_id);
     if (account.platform === "facebook") return await publishFacebook(deps, post, account);
-    if (account.platform === "youtube") throw new FinalError("Veröffentlichen auf YouTube ist noch nicht eingebaut.");
+    if (account.platform === "youtube") return await publishYoutube(deps, post, account);
     const g = graph(deps.fetch, IG_HOST, await store.token(account.id));
 
     if (post.remote_media_id) return await finish(deps, g, post, post.remote_media_id); // published before, only finish
@@ -238,10 +244,12 @@ async function fail(deps: Deps, post: Post, err: unknown): Promise<Result> {
 }
 
 function isFinalGraphError(err: unknown) {
+  if (err instanceof GoogleError) return err.reason === "invalid_grant" || [400, 401, 403].includes(err.status); // bad title, revoked access, …
   return err instanceof GraphError && (err.code === 190 || err.code === 10 || err.code === 200 || (err.code === 100 && err.status === 400));
 }
 
 export function germanError(err: unknown): string {
+  if (err instanceof GoogleError) return googleGerman(err);
   if (err instanceof GraphError) {
     if (err.code === 190) return "Der Instagram-Zugang (Token) ist abgelaufen oder ungültig. Neuen Token eintragen (docs/social-setup.md).";
     if (err.code === 10 || err.code === 200) return "Der App fehlt eine Berechtigung bei Meta (instagram_business_content_publish).";

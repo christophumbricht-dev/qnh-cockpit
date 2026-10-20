@@ -11,6 +11,7 @@ const SQL3 = readFileSync(new URL("../supabase/migrations/20261014120000_social_
 const SQL4 = readFileSync(new URL("../supabase/migrations/20261019100000_social_location.sql", import.meta.url), "utf8");
 const SQL5 = readFileSync(new URL("../supabase/migrations/20261019120000_social_stats.sql", import.meta.url), "utf8");
 const SQL6 = readFileSync(new URL("../supabase/migrations/20261020100000_social_comments.sql", import.meta.url), "utf8");
+const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_youtube.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -45,6 +46,8 @@ await db.exec(SQL5);
 await db.exec(SQL5);
 await db.exec(SQL6);
 await db.exec(SQL6);
+await db.exec(SQL7);
+await db.exec(SQL7);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -225,4 +228,16 @@ test("comments: the server writes them; admins read, mark done and keep a draft 
   await assert.rejects(as(ADMIN, `update social_comments set status='done' where id='${id}'`), /Knopf/);
   await assert.rejects(ins("k1")); // one row per platform comment
   await assert.rejects(as(ADMIN, `update social_comments set draft=repeat('x', 2201) where id='${id}'`));
+});
+
+test("youtube title: stored with the post, frozen once approved, todo still editable, at most 100 characters", async () => {
+  const id = await newPost();
+  await as(ADMIN, `update social_posts set title='Föhn, part 1' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set title=repeat('x', 101) where id='${id}'`));
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set title='other' where id='${id}'`), /zurückziehen/);
+  await as(ADMIN, `update social_posts set todo='anpinnen' where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='draft' where id='${id}'`);
+  await as(ADMIN, `update social_posts set title='other' where id='${id}'`);
+  assert.equal((await as(ADMIN, `select title from social_posts where id='${id}'`)).rows[0].title, "other");
 });

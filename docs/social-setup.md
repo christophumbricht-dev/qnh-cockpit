@@ -147,7 +147,7 @@ Einrichten (einmal, ca. 10 Min.):
 
 Antwortvorschläge: Claude kann am PC mit `npm.cmd run social -- comments` die offenen Kommentare lesen und mit `npm.cmd run social -- comments draft <id> "…"` einen Vorschlag hinterlegen. Er steht dann im Antwortfeld – du liest, änderst und sendest selbst.
 
-## YouTube-Kanal verbinden (für Kommentare, später auch zum Veröffentlichen)
+## YouTube-Kanal verbinden (Kommentare und Videos veröffentlichen)
 Einmalig ca. 20 Minuten. Bezeichnungen in der Google Cloud Console ändern sich manchmal – im UI prüfen.
 
 **Voraussetzung:** Der YouTube-Kanal (z. B. Leeside Lab) existiert schon. Ist er ein Brand-Konto, wählst du ihn beim Anmelden aus.
@@ -172,6 +172,8 @@ Einmalig ca. 20 Minuten. Bezeichnungen in der Google Cloud Console ändern sich 
 7. Cockpit → **Social** → unter den Konten die App/Marke wählen (z. B. «Leeside Lab») → **YouTube-Kanal verbinden** → mit dem Google-Konto anmelden → den **Kanal** wählen → **beide Häkchen** setzen (Videos hochladen, Kommentare verwalten) → zurück im Cockpit steht «YouTube-Kanal … verbunden».
 
 Was dabei passiert: Der dauerhafte Zugang von Google landet direkt in Supabase Vault (`google_token_<app>_youtube`) – niemand sieht ihn, auch du nicht. Zurückziehen: [myaccount.google.com/permissions](https://myaccount.google.com/permissions) → QNH Cockpit → Zugriff entfernen. Danach im Cockpit neu verbinden.
+
+**Videos veröffentlichen:** Zusätzlich die Migration `supabase/migrations/20261020110000_social_youtube.sql` im SQL-Editor ausführen und `social-publish` neu hochladen. Danach ist der YouTube-Kanal im Editor als Konto wählbar (Art «Video (Short)», Feld «Titel», Text = Beschreibung). Freigeben wie bei Instagram; zur geplanten Zeit lädt das Cockpit das Video hoch (in Stücken – ein langes Video läuft über zwei, drei Durchgänge), setzt es öffentlich und schreibt den ersten Kommentar. Anpinnen und Titelbild gehen nur in der YouTube-App.
 
 **Kosten/Kontingent:** gratis. YouTube gibt jedem Projekt ein Tageskontingent; Kommentare abholen kostet wenige Einheiten pro Durchgang, eine Antwort 50 Einheiten.
 
