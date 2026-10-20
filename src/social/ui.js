@@ -228,9 +228,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function thumb(item, cls = "thumb") {
     if (!item) return `<span class="${cls} empty"></span>`;
     const src = item.url ?? data.mediaUrl(item.path);
-    return /^video\//.test(item.type)
-      ? `<video class="${cls}" src="${esc(src)}" muted playsinline preload="metadata"></video>`
-      : `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy">`;
+    if (!/^video\//.test(item.type)) return `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy">`;
+    // phone preview: playable with sound and controls (cover as poster); elsewhere a still frame with ▶
+    const poster = item.poster ? ` poster="${esc(item.poster)}"` : "";
+    if (cls.includes("phone-img")) return `<video class="${cls}" src="${esc(src)}" controls playsinline loop preload="metadata"${poster}></video>`;
+    return `<span class="video-thumb"><video class="${cls}" src="${esc(src)}#t=0.5" muted playsinline preload="metadata"${poster}></video><span class="play" aria-hidden="true">▶</span></span>`;
   }
 
   // "what Christoph still does by hand in Instagram" – shown unless it says there is nothing to do
@@ -460,7 +462,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         <span class="phone-count">${ed.preview + 1}/${ed.items.length}</span>
         <button class="phone-nav prev" data-action="soc-slide" data-value="-1" aria-label="Vorheriges Bild">‹</button>
         <button class="phone-nav next" data-action="soc-slide" data-value="1" aria-label="Nächstes Bild">›</button>`
-      : it ? thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "phone-img") : `<span class="phone-img empty">Noch keine Datei</span>`;
+      : it ? thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined),
+          poster: ed.kind === "reel" && ed.cover ? ed.cover.url ?? data.mediaUrl(ed.cover.path ?? ed.cover.copyFrom) : undefined }, "phone-img") : `<span class="phone-img empty">Noch keine Datei</span>`;
     const vertical = ed.kind === "story" || ed.kind === "reel";
     const shape = slider ? ed.items[0] : it;
     const ratio = vertical ? "9 / 16" : shape?.width ? `${shape.width} / ${shape.height}` : "4 / 5";

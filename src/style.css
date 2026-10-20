@@ -596,3 +596,8 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .stats-table th .link { margin: 0; text-decoration: none; color: var(--muted); font-weight: 600; font-size: 12px; }
 .stats-table th .link.on { color: var(--brand); }
 .stats-table td a { color: inherit; font-weight: 600; }
+
+/* ---- video: still frame with a play mark in lists, playable in the phone preview ---- */
+.video-thumb { position: relative; display: inline-block; line-height: 0; }
+.video-thumb .play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 22px; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); pointer-events: none; }
+video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000; }
