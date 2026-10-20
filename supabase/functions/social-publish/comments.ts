@@ -49,6 +49,8 @@ export interface CommentsStore {
   insertComments(rows: Array<Record<string, unknown>>): Promise<void>; // new rows (with status); duplicates ignored
   updateComments(rows: Array<Record<string, unknown>>): Promise<void>; // existing rows, same keys, never the status
   updateComment(id: string, patch: Record<string, unknown>): Promise<void>;
+  // sets replied_at = at unless the comment was answered less than a minute ago; false = someone just answered it
+  claimReply(id: string, at: string): Promise<boolean>;
   markDeleted(ids: string[], at: string): Promise<void>;
   upsertAccount(row: { app_id: string; platform: string; remote_id: string; handle: string; token_name: string }): Promise<Account>;
 }
@@ -57,6 +59,9 @@ export type CommentDeps = { store: CommentsStore; fetch: FetchFn; now: () => Dat
 
 export const REPLY_MAX = 2200;
 const firstLine = (t: unknown, n = 300) => String(t ?? "").split("\n").map((s) => s.trim()).find(Boolean)?.slice(0, n) ?? "";
+// links from the platforms end up as href in the cockpit: only their own https addresses
+const IG_LINK = /^https:\/\/(www\.)?instagram\.com\//, YT_LINK = /^https?:\/\/(www\.)?youtube\.com\//;
+const safeLink = (url: unknown, ok: RegExp) => (typeof url === "string" && ok.test(url) && url.length <= 500 ? url.replace(/^http:/, "https:") : null);
 
 // user-facing German message for any error of these ops
 export function commentError(err: unknown): string {
@@ -107,6 +112,11 @@ export function mergeComments(existing: StoredComment[], fetched: CommentRow[], 
       continue;
     }
     if (e.deleted_at || changed(e, row)) plan.updates.push({ ...row, fetched_at: nowIso, deleted_at: null });
+    // answered in the Instagram/YouTube app since the last run → no longer open
+    const thread = f.parent_remote_id ?? f.remote_id;
+    if (e.status === "new" && !f.own && hidden !== true && f.posted_at && (answeredAt.get(thread) ?? 0) > Date.parse(f.posted_at)) {
+      plan.statusChanges.push({ id: e.id, status: "done" });
+    }
     // Instagram tells us whether a comment is hidden (also when Christoph hid it in the app)
     if (hidden === true && e.status !== "hidden") plan.statusChanges.push({ id: e.id, status: "hidden" });
     if (hidden === false && e.status === "hidden") plan.statusChanges.push({ id: e.id, status: "done" });
@@ -132,7 +142,7 @@ type IgComment = {
   id: string; text?: string; timestamp?: string; username?: string; from?: { id?: string; username?: string };
   like_count?: number; hidden?: boolean; replies?: { data?: IgComment[]; paging?: { next?: string } };
 };
-type IgMedia = { id: string; caption?: string; permalink?: string; comments_count?: number };
+type IgMedia = { id: string; caption?: string; permalink?: string; comments_count?: number; timestamp?: string };
 
 const IG_FIELDS = "id,text,timestamp,username,from,like_count,hidden,replies{id,text,timestamp,username,from,like_count,hidden}";
 const IG_FIELDS_BASIC = "id,text,timestamp,username,like_count,replies{id,text,timestamp,username,like_count}";
@@ -142,7 +152,7 @@ function igRow(acc: Account, media: IgMedia, c: IgComment, parent: string | null
   const username = String(c.username ?? c.from?.username ?? "");
   return {
     account_id: acc.id, remote_id: String(c.id), parent_remote_id: parent, media_id: String(media.id),
-    media_title: firstLine(media.caption), media_permalink: media.permalink ?? null,
+    media_title: firstLine(media.caption), media_permalink: safeLink(media.permalink, IG_LINK),
     author: username, author_url: /^[A-Za-z0-9._]{1,30}$/.test(username) ? `https://www.instagram.com/${username}/` : null,
     body: String(c.text ?? "").slice(0, 10000), posted_at: c.timestamp ?? null, like_count: Number(c.like_count ?? 0) || 0,
     own: username !== "" && username.toLowerCase() === acc.handle.toLowerCase(), held: false,
@@ -152,33 +162,46 @@ function igRow(acc: Account, media: IgMedia, c: IgComment, parent: string | null
 
 async function fetchInstagram(deps: CommentDeps, acc: Account, existing: StoredComment[]) {
   const g = graph(deps.fetch, IG_HOST, await deps.store.token(acc.id));
-  const media: IgMedia[] = (await g.get(`${acc.remote_id}/media`, { fields: "id,caption,permalink,comments_count", limit: IG_MEDIA_LIMIT })).data ?? [];
+  const media: IgMedia[] = (await g.get(`${acc.remote_id}/media`, { fields: "id,caption,permalink,comments_count,timestamp", limit: IG_MEDIA_LIMIT })).data ?? [];
   const storedCount = new Map<string, number>();
   for (const e of existing) if (!e.deleted_at) storedCount.set(e.media_id, (storedCount.get(e.media_id) ?? 0) + 1);
   const rows: CommentRow[] = [];
   const complete = new Set<string>();
   let fields = IG_FIELDS;
-  for (const m of media) {
-    // only posts whose comment count changed (saves API calls; counts include replies)
-    if ((Number(m.comments_count) || 0) === (storedCount.get(m.id) ?? 0)) continue;
+  // read a post again when its comment count changed, when it is less than 3 days old, or when it is its turn
+  // (every 15-minute run re-reads an eighth of the posts – catches hidden/edited comments and likes within 2 h)
+  const now = deps.now().getTime();
+  const slot = Math.floor(now / (15 * 60_000)) % 8;
+  for (const [i, m] of media.entries()) {
+    const recent = m.timestamp ? now - Date.parse(m.timestamp) < 3 * 864e5 : false;
+    if ((Number(m.comments_count) || 0) === (storedCount.get(m.id) ?? 0) && !recent && i % 8 !== slot) continue;
+    if (!(Number(m.comments_count) || 0) && !storedCount.get(m.id)) continue; // nothing there, nothing stored
     let after: string | undefined;
     let finished = false, truncated = false;
-    for (let page = 0; page < 6; page++) {
-      let res;
-      try {
-        res = await g.get(`${m.id}/comments`, { fields, limit: 50, after });
-      } catch (err) {
-        // older API versions refuse some fields – ask once more with the basic set
-        if (err instanceof GraphError && fields === IG_FIELDS) { fields = IG_FIELDS_BASIC; page--; continue; }
-        throw err;
+    const before = rows.length;
+    try {
+      for (let page = 0; page < 6; page++) {
+        let res;
+        try {
+          res = await g.get(`${m.id}/comments`, { fields, limit: 50, after });
+        } catch (err) {
+          // an older API version refusing a field: ask once more with the basic set
+          if (err instanceof GraphError && err.code === 100 && /field/i.test(err.message) && fields === IG_FIELDS) { fields = IG_FIELDS_BASIC; page--; continue; }
+          throw err;
+        }
+        for (const c of (res.data ?? []) as IgComment[]) {
+          rows.push(igRow(acc, m, c, null));
+          for (const r of c.replies?.data ?? []) rows.push(igRow(acc, m, r, String(c.id)));
+          if (c.replies?.paging?.next) truncated = true; // more replies than in this answer
+        }
+        after = res.paging?.next ? res.paging?.cursors?.after : undefined;
+        if (!after) { finished = true; break; }
       }
-      for (const c of (res.data ?? []) as IgComment[]) {
-        rows.push(igRow(acc, m, c, null));
-        for (const r of c.replies?.data ?? []) rows.push(igRow(acc, m, r, String(c.id)));
-        if (c.replies?.paging?.next) truncated = true; // more replies than in this answer
-      }
-      after = res.paging?.next ? res.paging?.cursors?.after : undefined;
-      if (!after) { finished = true; break; }
+    } catch (err) {
+      // token or permission: the whole account is affected; anything else only skips this post (e.g. a live video)
+      if (err instanceof GraphError && [190, 10, 200].includes(err.code ?? 0)) throw err;
+      rows.length = before;
+      continue;
     }
     if (finished && !truncated) complete.add(m.id);
   }
@@ -192,6 +215,7 @@ type YtComment = {
   snippet?: {
     authorDisplayName?: string; authorChannelUrl?: string; authorChannelId?: { value?: string };
     textDisplay?: string; textOriginal?: string; likeCount?: number; publishedAt?: string; videoId?: string; parentId?: string;
+    moderationStatus?: string; // only for the channel owner: published | heldForReview | likelySpam | rejected
   };
 };
 type YtThread = { id: string; snippet?: { videoId?: string; topLevelComment?: YtComment; totalReplyCount?: number }; replies?: { comments?: YtComment[] } };
@@ -203,11 +227,13 @@ async function youtubeFor(deps: CommentDeps, acc: Account): Promise<YouTube> {
   return youtube(deps.fetch, await accessToken(deps.fetch, deps.google, await deps.store.token(acc.id)));
 }
 
-function ytRow(acc: Account, c: YtComment, parent: string | null, videoId: string, held: boolean): CommentRow {
+// held: YouTube's own status of this comment; without it (should not happen for the owner) the list it came from
+function ytRow(acc: Account, c: YtComment, parent: string | null, videoId: string, fromHeldList: boolean): CommentRow {
   const s = c.snippet ?? {};
+  const held = s.moderationStatus ? ["heldForReview", "likelySpam"].includes(s.moderationStatus) : fromHeldList && !parent;
   return {
     account_id: acc.id, remote_id: String(c.id), parent_remote_id: parent, media_id: videoId, media_title: "", media_permalink: ytWatchUrl(videoId),
-    author: String(s.authorDisplayName ?? "").slice(0, 200), author_url: s.authorChannelUrl ?? null,
+    author: String(s.authorDisplayName ?? "").slice(0, 200), author_url: safeLink(s.authorChannelUrl, YT_LINK),
     body: String(s.textDisplay ?? s.textOriginal ?? "").slice(0, 10000), posted_at: s.publishedAt ?? null, like_count: Number(s.likeCount ?? 0) || 0,
     own: s.authorChannelId?.value === acc.remote_id, held,
   };
@@ -236,7 +262,7 @@ async function fetchYoutube(deps: CommentDeps, acc: Account, existing: StoredCom
           replies = more.items ?? replies;
           if (more.nextPageToken) whole = false;
         }
-        for (const r of replies) rows.push(ytRow(acc, r, String(top.id), videoId, false));
+        for (const r of replies) rows.push(ytRow(acc, r, String(top.id), videoId, moderationStatus === "heldForReview"));
       }
       pageToken = res.nextPageToken;
       if (!pageToken) { done = true; break; }
@@ -248,7 +274,7 @@ async function fetchYoutube(deps: CommentDeps, acc: Account, existing: StoredCom
   for (const e of existing) if (e.media_title) titles.set(e.media_id, e.media_title);
   const unknown = [...new Set(rows.map((r) => r.media_id))].filter((id) => !titles.has(id));
   for (let i = 0; i < unknown.length; i += 50) {
-    const res = await yt.get("videos", { part: "snippet", id: unknown.slice(i, i + 50).join(","), maxResults: 50 });
+    const res = await yt.get("videos", { part: "snippet", id: unknown.slice(i, i + 50).join(",") }); // maxResults is not allowed with id
     for (const v of res.items ?? []) titles.set(String(v.id), firstLine(v.snippet?.title));
   }
   for (const r of rows) r.media_title = titles.get(r.media_id) ?? "";
@@ -294,7 +320,9 @@ export async function replyTo(deps: CommentDeps, commentId: string, text: string
   if (c.deleted_at) throw new FinalError("Dieser Kommentar wurde inzwischen gelöscht.");
   if (c.status === "hidden") throw new FinalError("Der Kommentar ist ausgeblendet – zuerst einblenden.");
   const now = deps.now();
-  if (c.replied_at && now.getTime() - Date.parse(c.replied_at) < 60_000) throw new FinalError("Gerade eben schon beantwortet – nicht doppelt senden.");
+  const nowIso = now.toISOString();
+  // claimed in the database before anything is sent: a second click or a second cockpit tab gets «schon beantwortet»
+  if (!(await deps.store.claimReply(c.id, nowIso))) throw new FinalError("Gerade eben schon beantwortet – nicht doppelt senden.");
   // both platforms only thread one level deep: a reply to a reply goes into the same thread
   const parent = c.parent_remote_id ?? c.remote_id;
   let replyId: string;
@@ -307,14 +335,20 @@ export async function replyTo(deps: CommentDeps, commentId: string, text: string
       replyId = String((await yt.post("comments", { part: "snippet" }, { snippet: { parentId: parent, textOriginal: msg } })).id);
     } else throw new FinalError("Antworten geht nur auf Instagram und YouTube.");
   } catch (err) {
+    await deps.store.updateComment(c.id, { replied_at: c.replied_at }).catch(() => {}); // not sent: release the claim
     throw err instanceof FinalError ? err : new FinalError(commentError(err));
   }
-  const nowIso = now.toISOString();
-  await deps.store.insertComments([{
-    account_id: acc.id, remote_id: replyId, parent_remote_id: parent, media_id: c.media_id, media_title: c.media_title, media_permalink: c.media_permalink,
-    author: acc.handle, author_url: null, body: msg, posted_at: nowIso, like_count: 0, own: true, held: false, status: "done", fetched_at: nowIso, deleted_at: null,
-  }]);
-  await deps.store.updateComment(c.id, { status: "done", draft: "", replied_at: nowIso });
+  // the answer is online now – bookkeeping problems must not look like a failed send (and invite a second one)
+  try {
+    await deps.store.insertComments([{
+      account_id: acc.id, remote_id: replyId, parent_remote_id: parent, media_id: c.media_id, media_title: c.media_title, media_permalink: c.media_permalink,
+      author: acc.handle, author_url: null, body: msg, posted_at: nowIso, like_count: 0, own: true, held: false, status: "done", fetched_at: nowIso, deleted_at: null,
+    }]);
+    await deps.store.updateComment(c.id, { status: "done", draft: "", replied_at: nowIso });
+  } catch (err) {
+    console.error("reply bookkeeping", err);
+    return { id: c.id, status: "replied", reply_id: replyId, note: "Gesendet. Das Cockpit zeigt die Antwort nach dem nächsten Abholen." };
+  }
   return { id: c.id, status: "replied", reply_id: replyId };
 }
 
@@ -353,7 +387,8 @@ export async function moderate(deps: CommentDeps, commentId: string, action: Mod
 
 // ---------- connecting a YouTube channel ----------
 
-export const REDIRECTS_DEFAULT = ["https://cockpit.setqnh.ch/youtube-callback.html", "http://localhost:5185/youtube-callback.html"];
+// local development (http://localhost:5185/youtube-callback.html) only when listed in GOOGLE_REDIRECT_URIS
+export const REDIRECTS_DEFAULT = ["https://cockpit.setqnh.ch/youtube-callback.html"];
 const APP_ID = /^[a-z0-9-]{2,30}$/;
 
 function checkConnect(google: GoogleConfig | null | undefined, allowed: string[], appId: string, redirectUri: string): GoogleConfig {
@@ -383,6 +418,13 @@ export async function youtubeConnect(deps: CommentDeps, allowed: string[], appId
     const item = ch.items?.[0];
     if (!item?.id) throw new FinalError("Mit diesem Google-Konto ist kein YouTube-Kanal verbunden. Beim Anmelden den Kanal (bzw. das Brand-Konto) wählen.");
     const handle = (String(item.snippet?.customUrl ?? "").replace(/^@/, "") || String(item.snippet?.title ?? "") || String(item.id)).slice(0, 60);
+    const yts = (await deps.store.accounts()).filter((a) => a.platform === "youtube");
+    const mine = yts.find((a) => a.app_id === appId);
+    if (mine && mine.remote_id !== String(item.id)) {
+      throw new FinalError(`Für diese App ist schon der Kanal @${mine.handle} verbunden – du hast @${handle} gewählt. Beim Anmelden den richtigen Kanal wählen.`);
+    }
+    const other = yts.find((a) => a.app_id !== appId && a.remote_id === String(item.id));
+    if (other) throw new FinalError(`Der Kanal @${handle} ist schon mit «${other.app_id}» verbunden.`);
     const acc = await deps.store.upsertAccount({ app_id: appId, platform: "youtube", remote_id: String(item.id), handle, token_name: `google_token_${appId.replace(/-/g, "_")}_youtube` });
     await deps.store.storeToken(acc.id, t.refreshToken, null); // Google refresh tokens do not expire on a fixed date
     return { account_id: acc.id, handle, title: String(item.snippet?.title ?? "") };

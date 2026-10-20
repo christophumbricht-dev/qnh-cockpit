@@ -5,7 +5,7 @@
 // → permalink → optional first comment. Idempotent: a post that already has a remote_media_id is never
 // published again, and a container that Instagram reports as PUBLISHED is matched instead of re-published.
 
-import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, type FetchFn } from "./graph.ts";
+import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, scrubToken, type FetchFn } from "./graph.ts";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -249,7 +249,7 @@ export function germanError(err: unknown): string {
     if (err.code === 9004 || err.subcode === 2207052) return "Instagram konnte die Datei nicht von Supabase laden.";
     return `Instagram meldet: ${err.message}`;
   }
-  return err instanceof Error ? err.message : String(err);
+  return scrubToken(err instanceof Error ? err.message : String(err));
 }
 
 // ---------- Facebook Page (prepared, off unless FACEBOOK_ENABLED=true) ----------

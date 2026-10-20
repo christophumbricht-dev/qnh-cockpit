@@ -8,9 +8,11 @@ import { formatZurich } from "./validate.js";
 
 const PLATFORM = { instagram: "Instagram", youtube: "YouTube", facebook: "Facebook" };
 const YT_STATE = "qnh-yt-state", YT_RESULT = "qnh-yt-result";
+// links from Instagram/YouTube become href: only http(s), never javascript: or the like
+const web = (url) => (/^https?:\/\//i.test(String(url ?? "")) ? url : null);
 
 export function createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload }) {
-  S.social.inbox = { filter: "open", texts: {}, target: {}, busy: null, fetching: false };
+  S.social.inbox = { filter: "open", texts: {}, target: {}, busy: new Set(), fetching: false, connectApp: null };
   const ib = () => S.social.inbox;
   const accounts = () => S.social.value?.accounts ?? [];
   const account = (id) => accounts().find((a) => a.id === id);
@@ -55,7 +57,7 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     return `<section class="card cmt-post">
       <header class="cmt-post-head">${acc ? appBadge(acc.app_id) : ""}
         <div><b>${esc(p.title || "(ohne Titel)")}</b><span class="muted small">${esc(plat)} · @${esc(acc?.handle ?? "?")}${p.open ? ` · <span class="cmt-open">${p.open} offen</span>` : ""}</span></div>
-        ${p.permalink ? `<a class="btn ghost small-btn" href="${esc(p.permalink)}" target="_blank" rel="noopener">Auf ${esc(plat)} ↗</a>` : ""}
+        ${web(p.permalink) ? `<a class="btn ghost small-btn" href="${esc(p.permalink)}" target="_blank" rel="noopener">Auf ${esc(plat)} ↗</a>` : ""}
       </header>
       ${p.threads.map((th) => threadHtml(th, acc)).join("")}
     </section>`;
@@ -70,7 +72,7 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
   }
 
   function commentHtml(c, acc) {
-    const busy = ib().busy === c.id ? " disabled" : "";
+    const busy = ib().busy.has(c.id) ? " disabled" : "";
     const link = (action, label, cls = "") => `<button class="link${cls}" data-action="${action}" data-id="${c.id}"${busy}>${label}</button>`;
     const acts = [];
     if (!c.own && c.status !== "hidden" && !c.held) acts.push(link("soc-cmt-target", "Antworten"));
@@ -79,11 +81,11 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     if (c.held) acts.push(link("soc-cmt-approve", "Freigeben"));
     if (c.own) acts.push(link("soc-cmt-delete", "Löschen", " danger-link"));
     else acts.push(c.status === "hidden" ? link("soc-cmt-show", "Einblenden") : link("soc-cmt-hide", "Ausblenden"));
-    const url = commentUrl(c, acc?.platform);
+    const url = web(commentUrl(c, acc?.platform));
     if (url) acts.push(`<a class="link" href="${esc(url)}" target="_blank" rel="noopener">Öffnen ↗</a>`);
     const who = c.own ? "Du" : esc(c.author || "Unbekannt");
     return `<div class="cmt${c.own ? " own" : ""}${isOpen(c) ? " new" : ""}${c.status === "hidden" ? " is-hidden" : ""}">
-      <div class="cmt-head">${!c.own && c.author_url ? `<a href="${esc(c.author_url)}" target="_blank" rel="noopener"><b>${who}</b></a>` : `<b>${who}</b>`}
+      <div class="cmt-head">${!c.own && web(c.author_url) ? `<a href="${esc(c.author_url)}" target="_blank" rel="noopener"><b>${who}</b></a>` : `<b>${who}</b>`}
         <span class="muted small" title="${esc(formatZurich(c.posted_at))}">${esc(relTime(c.posted_at))}</span>
         ${c.like_count ? `<span class="muted small">♥ ${num(c.like_count)}</span>` : ""}
         ${isOpen(c) ? `<span class="pill">neu</span>` : ""}
@@ -101,12 +103,12 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     const target = all.find((c) => c.id === chosen) ?? replyTarget(th);
     if (!target || target.own || target.status === "hidden" || target.held) return "";
     const text = ib().texts[target.id] ?? replyPrefill(target);
-    const busy = ib().busy === target.id ? " disabled" : "";
+    const busy = ib().busy.has(target.id) ? " disabled" : "";
     const plat = PLATFORM[acc?.platform] ?? "";
     return `<div class="cmt-reply">
       <textarea name="soc-cmt-text-${target.id}" rows="2" maxlength="${REPLY_MAX}" placeholder="Antwort an ${esc(target.author || "…")} …" aria-label="Antwort an ${esc(target.author)}"${busy}>${esc(text)}</textarea>
       ${target.draft?.trim() && ib().texts[target.id] === undefined ? `<span class="small muted">Antwortvorschlag – vor dem Senden lesen und anpassen.</span>` : ""}
-      <div class="actions"><button class="btn" data-action="soc-cmt-reply" data-id="${target.id}"${busy}>${ib().busy === target.id ? "Sendet …" : `Auf ${esc(plat)} antworten`}</button>
+      <div class="actions"><button class="btn" data-action="soc-cmt-reply" data-id="${target.id}"${busy}>${ib().busy.has(target.id) ? "Sendet …" : `Auf ${esc(plat)} antworten`}</button>
         ${chosen ? `<button class="btn ghost" data-action="soc-cmt-untarget" data-value="${esc(th.key)}">Abbrechen</button>` : ""}</div>
     </div>`;
   }
@@ -117,13 +119,13 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     const taken = new Set(accounts().filter((a) => a.platform === "youtube").map((a) => a.app_id));
     const free = brands().filter((b) => !taken.has(b.id));
     if (!free.length) return "";
-    return `<li class="acc-connect"><select name="soc-yt-app" aria-label="Für welche App oder Marke">${free.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select>
+    if (!free.some((b) => b.id === ib().connectApp)) ib().connectApp = free[0].id; // the choice survives re-renders
+    return `<li class="acc-connect"><select name="soc-yt-app" aria-label="Für welche App oder Marke">${free.map((b) => `<option value="${esc(b.id)}"${b.id === ib().connectApp ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
       <button class="btn ghost small-btn" data-action="soc-yt-connect">YouTube-Kanal verbinden</button></li>`;
   }
 
-  async function startConnect() {
+  async function startConnect(appId) {
     if (DEMO) return toast("Im Demo-Modus nicht verfügbar.");
-    const appId = document.querySelector('select[name="soc-yt-app"]')?.value;
     if (!appId) return;
     const state = crypto.randomUUID();
     const redirect = new URL("youtube-callback.html", location.origin + location.pathname).href;
@@ -178,10 +180,11 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
   // ---------- events ----------
   const byId = (id) => (rows() ?? []).find((c) => c.id === id);
   async function act(id, fn, done) {
-    ib().busy = id;
+    if (ib().busy.has(id)) return; // already on its way
+    ib().busy.add(id);
     render();
-    try { await fn(); if (done) toast(done); } catch (err) { toast(errorText(err)); }
-    ib().busy = null;
+    try { const note = await fn(); toast(note || done || ""); } catch (err) { toast(errorText(err)); }
+    ib().busy.delete(id);
     await refresh();
   }
 
@@ -206,9 +209,10 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
         if (!text) { toast("Zuerst eine Antwort schreiben."); return true; }
         if (text.length > REPLY_MAX) { toast(`Höchstens ${REPLY_MAX} Zeichen.`); return true; }
         await act(id, async () => {
-          await data.replyComment(id, text);
+          const res = await data.replyComment(id, text);
           delete ib().texts[id];
           for (const [k, v] of Object.entries(ib().target)) if (v === id) delete ib().target[k];
+          return res?.note;
         }, "Antwort gesendet");
         return true;
       }
@@ -226,9 +230,18 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
       case "soc-cmt-delete":
         if (c && confirm("Deine Antwort löschen? Sie verschwindet auch auf der Plattform.")) await act(id, () => data.moderateComment(id, "delete"), "Gelöscht");
         return true;
-      case "soc-yt-connect": await startConnect(); return true;
+      case "soc-yt-connect": await startConnect(ib().connectApp); return true;
+      case "soc-yt-reconnect":
+        if (confirm(`YouTube für ${appName(el.dataset.value)} neu verbinden? Du meldest dich bei Google an und wählst denselben Kanal.`)) await startConnect(el.dataset.value);
+        return true;
     }
     return false;
+  }
+
+  function onChange(e) {
+    if (e.target.name !== "soc-yt-app") return false;
+    ib().connectApp = e.target.value;
+    return true;
   }
 
   function onInput(e) {
@@ -238,5 +251,5 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     return true;
   }
 
-  return { view, count, connectRow, watch, finishConnect, onClick, onInput };
+  return { view, count, connectRow, watch, finishConnect, onClick, onInput, onChange };
 }

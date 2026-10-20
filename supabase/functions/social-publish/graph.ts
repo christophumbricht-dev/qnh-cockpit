@@ -21,6 +21,16 @@ export class GraphError extends Error {
 
 type Params = Record<string, string | number | boolean | undefined | null>;
 
+// Network errors of fetch quote the full URL – which holds the token for GET/DELETE. Never pass that on.
+export const scrubToken = (text: string) => text.replace(/access_token=[^&\s)"']+/g, "access_token=…");
+async function send(fetchFn: FetchFn, url: URL, init: RequestInit, host: string) {
+  try {
+    return await fetchFn(url, init);
+  } catch (err) {
+    throw new Error(`Keine Verbindung zu ${new URL(host).host} (${scrubToken(err instanceof Error ? err.message : String(err)).slice(0, 200)}).`);
+  }
+}
+
 export function graph(fetchFn: FetchFn, host: string, token: string) {
   async function call(method: "GET" | "POST" | "DELETE", path: string, params: Params = {}) {
     const url = new URL(`${host}/${GRAPH_VERSION}/${path}`);
@@ -35,11 +45,11 @@ export function graph(fetchFn: FetchFn, host: string, token: string) {
       init.body = form;
       init.headers = { "Content-Type": "application/x-www-form-urlencoded" };
     }
-    const res = await fetchFn(url, init);
+    const res = await send(fetchFn, url, init, host);
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body?.error) {
       const e = body?.error ?? {};
-      throw new GraphError(e.error_user_msg || e.message || `HTTP ${res.status}`, res.status, e.code, e.error_subcode);
+      throw new GraphError(scrubToken(e.error_user_msg || e.message || `HTTP ${res.status}`), res.status, e.code, e.error_subcode);
     }
     return body;
   }
@@ -55,10 +65,10 @@ export async function refreshInstagramToken(fetchFn: FetchFn, token: string): Pr
   const url = new URL(`${IG_HOST}/refresh_access_token`);
   url.searchParams.set("grant_type", "ig_refresh_token");
   url.searchParams.set("access_token", token);
-  const res = await fetchFn(url, { method: "GET" });
+  const res = await send(fetchFn, url, { method: "GET" }, IG_HOST);
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body?.error || !body?.access_token) {
-    throw new GraphError(body?.error?.message ?? `HTTP ${res.status}`, res.status, body?.error?.code);
+    throw new GraphError(scrubToken(body?.error?.message ?? `HTTP ${res.status}`), res.status, body?.error?.code);
   }
   return { token: body.access_token, expiresIn: Number(body.expires_in) || 60 * 86400 };
 }

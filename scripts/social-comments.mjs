@@ -9,6 +9,8 @@ import { groupComments, isHeld, isOpen } from "../src/social/inbox.js";
 import { formatZurich } from "../src/social/validate.js";
 
 const PLATFORM = { instagram: "Instagram", youtube: "YouTube" };
+// comment text comes from strangers: no terminal control characters (colours, cursor moves, hidden text)
+const clean = (t) => String(t ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, "");
 const COLS = "id, account_id, remote_id, parent_remote_id, media_id, media_title, media_permalink, author, body, posted_at, like_count, own, held, status, draft, deleted_at";
 
 async function op(sb, body) {
@@ -37,14 +39,14 @@ export async function comments(sb, a) {
   if (!posts.length) return console.log(a.all ? "Keine Kommentare." : "Keine offenen Kommentare.");
   for (const p of posts) {
     const x = acc.get(p.account_id);
-    console.log(`\n■ ${PLATFORM[x?.platform] ?? x?.platform} @${x?.handle} · «${p.title || "(ohne Titel)"}»${p.permalink ? `  ${p.permalink}` : ""}`);
+    console.log(`\n■ ${PLATFORM[x?.platform] ?? x?.platform} @${x?.handle} · «${clean(p.title) || "(ohne Titel)"}»${p.permalink ? `  ${p.permalink}` : ""}`);
     for (const th of p.threads) {
       for (const c of [th.top, ...th.replies].filter(Boolean)) {
         const mark = isOpen(c) ? "●" : isHeld(c) ? "⏸" : c.own ? "↳" : " ";
         const indent = c.parent_remote_id ? "     " : "  ";
-        console.log(`${indent}${mark} ${c.id.slice(0, 8)}  ${c.own ? "Du" : c.author} · ${formatZurich(c.posted_at)}${c.like_count ? ` · ♥ ${c.like_count}` : ""}${c.status === "hidden" ? " · ausgeblendet" : ""}`);
-        console.log(`${indent}    ${c.body.split("\n").join(`\n${indent}    `)}`);
-        if (c.draft) console.log(`${indent}    ✎ Vorschlag: ${c.draft}`);
+        console.log(`${indent}${mark} ${c.id.slice(0, 8)}  ${c.own ? "Du" : clean(c.author)} · ${formatZurich(c.posted_at)}${c.like_count ? ` · ♥ ${c.like_count}` : ""}${c.status === "hidden" ? " · ausgeblendet" : ""}`);
+        console.log(`${indent}    ${clean(c.body).split("\n").join(`\n${indent}    `)}`);
+        if (c.draft) console.log(`${indent}    ✎ Vorschlag: ${clean(c.draft)}`);
       }
     }
   }

@@ -159,11 +159,11 @@ Einmalig ca. 20 Minuten. Bezeichnungen in der Google Cloud Console ändern sich 
    - Zielgruppe: **Extern**
    - Kontaktdaten: deine E-Mail → Richtlinie akzeptieren → **Erstellen**
 4. **Zielgruppe** (Audience) → Veröffentlichungsstatus → **App veröffentlichen** («In Produktion»). **Wichtig:** Im Status «Test» läuft der Zugang nach 7 Tagen ab und das Cockpit verliert YouTube. Eine Google-Prüfung braucht es für deine eigenen Kanäle nicht – beim Verbinden zeigt Google einmal «Google hat diese App nicht überprüft»: **Erweitert → Weiter zu QNH Cockpit**.
-5. **Clients → Client erstellen** → Anwendungstyp **Webanwendung**, Name `Cockpit` → **Autorisierte Weiterleitungs-URIs** – genau diese zwei:
+5. **Clients → Client erstellen** → Anwendungstyp **Webanwendung**, Name `Cockpit` → **Autorisierte Weiterleitungs-URIs** – genau diese:
    ```
    https://cockpit.setqnh.ch/youtube-callback.html
-   http://localhost:5185/youtube-callback.html
    ```
+   (Nur wenn Claude lokal am Cockpit entwickelt: zusätzlich `http://localhost:5185/youtube-callback.html` eintragen **und** das Secret `GOOGLE_REDIRECT_URIS=https://cockpit.setqnh.ch/youtube-callback.html,http://localhost:5185/youtube-callback.html` setzen.)
    → **Erstellen**. Google zeigt **Client-ID** und **Clientschlüssel** (beginnt mit `GOCSPX-`).
 6. Beides **selbst** als Supabase-Secrets setzen (PowerShell, nicht in einen Chat kopieren):
    ```

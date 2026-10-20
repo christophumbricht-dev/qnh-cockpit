@@ -78,6 +78,12 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
     async updateComment(id, patch) {
       must(await db.from("social_comments").update(patch).eq("id", id), "update comment");
     },
+    async claimReply(id, at) {
+      const minuteAgo = new Date(Date.parse(at) - 60_000).toISOString();
+      const rows = must(await db.from("social_comments").update({ replied_at: at }).eq("id", id)
+        .or(`replied_at.is.null,replied_at.lt.${minuteAgo}`).select("id"), "claim reply") as Array<{ id: string }>;
+      return rows.length === 1;
+    },
     async markDeleted(ids, at) {
       for (let i = 0; i < ids.length; i += 200) must(await db.from("social_comments").update({ deleted_at: at }).in("id", ids.slice(i, i + 200)), "delete comments");
     },

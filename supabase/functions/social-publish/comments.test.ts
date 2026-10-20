@@ -30,6 +30,12 @@ function fakeStore(accounts: Account[] = [IG, YT], rows: StoredComment[] = []) {
       for (const r of list) Object.assign(rows.find((x) => x.account_id === r.account_id && x.remote_id === r.remote_id)!, r);
     },
     async updateComment(id, patch) { Object.assign(rows.find((x) => x.id === id)!, patch); },
+    async claimReply(id, at) {
+      const r = rows.find((x) => x.id === id)!;
+      if (r.replied_at && Date.parse(at) - Date.parse(r.replied_at) < 60_000) return false;
+      r.replied_at = at;
+      return true;
+    },
     async markDeleted(ids, at) { for (const id of ids) rows.find((x) => x.id === id)!.deleted_at = at; },
     async upsertAccount(row) {
       let a = accounts.find((x) => x.app_id === row.app_id && x.platform === row.platform);
@@ -276,4 +282,64 @@ Deno.test("youtube connect: a missing permission tick is refused before anything
   await youtubeConnect(deps(store, api.fetchFn), ALLOWED, "leesidelab", "CODE", ALLOWED[0]).catch((e) => (msg = e.message));
   assertMatch(msg, /Häkchen/);
   assertEquals(store.accountsList.length, 1);
+});
+
+Deno.test("merge: a stored open comment answered in the app since the last run becomes done", () => {
+  const e = stored({ id: "s1", remote_id: "k1", posted_at: "2026-10-20T10:00:00+00:00" });
+  const plan = mergeComments([e], [row({ remote_id: "k1" }), row({ remote_id: "r1", parent_remote_id: "k1", own: true, author: "leesidelab", posted_at: "2026-10-20T10:20:00+0000" })], () => true, NOW.toISOString());
+  assertEquals(plan.statusChanges, [{ id: "s1", status: "done" }]);
+});
+
+Deno.test("instagram: an error on one post skips that post only; an invalid token stops the account", async () => {
+  const store = fakeStore([IG]);
+  const api = mockApi({
+    "GET ig:IGU/media": { data: [{ id: "M1", caption: "live", comments_count: 2 }, { id: "M2", caption: "ok", comments_count: 1 }] },
+    "GET ig:M1/comments": { error: { message: "Unsupported get request", code: 100, error_subcode: 33 } },
+    "GET ig:M2/comments": { data: [{ id: "k9", text: "hi", username: "anna", timestamp: "2026-10-20T10:00:00+0000" }] },
+  });
+  assertEquals((await fetchComments(deps(store, api.fetchFn)))[0].status, "ok");
+  assertEquals(store.rows.map((r) => r.remote_id), ["k9"]);
+  const bad = mockApi({ "GET ig:IGU/media": { data: [{ id: "M1", comments_count: 1 }] }, "GET ig:M1/comments": { error: { message: "Error validating access token", code: 190 } } });
+  assertEquals((await fetchComments(deps(fakeStore([IG]), bad.fetchFn)))[0].status, "failed");
+});
+
+Deno.test("youtube: held is YouTube's status of each comment; links only to youtube.com", async () => {
+  const store = fakeStore([YT]);
+  const c = (id: string, status: string, parent?: string) => ({ id, snippet: { parentId: parent, authorDisplayName: "@x", authorChannelUrl: id === "t1" ? "javascript:alert(1)" : "http://www.youtube.com/@x", authorChannelId: { value: "UCx" }, textDisplay: id, publishedAt: "2026-10-20T09:00:00Z", videoId: "V1", moderationStatus: status } });
+  const api = mockApi({
+    ...youtubeToken,
+    "GET yt:commentThreads": (p: Record<string, string>) => p.moderationStatus === "heldForReview"
+      ? { items: [{ id: "t1", snippet: { videoId: "V1", totalReplyCount: 1, topLevelComment: c("t1", "published") }, replies: { comments: [c("t1.r1", "heldForReview", "t1")] } }] }
+      : { items: [] },
+    "GET yt:videos": (p: Record<string, string>) => { assert(!("maxResults" in p)); return { items: [{ id: "V1", snippet: { title: "Föhn" } }] }; },
+  });
+  await fetchComments(deps(store, api.fetchFn));
+  const by = (id: string) => store.rows.find((r) => r.remote_id === id)!;
+  assertEquals([by("t1").held, by("t1.r1").held], [false, true]);
+  assertEquals([by("t1").author_url, by("t1.r1").author_url], [null, "https://www.youtube.com/@x"]);
+});
+
+Deno.test("youtube connect: another channel for the same app, or one channel for two apps, is refused", async () => {
+  const scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl";
+  const api = (channel: string) => mockApi({
+    "POST google:token": { access_token: "A", refresh_token: "1//R", scope },
+    "GET yt:channels": { items: [{ id: channel, snippet: { title: channel, customUrl: `@${channel}` } }] },
+  });
+  let msg = "";
+  await youtubeConnect(deps(fakeStore([IG, YT]), api("UCother").fetchFn), ALLOWED, "leesidelab", "C", ALLOWED[0]).catch((e) => (msg = e.message));
+  assertMatch(msg, /schon der Kanal @leesidelab/);
+  await youtubeConnect(deps(fakeStore([IG, YT]), api("UCown").fetchFn), ALLOWED, "downwind", "C", ALLOWED[0]).catch((e) => (msg = e.message));
+  assertMatch(msg, /schon mit «leesidelab»/);
+  const ok = await youtubeConnect(deps(fakeStore([IG, YT]), api("UCown").fetchFn), ALLOWED, "leesidelab", "C", ALLOWED[0]); // reconnect, same channel
+  assertEquals(ok.handle, "UCown");
+});
+
+Deno.test("reply: a failed send releases the claim; a network error never shows the token", async () => {
+  const store = fakeStore([IG], [stored({ id: "s1", remote_id: "k1" })]);
+  const failing = async () => { throw new TypeError("error sending request for url (https://graph.instagram.com/v25.0/k1/replies?access_token=IGAAsecret123): connection reset"); };
+  let msg = "";
+  await replyTo(deps(store, failing), "s1", "Danke!").catch((e) => (msg = e.message));
+  assert(!msg.includes("IGAAsecret123"), msg);
+  assertMatch(msg, /Keine Verbindung/);
+  assertEquals(store.rows[0].replied_at, null);
 });

@@ -98,7 +98,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const accountRows = accounts().map((a) => {
       const left = daysLeft(a.token_expires_at);
       const token = a.platform === "youtube" ? "verbunden (Kommentare)" : left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
-      return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span></li>`;
+      const again = a.platform === "youtube" ? ` <button class="link inline-link" data-action="soc-yt-reconnect" data-value="${esc(a.app_id)}">neu verbinden</button>` : "";
+      return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span>${again}</li>`;
     }).join("");
     const openComments = inbox.count(false);
     const modes = [["list", "Liste"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` (${openComments})` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
@@ -139,7 +140,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
     if (!st.stats.value) return `<p class="muted loading">Lädt Statistik …</p>`;
     const { accountDays, mediaDays } = st.stats.value;
-    const accs = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
+    const accs = accounts().filter((a) => a.platform === "instagram" && (st.filter === "all" || a.app_id === st.filter)); // statistics: Instagram only so far
     const daysChips = [[7, "7 Tage"], [28, "28 Tage"], [90, "90 Tage"]].map(([d, l]) => `<button class="chip${st.statsDays === d ? " on" : ""}" data-action="soc-stats-days" data-value="${d}">${l}</button>`).join("");
     const head = `<div class="cal-head"><div class="chips">${daysChips}</div>
       <button class="btn ghost" data-action="soc-stats-refresh"${st.stats.loading ? " disabled" : ""}>${st.stats.loading ? "Holt Zahlen …" : "Jetzt aktualisieren"}</button></div>`;
@@ -790,6 +791,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   async function onChange(e) {
+    if (inbox.onChange(e)) return true;
     const name = e.target.name ?? "";
     const ed = S.social.editor;
     if (name === "soc-account" && ed) { ed.account_id = e.target.value; ed.dirty = true; refreshBits(); return true; }
