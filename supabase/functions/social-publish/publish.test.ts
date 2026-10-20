@@ -26,7 +26,7 @@ function fakeStore(posts: Post[], accounts: Account[] = [ACCOUNT]) {
     async account(id) { return accounts.find((a) => a.id === id)!; },
     async accounts() { return accounts; },
     async token(id) { return tokens.get(id)!; },
-    async storeToken(id, token, expiresAt) { tokens.set(id, token); accounts.find((a) => a.id === id)!.token_expires_at = expiresAt.toISOString(); },
+    async storeToken(id, token, expiresAt) { tokens.set(id, token); accounts.find((a) => a.id === id)!.token_expires_at = expiresAt?.toISOString() ?? null; },
     async update(id, patch) { Object.assign(posts.find((p) => p.id === id)!, patch); },
     publicUrl: (path) => `https://qnh.supabase.co/storage/v1/object/public/social-media/${path}`,
     async publishedWithFiles(before) { return posts.filter((p) => p.status === "published" && !p.media_deleted_at && new Date(p.published_at!) < before); },

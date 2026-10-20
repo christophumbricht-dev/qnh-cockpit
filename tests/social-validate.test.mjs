@@ -82,3 +82,20 @@ test("user_tags: only feed images, valid usernames and positions; editing keeps 
   assert.deepEqual(parseTagList("@exploring_the_skies, pilot.one", [{ username: "exploring_the_skies", x: 0.1, y: 0.2 }]),
     [{ username: "exploring_the_skies", x: 0.1, y: 0.2 }, { username: "pilot.one", x: 0.5, y: 0.9 }]);
 });
+
+test("YouTube: title required (≤ 100), description in bytes, ≤ 15 hashtags, only a video; Instagram rules do not apply", () => {
+  const base = { platform: "youtube", kind: "reel", items: [mp4(1080, 1920, 18)], caption: "Föhn explained", first_comment: "", title: "Föhn, part 1" };
+  assert.deepEqual(validatePost(base).errors, []);
+  assert.match(validatePost({ ...base, title: "  " }).errors.join(), /Titel/);
+  assert.match(validatePost({ ...base, title: "x".repeat(101) }).errors.join(), /höchstens 100/);
+  assert.match(validatePost({ ...base, caption: "ä".repeat(2600) }).errors.join(), /Bytes/); // 5200 bytes, only 2600 characters
+  assert.deepEqual(validatePost({ ...base, caption: "x".repeat(3000) }).errors, []); // longer than Instagram's 2200 is fine
+  assert.match(validatePost({ ...base, caption: Array.from({ length: 16 }, (_, i) => `#t${i}`).join(" ") }).warnings.join(), /Spam/);
+  assert.match(validatePost({ ...base, caption: Array.from({ length: 61 }, (_, i) => `#t${i}`).join(" ") }).errors.join(), /ignoriert YouTube alle/);
+  assert.deepEqual(validatePost({ ...base, items: [mp4(1080, 1080, 18)] }).errors, []); // square is fine on YouTube
+  assert.match(validatePost({ ...base, items: [mp4(1920, 1080, 18)] }).warnings.join(), /Querformat/);
+  assert.deepEqual(validatePost({ ...base, items: [mp4(1080, 1920, 1200)] }).errors, []); // 20 min: a normal video
+  assert.match(validatePost({ ...base, kind: "image", items: [jpg(1080, 1350)] }).errors.join(), /nur ein Video/);
+  assert.match(validatePost({ ...base, items: [mp4(1080, 1920, 240)] }).warnings.join(), /kein Short/);
+  assert.match(validatePost({ ...base, title: "Part <1>" }).warnings.join(), /< und >/);
+});

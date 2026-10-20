@@ -95,10 +95,15 @@ export async function parsePackage(entries, accounts) {
     if (!location.id && !location.name) throw new PackageError("post.json: «location» braucht einen Namen oder eine ID.");
   }
 
+  // YouTube: video title (caption = description)
+  const title = String(post.title ?? "").trim();
+  if (title.length > 100) throw new PackageError(`post.json: «title» ist ${title.length} Zeichen lang, höchstens 100 (YouTube).`);
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
     kind: post.kind,
+    title,
     caption: String(post.caption ?? ""),
     first_comment: String(post.first_comment ?? ""),
     alt,

@@ -17,12 +17,56 @@ export async function loadSocial() {
     sb().from("social_posts").select("*").neq("status", "cancelled").order("created_at", { ascending: false }).limit(300),
   ]);
   const rows = must(posts, "posts");
-  if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; }
+  if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; hasTitle = "title" in rows[0]; }
+  else hasTitle = !(await sb().from("social_posts").select("title").limit(1)).error; // empty table: ask for the column
   const places = hasLocation ? await sb().from("social_locations").select("id, page_id, name").order("name") : { data: [] };
   // what is already on Instagram (from the daily statistics; empty until that is set up)
   const seen = await sb().from("social_media_stats").select("media_id, account_id, caption, posted_at, permalink").order("day", { ascending: false }).limit(500);
   const published = [...new Map((seen.data ?? []).map((m) => [m.media_id, m])).values()];
-  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [], published };
+  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [], published, comments: await loadComments() };
+}
+
+// ---------- comment inbox (table from migration 20261020100000_social_comments.sql) ----------
+const COMMENT_COLS = "id, account_id, remote_id, parent_remote_id, media_id, media_title, media_permalink, author, author_url, body, posted_at, like_count, own, held, status, draft, replied_at, deleted_at";
+// null = not set up yet (the migration is missing); the rest of Social keeps working
+export async function loadComments() {
+  if (DEMO) return demo.comments();
+  const since = new Date(Date.now() - 120 * 864e5).toISOString(); // last 4 months are plenty for an inbox
+  const r = await sb().from("social_comments").select(COMMENT_COLS).is("deleted_at", null).gte("posted_at", since).order("posted_at", { ascending: false }).limit(1000);
+  if (r.error) return null;
+  return r.data;
+}
+export async function setCommentStatus(id, status) {
+  if (DEMO) return demo.commentPatch(id, { status });
+  must(await sb().from("social_comments").update({ status }).eq("id", id), "comment");
+}
+export async function saveDraft(id, draft) {
+  if (DEMO) return demo.commentPatch(id, { draft });
+  must(await sb().from("social_comments").update({ draft }).eq("id", id), "comment");
+}
+
+// social-publish ops; a German error message from the function becomes the Error's text
+async function op(body) {
+  const { data, error } = await sb().functions.invoke("social-publish", { body });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export const fetchComments = async () => (DEMO ? demo.fetchComments() : (await op({ op: "comments" })).results ?? []);
+export const replyComment = (id, text) => (DEMO ? demo.reply(id, text) : op({ op: "reply", comment_id: id, text }));
+export const moderateComment = (id, action) => (DEMO ? demo.moderate(id, action) : op({ op: "moderate", comment_id: id, action }));
+export const youtubeAuthUrl = (appId, redirectUri, state) => op({ op: "youtube-auth", app_id: appId, redirect_uri: redirectUri, state });
+export const youtubeConnect = (appId, code, redirectUri) => op({ op: "youtube-connect", app_id: appId, code, redirect_uri: redirectUri });
+
+export function subscribeComments(onChange) {
+  if (DEMO) return demo.subscribe(onChange);
+  const channel = sb().channel("social-comments")
+    .on("postgres_changes", { event: "*", schema: "public", table: "social_comments" }, onChange)
+    .subscribe();
+  return () => sb().removeChannel(channel);
 }
 
 // story images named in a to-do ("Bild s1-beta") – uploaded by `npm run social -- import` to assets/<name>.jpg
@@ -47,14 +91,17 @@ export async function copyFile(fromPath, postId, type, i) {
   return path;
 }
 
-const FIELDS = ["account_id", "kind", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location"];
+const FIELDS = ["account_id", "kind", "title", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location"];
 // "todo" exists after migration 20261014120000_social_todo.sql; until then it is left out
 let hasTodo = DEMO;
 // "location" + table social_locations exist after migration 20261019100000_social_location.sql
 let hasLocation = DEMO;
+// "title" (YouTube video title) exists after migration 20261020110000_social_youtube.sql
+let hasTitle = DEMO;
+export const titleSupported = () => hasTitle;
 export const locationSupported = () => hasLocation;
 export const todoSupported = () => hasTodo;
-const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation)).map((k) => [k, post[k]]));
+const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation) && (k !== "title" || hasTitle)).map((k) => [k, post[k]]));
 
 export async function insertPost(id, post) {
   if (DEMO) return demo.insert({ id, ...pick(post) });

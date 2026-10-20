@@ -5,12 +5,14 @@
 // → permalink → optional first comment. Idempotent: a post that already has a remote_media_id is never
 // published again, and a container that Instagram reports as PUBLISHED is matched instead of re-published.
 
-import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, type FetchFn } from "./graph.ts";
+import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, scrubToken, type FetchFn } from "./graph.ts";
+import { GoogleError, googleGerman, type GoogleConfig } from "./google.ts";
+import { publishYoutube } from "./youtube.ts";
 
 export const MAX_ATTEMPTS = 3;
 
 export type UserTag = { username: string; x: number; y: number };
-export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null };
+export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null; duration?: number | null };
 
 // Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
 export function userTags(m: MediaItem): string | undefined {
@@ -24,6 +26,7 @@ export type Post = {
   id: string;
   account_id: string;
   kind: "image" | "carousel" | "reel" | "story";
+  title?: string; // YouTube: video title (caption = description)
   caption: string;
   first_comment: string;
   media: MediaItem[];
@@ -41,14 +44,14 @@ export type Post = {
   location?: { id: string; name?: string } | null;
   location_dropped?: boolean; // set while publishing when Instagram refused the location
 };
-export type Account = { id: string; platform: "instagram" | "facebook"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
+export type Account = { id: string; app_id?: string; platform: "instagram" | "facebook" | "youtube"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
 
 export interface Store {
   claim(postId?: string): Promise<Post[]>;
   account(id: string): Promise<Account>;
   accounts(): Promise<Account[]>;
   token(accountId: string): Promise<string>;
-  storeToken(accountId: string, token: string, expiresAt: Date): Promise<void>;
+  storeToken(accountId: string, token: string, expiresAt: Date | null): Promise<void>;
   update(postId: string, patch: Partial<Post> & Record<string, unknown>): Promise<void>;
   publicUrl(path: string): string;
   publishedWithFiles(before: Date): Promise<Post[]>;
@@ -63,6 +66,9 @@ export type Deps = {
   facebookEnabled?: boolean;
   pollMs?: number; // between status checks of a video container
   maxPolls?: number; // per run; afterwards the post stays "publishing" and the next run continues
+  google?: GoogleConfig | null; // YouTube (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)
+  deadline?: number; // ms timestamp: a YouTube upload stops here and the next run continues
+  chunkSize?: number; // YouTube upload piece (tests use small ones)
 };
 
 export type Result = { id: string; status: string; error?: string };
@@ -73,7 +79,11 @@ export class FinalError extends Error {}
 export async function publishDue(deps: Deps, postId?: string): Promise<Result[]> {
   const posts = await deps.store.claim(postId);
   const results: Result[] = [];
-  for (const post of posts) results.push(await publishOne(deps, post));
+  for (const post of posts) {
+    // out of time: the rest stays «publishing» and the next run picks it up (not counted as a new attempt)
+    if (deps.deadline && deps.now().getTime() > deps.deadline) break;
+    results.push(await publishOne(deps, post));
+  }
   return results;
 }
 
@@ -82,6 +92,7 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
   try {
     const account = await store.account(post.account_id);
     if (account.platform === "facebook") return await publishFacebook(deps, post, account);
+    if (account.platform === "youtube") return await publishYoutube(deps, post, account);
     const g = graph(deps.fetch, IG_HOST, await store.token(account.id));
 
     if (post.remote_media_id) return await finish(deps, g, post, post.remote_media_id); // published before, only finish
@@ -237,10 +248,12 @@ async function fail(deps: Deps, post: Post, err: unknown): Promise<Result> {
 }
 
 function isFinalGraphError(err: unknown) {
+  if (err instanceof GoogleError) return err.reason === "invalid_grant" || [400, 401, 403].includes(err.status); // bad title, revoked access, …
   return err instanceof GraphError && (err.code === 190 || err.code === 10 || err.code === 200 || (err.code === 100 && err.status === 400));
 }
 
 export function germanError(err: unknown): string {
+  if (err instanceof GoogleError) return googleGerman(err);
   if (err instanceof GraphError) {
     if (err.code === 190) return "Der Instagram-Zugang (Token) ist abgelaufen oder ungültig. Neuen Token eintragen (docs/social-setup.md).";
     if (err.code === 10 || err.code === 200) return "Der App fehlt eine Berechtigung bei Meta (instagram_business_content_publish).";
@@ -248,7 +261,7 @@ export function germanError(err: unknown): string {
     if (err.code === 9004 || err.subcode === 2207052) return "Instagram konnte die Datei nicht von Supabase laden.";
     return `Instagram meldet: ${err.message}`;
   }
-  return err instanceof Error ? err.message : String(err);
+  return scrubToken(err instanceof Error ? err.message : String(err));
 }
 
 // ---------- Facebook Page (prepared, off unless FACEBOOK_ENABLED=true) ----------

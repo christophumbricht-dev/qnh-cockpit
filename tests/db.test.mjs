@@ -10,6 +10,8 @@ const SQL2 = readFileSync(new URL("../supabase/migrations/20261014100000_roadmap
 const SQL3 = readFileSync(new URL("../supabase/migrations/20261014120000_social_todo.sql", import.meta.url), "utf8");
 const SQL4 = readFileSync(new URL("../supabase/migrations/20261019100000_social_location.sql", import.meta.url), "utf8");
 const SQL5 = readFileSync(new URL("../supabase/migrations/20261019120000_social_stats.sql", import.meta.url), "utf8");
+const SQL6 = readFileSync(new URL("../supabase/migrations/20261020100000_social_comments.sql", import.meta.url), "utf8");
+const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_youtube.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -42,6 +44,10 @@ await db.exec(SQL4);
 await db.exec("create schema if not exists cron; create or replace function cron.schedule(text, text, text) returns bigint language sql as $$ select 1::bigint $$;");
 await db.exec(SQL5);
 await db.exec(SQL5);
+await db.exec(SQL6);
+await db.exec(SQL6);
+await db.exec(SQL7);
+await db.exec(SQL7);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -194,4 +200,46 @@ test("stats: only the server writes, admins read", async () => {
   assert.equal((await as(ADMIN, "select metrics->>'views' v from social_media_stats")).rows[0].v, "120");
   assert.equal((await as(OTHER, "select count(*)::int n from social_account_stats")).rows[0].n, 0);
   await assert.rejects(as(ADMIN, `insert into social_account_stats (account_id, day) values ('${ACC}', '2026-10-20')`));
+});
+
+test("youtube: channels are accounts with a Google token name; other names and platforms are refused", async () => {
+  await as("service", "insert into social_accounts (id, app_id, platform, remote_id, handle, token_name) values ('aaaaaaaa-0000-0000-0000-000000000002', 'leesidelab', 'youtube', 'UCabcdefghijklmnopqrstuv', 'leesidelab', 'google_token_leesidelab_youtube')");
+  await assert.rejects(db.query("insert into social_accounts (app_id, platform, remote_id, token_name) values ('x1', 'youtube', 'UC1', 'youtube_secret')"));
+  await assert.rejects(db.query("insert into social_accounts (app_id, platform, remote_id, token_name) values ('x2', 'tiktok', 'T1', 'meta_token_x2')"));
+  await assert.rejects(as(ADMIN, "insert into social_accounts (app_id, platform, remote_id, token_name) values ('x3', 'youtube', 'UC3', 'google_token_x3')"));
+  await as("service", "select social_store_token('aaaaaaaa-0000-0000-0000-000000000002', '1//refresh', null)");
+  assert.equal((await as("service", "select social_token('aaaaaaaa-0000-0000-0000-000000000002') t")).rows[0].t, "1//refresh");
+});
+
+test("comments: the server writes them; admins read, mark done and keep a draft – nothing else", async () => {
+  const ins = (remote, extra = "") => as("service", `insert into social_comments (account_id, remote_id, media_id, author, body${extra ? ", status" : ""}) values ('${ACC}', '${remote}', 'M1', 'anna', 'Wo ist das?'${extra ? `, '${extra}'` : ""}) returning id`);
+  const id = (await ins("k1")).rows[0].id;
+  await assert.rejects(as(ADMIN, `insert into social_comments (account_id, remote_id, media_id) values ('${ACC}', 'k2', 'M1')`));
+  assert.equal((await as(OTHER, "select count(*)::int n from social_comments")).rows[0].n, 0);
+  await assert.rejects(as(null, "select * from social_comments"));
+  assert.equal((await as(ADMIN, `select status from social_comments where id='${id}'`)).rows[0].status, "new");
+  await as(ADMIN, `update social_comments set status='done', draft='Altdorf, Uri!' where id='${id}'`);
+  await as(ADMIN, `update social_comments set status='new' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_comments set status='hidden' where id='${id}'`), /Knopf/);
+  await assert.rejects(as(ADMIN, `update social_comments set body='changed' where id='${id}'`));
+  await assert.rejects(as(ADMIN, `update social_comments set own=true where id='${id}'`));
+  await assert.rejects(as(ADMIN, `delete from social_comments where id='${id}'`));
+  await as("service", `update social_comments set status='hidden' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_comments set status='done' where id='${id}'`), /Knopf/);
+  await assert.rejects(ins("k1")); // one row per platform comment
+  await assert.rejects(as(ADMIN, `update social_comments set draft=repeat('x', 2201) where id='${id}'`));
+});
+
+test("youtube title: stored with the post, frozen once approved, todo still editable, at most 100 characters", async () => {
+  const id = await newPost();
+  await as(ADMIN, `update social_posts set title='Föhn, part 1' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set title=repeat('x', 101) where id='${id}'`));
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set title='other' where id='${id}'`), /zurückziehen/);
+  await as(ADMIN, `update social_posts set todo='anpinnen' where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='draft' where id='${id}'`);
+  await as(ADMIN, `update social_posts set title='other' where id='${id}'`);
+  assert.equal((await as(ADMIN, `select title from social_posts where id='${id}'`)).rows[0].title, "other");
+  await as(ADMIN, `update social_posts set caption=repeat('x', 3000) where id='${id}'`); // a long YouTube description
+  await assert.rejects(as(ADMIN, `update social_posts set caption=repeat('x', 5001) where id='${id}'`));
 });

@@ -17,6 +17,11 @@ export const LIMITS = {
 
 export const KINDS = { image: "Bild", carousel: "Karussell", reel: "Reel", story: "Story" };
 
+// YouTube (Data API v3): title ≤ 100 characters, description ≤ 5000 bytes; more than 60 hashtags → YouTube ignores
+// all of them (more than 15 look like spam); vertical videos up to 3 minutes become Shorts. No < > in title or description.
+export const YOUTUBE = { title: 100, descriptionBytes: 5000, hashtagsWarn: 15, hashtagsMax: 60, shortMax: 180 };
+export const utf8Bytes = (text) => new TextEncoder().encode(String(text ?? "")).length;
+
 const TOL = 0.02;
 const near = (a, b, tol = TOL) => Math.abs(a - b) <= b * tol;
 
@@ -89,11 +94,24 @@ export function validateItem(kind, item, index = 0) {
   return { errors, warnings };
 }
 
-// post: { kind, items, caption, first_comment }; opts: { forApproval, scheduledAt (ISO), now (Date) }
+// YouTube video: MP4/MOV up to 50 MB (Supabase); vertical up to 3 minutes = Short, anything else a normal video
+export function validateYoutubeItem(item) {
+  const errors = [], warnings = [];
+  if (!isVideo(item)) errors.push("Auf YouTube geht nur ein Video (MP4).");
+  else if (!/^video\/(mp4|quicktime)$/.test(item.type)) errors.push("Videos als MP4 (H.264, AAC) exportieren.");
+  if (item.size > LIMITS.fileBytes) errors.push(`Datei ist ${mb(item.size)} gross, höchstens 50 MB (Supabase Gratis-Plan).`);
+  if (item.duration != null && item.duration < 1) errors.push("Das Video ist leer.");
+  const short = (!item.width || item.height >= item.width) && !(item.duration > YOUTUBE.shortMax);
+  if (!short) warnings.push(item.duration > YOUTUBE.shortMax ? `Video ist ${Math.round(item.duration)} s lang – länger als 3 Minuten wird es ein normales Video, kein Short.` : "Querformat – wird ein normales YouTube-Video, kein Short.");
+  return { errors, warnings };
+}
+
+// post: { kind, items, caption, first_comment, platform?, title? }; opts: { forApproval, scheduledAt (ISO), now (Date) }
 export function validatePost(post, { forApproval = false, scheduledAt = null, now = new Date() } = {}) {
   const errors = [], warnings = [];
   const items = post.items ?? [];
   const { kind } = post;
+  const youtube = post.platform === "youtube";
 
   if (!KINDS[kind]) errors.push("Art des Beitrags wählen.");
   if (!items.length) errors.push("Mindestens ein Bild oder Video hinzufügen.");
@@ -108,16 +126,29 @@ export function validatePost(post, { forApproval = false, scheduledAt = null, no
     errors.push(`${KINDS[kind] ?? "Dieser Beitrag"} hat genau eine Datei – für mehrere «Karussell» wählen.`);
   }
   items.forEach((item, i) => {
-    const r = validateItem(kind, item, i);
+    const r = youtube ? validateYoutubeItem(item) : validateItem(kind, item, i);
     errors.push(...r.errors);
     warnings.push(...r.warnings);
   });
 
   const caption = post.caption ?? "";
-  if (caption.length > LIMITS.caption) errors.push(`Text ist ${caption.length} Zeichen lang, höchstens ${LIMITS.caption}.`);
   const tags = countHashtags(caption);
-  if (tags > LIMITS.hashtagsMax) errors.push(`${tags} Hashtags – Instagram erlaubt höchstens ${LIMITS.hashtagsMax}.`);
-  else if (tags > LIMITS.hashtagsWarn) warnings.push(`${tags} Hashtags – mehr als ${LIMITS.hashtagsWarn} wirken schnell wie Spam.`);
+  if (youtube) {
+    if (kind && kind !== "reel") errors.push("Auf YouTube geht nur ein Video – Art «Reel» wählen.");
+    const title = String(post.title ?? "").trim();
+    if (!title) errors.push("YouTube braucht einen Titel.");
+    else if (title.length > YOUTUBE.title) errors.push(`Titel ist ${title.length} Zeichen lang, höchstens ${YOUTUBE.title}.`);
+    const bytes = utf8Bytes(caption);
+    if (bytes > YOUTUBE.descriptionBytes) errors.push(`Beschreibung ist zu lang (${bytes} Bytes, höchstens ${YOUTUBE.descriptionBytes}).`);
+    if (/[<>]/.test(title + caption)) warnings.push("YouTube nimmt < und > nicht an – sie werden weggelassen.");
+    const ytTags = tags + countHashtags(title);
+    if (ytTags > YOUTUBE.hashtagsMax) errors.push(`${ytTags} Hashtags – bei mehr als ${YOUTUBE.hashtagsMax} ignoriert YouTube alle.`);
+    else if (ytTags > YOUTUBE.hashtagsWarn) warnings.push(`${ytTags} Hashtags – mehr als ${YOUTUBE.hashtagsWarn} wirken schnell wie Spam.`);
+  } else {
+    if (caption.length > LIMITS.caption) errors.push(`Text ist ${caption.length} Zeichen lang, höchstens ${LIMITS.caption}.`);
+    if (tags > LIMITS.hashtagsMax) errors.push(`${tags} Hashtags – Instagram erlaubt höchstens ${LIMITS.hashtagsMax}.`);
+    else if (tags > LIMITS.hashtagsWarn) warnings.push(`${tags} Hashtags – mehr als ${LIMITS.hashtagsWarn} wirken schnell wie Spam.`);
+  }
   const comment = post.first_comment ?? "";
   if (comment.length > LIMITS.firstComment) errors.push(`Erster Kommentar höchstens ${LIMITS.firstComment} Zeichen.`);
   if (countHashtags(comment) > LIMITS.hashtagsMax) errors.push(`Erster Kommentar: höchstens ${LIMITS.hashtagsMax} Hashtags.`);

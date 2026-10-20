@@ -1,5 +1,5 @@
 import "./style.css";
-import { APPS, QNH, appById } from "./apps.js";
+import { APPS, BRANDS, QNH, appById } from "./apps.js";
 import * as api from "./api.js";
 import { esc, relTime, shortDate, num, sourceLabel, errorText } from "./format.js";
 import { bucket, chartSvg, periodLabel, sparkSvg } from "./charts.js";
@@ -53,7 +53,7 @@ const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...APPS.map((a) =>
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
-  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }) });
+  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })) });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
 const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar"];
@@ -119,7 +119,7 @@ function ensureData(force = false) {
 function route() {
   const [first, second] = location.hash.replace(/^#\/?/, "").split("/");
   const a = first && first !== QNH.id ? appById(first) : null;
-  if (first === "social") S.tab = "social";
+  if (first === "social") { S.tab = "social"; if (second === "kommentare") social.setMode("comments"); }
   else if (first === "roadmap") S.tab = "roadmap-all";
   else if (first === "hangar") S.tab = "hangar";
   else if (a) {
@@ -223,7 +223,7 @@ function pageHead() {
     return `<header class="page-head"><div class="ph-title">${icon("grid", "ph-icon")}<div><h1>Hangar</h1><p class="muted">Alle Werkzeuge und deine Ablage – ein Klick entfernt.</p></div></div></header>`;
   }
   if (S.tab === "social") {
-    return `<header class="page-head"><div class="ph-title">${icon("social", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram-Beiträge aller Apps – du gibst jeden frei.</p></div></div></header>`;
+    return `<header class="page-head"><div class="ph-title">${icon("social", "ph-icon")}<div><h1>Social</h1><p class="muted">Instagram und YouTube aller Apps – du gibst jeden Beitrag frei und beantwortest Kommentare hier.</p></div></div></header>`;
   }
   const a = app();
   const stats = S.data[`${a.id}:stats`]?.value;
@@ -303,6 +303,8 @@ function socialTodos() {
   const drafts = v.posts.filter((p) => p.status === "draft").length;
   if (failed) out.push({ tone: "alert", label: `${failed} Beitrag${failed === 1 ? "" : "e"} mit Fehler`, href: "#social", where: "Social" });
   if (drafts) out.push({ tone: "info", label: `${drafts} Entw${drafts === 1 ? "urf wartet" : "ürfe warten"} auf Freigabe`, href: "#social", where: "Social" });
+  const comments = social.commentCount();
+  if (comments) out.push({ tone: "info", label: `${comments} Kommentar${comments === 1 ? " wartet" : "e warten"} auf Antwort`, href: "#social/kommentare", where: "Social" });
   const soon = Date.now() + 2 * 864e5;
   for (const p of v.posts) {
     if (!["draft", "approved"].includes(p.status) || !p.scheduled_at || !social.todoOpen(p.todo) || new Date(p.scheduled_at) > soon) continue;
