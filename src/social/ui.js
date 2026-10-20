@@ -99,7 +99,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const accountRows = accounts().map((a) => {
       const left = daysLeft(a.token_expires_at);
-      const token = a.platform === "youtube" ? "verbunden (Kommentare)" : left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
+      const token = a.platform === "youtube" ? "verbunden" : left === null ? "Token: Ablauf unbekannt" : left < 0 ? "Token abgelaufen" : `Token gültig bis ${formatZurichDate(a.token_expires_at)}`;
       const again = a.platform === "youtube" ? ` <button class="link inline-link" data-action="soc-yt-reconnect" data-value="${esc(a.app_id)}">neu verbinden</button>` : "";
       return `<li><b>${esc(accountLabel(a))}</b>${a.active ? "" : " (inaktiv)"} <span class="${left !== null && left < 14 ? "warn" : "muted"}">· ${esc(token)}</span>${again}</li>`;
     }).join("");
@@ -318,7 +318,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return `<article class="item soc-item">
       ${p.media_deleted_at ? `<span class="thumb empty"></span>` : listThumb(p)}
       <div>
-        <div class="meta"><b>${esc(accountLabel(a))}</b><span>${KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
+        <div class="meta"><b>${esc(accountLabel(a))}</b><span>${a?.platform === "youtube" ? "Video (Short)" : KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
           ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
