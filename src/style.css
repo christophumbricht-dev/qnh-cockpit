@@ -856,7 +856,14 @@ video.phone-img { width: 100%; height: 100%; object-fit: cover; background: #000
 .channel-actions .link { margin: 0; }
 .channel-card.add { border: 2px dashed var(--line); background: transparent; box-shadow: none; }
 .channel-card.add .acc-connect { margin: 0; }
-@media (max-width: 860px) { .channels { grid-template-columns: minmax(0, 1fr); } .seg { width: 100%; } .seg-btn { flex: 1; padding: 0 10px; } .soc-top .row-right { width: 100%; } }
+@media (max-width: 860px) {
+  .channels { grid-template-columns: minmax(0, 1fr); }
+  .seg { width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .seg-btn { flex: 1 0 auto; padding: 0 12px; }
+  .soc-top .row-right:not(:has(.btn:not(.desk-only))) { display: none; }
+  .ph-title { flex-wrap: nowrap; align-items: flex-start; }
+  .ph-icon { width: 36px; height: 36px; padding: 7px; }
+}
 
 /* ---- Finanzen: timeline, two columns, compact subscriptions ---- */
 .fin-cols { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 28px; align-items: start; }

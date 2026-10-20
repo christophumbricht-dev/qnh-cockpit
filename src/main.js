@@ -223,7 +223,7 @@ function shell() {
       ${pageHead()}
       <main class="page">${view()}</main>
     </div>
-    ${qnhReady() ? `<button class="fab" data-action="sheet" data-value="new" aria-label="Neu: Aufgabe, Rechnung oder Beitrag" aria-expanded="${S.sheet === "new"}">${icon("plus")}</button>` : ""}
+    ${qnhReady() && !(S.tab === "finance" && S.fin?.form) && !(S.tab === "social" && S.social?.editor) ? `<button class="fab" data-action="sheet" data-value="new" aria-label="Neu: Aufgabe, Rechnung oder Beitrag" aria-expanded="${S.sheet === "new"}">${icon("plus")}</button>` : ""}
   </div>
   ${S.sheet ? sheet() : ""}
   ${S.search.open ? palette() : ""}

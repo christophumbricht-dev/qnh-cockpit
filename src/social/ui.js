@@ -106,11 +106,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         <div class="seg" role="group" aria-label="Ansicht">${modes}</div>
         <div class="row-right">
           ${reviewQueue().length ? `<button class="btn" data-action="soc-review">Freigabe-Runde (${reviewQueue().length})</button>` : ""}
-          <button class="btn ghost" data-action="soc-pick-package">Paket importieren</button>
-          <button class="btn" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
+          <button class="btn ghost desk-only" data-action="soc-pick-package">Paket importieren</button>
+          <button class="btn desk-only" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
       ${apps.length > 1 ? `<div class="chips soc-apps">${chips}</div>` : ""}
-      ${accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
+      ${st.mode !== "list" ? "" : accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
         : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
       ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
