@@ -28,11 +28,14 @@ export async function loadSocial() {
 
 // ---------- comment inbox (table from migration 20261020100000_social_comments.sql) ----------
 const COMMENT_COLS = "id, account_id, remote_id, parent_remote_id, media_id, media_title, media_permalink, author, author_url, body, posted_at, like_count, own, held, status, draft, replied_at, deleted_at";
-// null = not set up yet (the migration is missing); the rest of Social keeps working
+// null = not set up yet (the migration is missing) or not readable; the rest of Social keeps working.
+// commentsError keeps the database's answer so the inbox can show why.
+export let commentsError = null;
 export async function loadComments() {
   if (DEMO) return demo.comments();
   const since = new Date(Date.now() - 120 * 864e5).toISOString(); // last 4 months are plenty for an inbox
   const r = await sb().from("social_comments").select(COMMENT_COLS).is("deleted_at", null).gte("posted_at", since).order("posted_at", { ascending: false }).limit(1000);
+  commentsError = r.error ? [r.error.code, r.error.message].filter(Boolean).join(": ") : null;
   if (r.error) return null;
   return r.data;
 }

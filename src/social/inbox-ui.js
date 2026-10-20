@@ -37,7 +37,8 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
   // ---------- view ----------
   function view() {
     if (!ready()) {
-      return `<p class="note">Die Kommentar-Inbox ist noch nicht eingerichtet: Migration <code>20261020100000_social_comments.sql</code> im SQL-Editor ausführen und <code>social-publish</code> neu hochladen (docs/social-setup.md, «Kommentare»).</p>`;
+      return `<p class="note">Die Kommentar-Inbox ist noch nicht eingerichtet: Migration <code>20261020100000_social_comments.sql</code> im SQL-Editor ausführen und <code>social-publish</code> neu hochladen (docs/social-setup.md, «Kommentare»).</p>
+        ${data.commentsError ? `<p class="note small">Antwort der Datenbank: <code>${esc(data.commentsError)}</code></p>` : ""}`;
     }
     const all = (rows() ?? []).filter((c) => appOk(c.account_id));
     const posts = groupComments(all, { filter: ib().filter });
