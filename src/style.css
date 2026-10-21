@@ -938,3 +938,13 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .todo-check li.done span { text-decoration: line-through; opacity: 0.6; }
 .soc-todo.all-done { border-left-color: var(--ok); background: var(--ok-soft); }
 .soc-todo.all-done > b { color: var(--ok); }
+
+/* ---- «Heute»: fold-out checklist rows ---- */
+.ag-details { width: 100%; margin-top: 0; font-size: inherit; }
+.ag-details > summary { list-style: none; cursor: pointer; font-size: inherit; font-weight: inherit; color: inherit; }
+.ag-details > summary::-webkit-details-marker { display: none; }
+.ag-chevron { margin-left: auto; padding-left: 10px; color: var(--muted); transition: transform 0.15s ease; }
+.ag-details[open] .ag-chevron { transform: rotate(180deg); }
+.ag-body { padding: 4px 16px 14px 64px; }
+.ag-body .soc-todo { margin-top: 0; }
+@media (max-width: 700px) { .ag-body { padding-left: 16px; } }

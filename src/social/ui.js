@@ -990,6 +990,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
   const setMode = (mode) => { if (["list", "calendar", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
-  return { todoFirstOpen, onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+  // checklist of one post for «Heute» (same checkboxes as in the list, action soc-todo-check)
+  function todoChecklist(id) {
+    const p = posts().find((x) => x.id === id);
+    return p ? todoBox(p.todo, PLATFORM[account(p.account_id)?.platform] ?? "Instagram", p.id) : "";
+  }
+  const todoProgress = (t) => { const l = todoLines(t); return { done: l.filter((x) => x.done).length, total: l.length }; };
+  return { todoChecklist, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }

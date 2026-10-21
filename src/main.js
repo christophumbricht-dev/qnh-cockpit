@@ -26,6 +26,7 @@ const PHOTO_BASE = "https://flydownwind.ch/assets/photos/";
 const photoCredit = () => `<a class="credit" href="https://www.instagram.com/exploring_the_skies" target="_blank" rel="noopener">Foto: Jürg Umbricht · @exploring_the_skies</a>`;
 
 const S = {
+  agOpen: new Set(), // «Heute» rows with a checklist that are folded out
   tab: "today", // today | social | overview | <app tab>
   appId: APPS.find((a) => a.tabs?.length)?.id,
   users: {}, // appId -> user | null
@@ -414,14 +415,14 @@ function socialItems(today) {
     if (p.status === "published" && p.published_at) {
       // published in the last 3 days and not everything ticked off
       if (now - new Date(p.published_at).getTime() > 3 * 864e5) continue;
-      out.push({ key: `hand:${p.id}`, lane: "now", tone: "alert", title: `Nach dem Posten: ${task}`, sub: `${where(p)} · veröffentlicht ${formatZurich(p.published_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+      out.push({ key: `hand:${p.id}`, lane: "now", tone: "alert", title: `Nach dem Posten: ${task}`, sub: `${where(p)} · veröffentlicht ${formatZurich(p.published_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social", checklist: p.id, progress: social.todoProgress(p.todo) });
       continue;
     }
     if (!["draft", "approved"].includes(p.status) || !p.scheduled_at) continue;
     const day = zurichToday(new Date(p.scheduled_at));
     const lane = laneForDate(day, today, { weekDays: 2 });
     if (!lane) continue;
-    out.push({ key: `hand:${p.id}`, lane, tone: "info", date: day, title: `Von Hand: ${task}`, sub: `${where(p)} · ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+    out.push({ key: `hand:${p.id}`, lane, tone: "info", date: day, title: `Von Hand: ${task}`, sub: `${where(p)} · ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social", checklist: p.id, progress: social.todoProgress(p.todo) });
   }
   for (const a of v.accounts) {
     const days = a.token_expires_at ? Math.floor((new Date(a.token_expires_at) - now) / 864e5) : null;
@@ -475,6 +476,18 @@ function agendaItem(t, lane) {
   const acts = (t.actions ?? []).map((a, i) => `<button class="btn${i === 0 && lane !== "week" ? "" : " ghost"} small-btn" data-action="${esc(a.action)}"${a.id ? ` data-id="${esc(a.id)}"` : ""}${a.value ? ` data-value="${esc(a.value)}"` : ""}>${esc(a.label)}</button>`).join("");
   const where = (label ? label.split(" · ") : []).filter((x) => !String(t.sub ?? "").includes(x)); // no «Social · Social → …»
   const sub = [...where, t.sub].filter(Boolean).join(" · ");
+  if (t.checklist) {
+    // fold out, tick off right here; when everything is ticked the row disappears (socialItems skips it)
+    const open = S.agOpen.has(t.key);
+    return `<li class="ag-item ${t.tone === "alert" ? "alert" : "info"}"><details class="ag-details" data-ag-key="${esc(t.key)}"${open ? " open" : ""}>
+      <summary class="ag-link">
+        ${rowBadge(t)}
+        <span class="ag-text"><span class="ag-title">${esc(t.title)}</span><span class="ag-sub">${esc([sub, t.progress ? `${t.progress.done}/${t.progress.total} erledigt` : ""].filter(Boolean).join(" · "))}</span></span>
+        <span class="ag-chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="ag-body">${social.todoChecklist(t.checklist)}<a class="link" href="${esc(t.href ?? "#social")}">Beitrag öffnen</a></div>
+    </details></li>`;
+  }
   return `<li class="ag-item ${t.tone === "alert" ? "alert" : "info"}">
     <a class="ag-link" href="${esc(t.href ?? "#")}"${external ? ' target="_blank" rel="noopener"' : ""}>
       ${rowBadge(t)}
@@ -1086,6 +1099,12 @@ root.addEventListener("input", (e) => {
   if (finance.onInput(e)) return;
   social.onInput(e);
 });
+// «Heute»: remember folded-out checklist rows, so ticking (which re-renders) keeps them open
+root.addEventListener("toggle", (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.dataset.agKey) return;
+  if (d.open) S.agOpen.add(d.dataset.agKey); else S.agOpen.delete(d.dataset.agKey);
+}, true);
 // scroll does not bubble: listen in the capture phase (carousel preview swipe)
 root.addEventListener("scroll", (e) => social.onScroll(e), true);
 root.addEventListener("dragstart", (e) => qnh.onDragStart(e) || social.onDragStart(e));
