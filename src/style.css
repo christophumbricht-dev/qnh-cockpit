@@ -693,11 +693,14 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); grid-template-areas: "main side" "apps side"; gap: 28px; align-items: start; margin-top: 28px; }
 .today-main { grid-area: main; min-width: 0; }
 .today-side { grid-area: side; min-width: 0; display: grid; gap: 18px; }
+/* two columns: start the side cards level with the first lane box, below its title (20px × 1.2 + 12px margin) */
+.today-side { padding-top: calc(20px * 1.2 + 12px); }
+@media (max-width: 1180px) { .today-side { padding-top: 0; } }
 .today-apps { grid-area: apps; min-width: 0; }
 @media (max-width: 1180px) { .today-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "side" "apps"; } }
 
 .agenda { display: grid; gap: 26px; }
-.lane-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 12px; font: 700 20px/1.2 var(--display); }
+.lane-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 12px; font: 700 20px/1.2 var(--display); min-height: calc(20px * 1.2); }
 .lane-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand); flex: none; }
 .lane-now .lane-dot { background: var(--alert); }
 .lane-week .lane-dot { background: #829ab1; }
