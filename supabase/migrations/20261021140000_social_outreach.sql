@@ -29,8 +29,10 @@ create table if not exists public.outreach_settings (
   token_expires_at   timestamptz,                                                         -- null = unknown or never
   last_run_at        timestamptz,
   last_error         text check (last_error is null or char_length(last_error) <= 1000),
+  run_lock_until     timestamptz,                                                         -- one run at a time (cron + «Jetzt suchen»)
   updated_at         timestamptz not null default now()
 );
+alter table public.outreach_settings add column if not exists run_lock_until timestamptz;
 insert into public.outreach_settings (id) values (true) on conflict (id) do nothing;
 
 drop trigger if exists outreach_settings_updated_at on public.outreach_settings;
@@ -162,7 +164,7 @@ begin
   if v_id is null then perform vault.create_secret(p_token, 'meta_token_outreach');
   else perform vault.update_secret(v_id, p_token);
   end if;
-  update public.outreach_settings set token_expires_at = p_expires_at;
+  update public.outreach_settings set token_expires_at = p_expires_at where id;   -- Supabase refuses an UPDATE without WHERE
 end $$;
 revoke all on function public.outreach_store_token(text, timestamptz) from public, anon, authenticated;
 grant execute on function public.outreach_store_token(text, timestamptz) to service_role;

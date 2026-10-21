@@ -322,6 +322,12 @@ test("outreach: off by default; admins switch it and set limits, never the serve
   const s = (await as(ADMIN, "select enabled, daily_limit, monthly_budget_usd::text b, model, rules from outreach_settings")).rows[0];
   assert.deepEqual(s, { enabled: true, daily_limit: 12, b: "5.00", model: "claude-haiku-5-5", rules: "Keine Emojis." });
   await assert.rejects(as(ADMIN, "update outreach_settings set ig_user_id = '17841400000000000'"));
+  await assert.rejects(as(ADMIN, "update outreach_settings set run_lock_until = now()"));
+  // the run lock as the store takes it: only when free or expired
+  const claim = (until) => as("service", `update outreach_settings set run_lock_until = '${until}' where id and (run_lock_until is null or run_lock_until < now()) returning id`);
+  assert.equal((await claim("2999-01-01T00:00:00Z")).rows.length, 1);
+  assert.equal((await claim("2999-01-01T00:00:00Z")).rows.length, 0);
+  await as("service", "update outreach_settings set run_lock_until = null where id");
   await assert.rejects(as(ADMIN, "update outreach_settings set daily_limit = 100"));
   await assert.rejects(as(ADMIN, "update outreach_settings set model = 'gpt-9'"));
   await assert.rejects(as(ADMIN, "insert into outreach_settings (id) values (false)"));

@@ -68,7 +68,7 @@ export function createOutreach({ S, render, toast, errorText }) {
     return `<details class="out-settings"><summary>Einstellungen</summary>
       <div class="out-grid">
         <label class="field">Vorschläge pro Tag<input type="number" name="out-limit" min="1" max="${DAILY_MAX}" step="1" value="${esc(s.daily_limit)}" inputmode="numeric"></label>
-        <label class="field">Budget pro Monat (USD)<input type="number" name="out-budget" min="0" max="${BUDGET_MAX}" step="1" value="${esc(Number(s.monthly_budget_usd))}" inputmode="decimal"></label>
+        <label class="field">Budget pro Monat (USD)<input type="text" name="out-budget" value="${esc(Number(s.monthly_budget_usd))}" inputmode="decimal" autocomplete="off"></label>
         <label class="field">Modell<select name="out-model">${opts}</select></label>
       </div>
       <label class="field">Zusatzregeln für Claude <span class="muted small">(optional, z. B. «Keine Emojis», «Nie über Segelflug-Wettbewerbe»)</span>
@@ -252,7 +252,7 @@ export function createOutreach({ S, render, toast, errorText }) {
         render();
         try {
           const r = await data.runOutreach();
-          if (r?.status === "failed") toast(r.error ?? "Fehler");
+          if (r?.status === "failed" || r?.status === "busy") toast(r.error ?? "Fehler");
           else if (r?.status === "off") toast("Ausgeschaltet.");
           else if (r?.status === "ok") toast(r.suggested ? `${r.suggested} neue${r.suggested === 1 ? "r" : ""} Vorschlag${r.suggested === 1 ? "" : "e"}` : r.errors?.length ? r.errors[0] : "Nichts Neues gefunden");
         } catch (err) { toast(errorText(err)); }

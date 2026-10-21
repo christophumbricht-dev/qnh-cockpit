@@ -71,6 +71,9 @@ test("settings: limits are checked before saving", () => {
     { daily_limit: 12, monthly_budget_usd: 7.5, model: "claude-haiku-5-5", rules: "Keine Emojis." });
   assert.throws(() => settingsPatch({ daily_limit: 0, monthly_budget_usd: 5, model: "claude-sonnet-5-5" }), /pro Tag/);
   assert.throws(() => settingsPatch({ daily_limit: 5, monthly_budget_usd: 900, model: "claude-sonnet-5-5" }), /Budget/);
+  assert.throws(() => settingsPatch({ daily_limit: 5, monthly_budget_usd: "", model: "claude-sonnet-5-5" }), /eingeben/);
+  assert.throws(() => settingsPatch({ daily_limit: 5, monthly_budget_usd: "zehn", model: "claude-sonnet-5-5" }), /Budget/);
+  assert.equal(settingsPatch({ daily_limit: 5, monthly_budget_usd: " 12.50 ", model: "claude-sonnet-5-5" }).monthly_budget_usd, 12.5);
   assert.throws(() => settingsPatch({ daily_limit: 5, monthly_budget_usd: 5, model: "gpt" }), /Modell/);
   assert.equal(tokenDays("2026-11-01T00:00:00Z", Date.parse("2026-10-21T00:00:00Z")), 11);
   assert.equal(tokenDays(null), null);

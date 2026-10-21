@@ -21,8 +21,9 @@ export class GraphError extends Error {
 
 type Params = Record<string, string | number | boolean | undefined | null>;
 
-// Network errors of fetch quote the full URL – which holds the token for GET/DELETE. Never pass that on.
-export const scrubToken = (text: string) => text.replace(/access_token=[^&\s)"']+/g, "access_token=…");
+// Network errors of fetch quote the full URL – which holds the token for GET/DELETE (and for debug_token /
+// the token exchange also input_token, fb_exchange_token, client_secret). Never pass that on.
+export const scrubToken = (text: string) => text.replace(/(access_token|input_token|fb_exchange_token|client_secret)=[^&\s)"']+/g, "$1=…");
 async function send(fetchFn: FetchFn, url: URL, init: RequestInit, host: string) {
   try {
     return await fetchFn(url, init);

@@ -1,11 +1,12 @@
 // Deno tests for «Bei anderen» with mocked Meta and Anthropic APIs: npm run test:functions
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { costUsd, parseSuggestion, promptFor, runOutreach, zurichStarts, type Item, type NewItem, type OutreachSettings, type OutreachStore, type Watch } from "./outreach.ts";
+import { costUsd, cut, parseSuggestion, promptFor, runOutreach, zurichStarts, type Item, type NewItem, type OutreachSettings, type OutreachStore, type Watch } from "./outreach.ts";
+import { scrubToken } from "./graph.ts";
 
 const NOW = new Date("2026-10-21T05:00:00Z");
 const iso = (daysAgo: number) => new Date(NOW.getTime() - daysAgo * 864e5).toISOString().replace(".000Z", "+0000");
 
-function fakeStore(over: Partial<OutreachSettings> = {}, watch: Watch[] = [], opts: { token?: string | null; spentMonth?: number; callsToday?: number } = {}) {
+function fakeStore(over: Partial<OutreachSettings> = {}, watch: Watch[] = [], opts: { token?: string | null; spentMonth?: number; callsToday?: number; locked?: boolean } = {}) {
   const settings: OutreachSettings & Record<string, unknown> = {
     enabled: true, daily_limit: 10, monthly_budget_usd: "10.00", model: "claude-sonnet-5-5", rules: "", ig_user_id: null, ig_username: "", token_expires_at: null, ...over,
   };
@@ -13,7 +14,10 @@ function fakeStore(over: Partial<OutreachSettings> = {}, watch: Watch[] = [], op
   const watchPatches: Array<Record<string, unknown>> = [];
   let token = opts.token === undefined ? "EAAtoken" : opts.token;
   const storedTokens: string[] = [];
+  const lock = { held: opts.locked ?? false, claims: 0, releases: 0 };
   const store: OutreachStore = {
+    async claimRun() { lock.claims++; if (lock.held) return false; lock.held = true; return true; },
+    async releaseRun() { lock.releases++; lock.held = false; },
     async outreachSettings() { return settings; },
     async saveOutreachSettings(p) { Object.assign(settings, p); },
     async watches() { return watch; },
@@ -22,7 +26,7 @@ function fakeStore(over: Partial<OutreachSettings> = {}, watch: Watch[] = [], op
     async insertItems(rows: NewItem[]) { rows.forEach((r, n) => items.push({ ...r, id: `it${items.length + n}`, status: "new", found_at: NOW.toISOString() })); },
     async freshItems(since) { return items.filter((i) => i.status === "new" && new Date(i.posted_at ?? i.found_at) >= new Date(since)); },
     async markStale(before) { items.filter((i) => i.status === "new" && new Date(i.posted_at ?? i.found_at) < new Date(before)).forEach((i) => (i.status = "stale")); },
-    async updateItem(id, p) { Object.assign(items.find((i) => i.id === id)!, p); },
+    async updateItem(id, p) { const it = items.find((i) => i.id === id)!; if (it.status === "new") Object.assign(it, p); },
     async spentSince(since) {
       const own = items.filter((i) => (i as Item & { drafted_at?: string }).drafted_at && new Date((i as Item & { drafted_at?: string }).drafted_at!) >= new Date(since));
       const extra = since.endsWith("T22:00:00.000Z") && since.startsWith("2026-10-20") ? opts.callsToday ?? 0 : 0;
@@ -31,18 +35,20 @@ function fakeStore(over: Partial<OutreachSettings> = {}, watch: Watch[] = [], op
     async outreachToken() { return token; },
     async storeOutreachToken(t) { token = t; storedTokens.push(t); },
   };
-  return { store, settings, items, watchPatches, storedTokens };
+  return { store, settings, items, watchPatches, storedTokens, lock };
 }
 
 type Route = unknown | ((url: URL, body: Record<string, unknown> | null) => unknown);
 function mockFetch(meta: Record<string, Route>, claude: (body: Record<string, unknown>) => { status?: number; body: unknown }) {
   const calls: string[] = [];
   const claudeBodies: Array<Record<string, unknown>> = [];
+  const signals: boolean[] = [];
   const fn = (async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.host === "api.anthropic.com") {
       const body = JSON.parse(String(init?.body));
       claudeBodies.push(body);
+      signals.push(init?.signal instanceof AbortSignal);
       calls.push("claude");
       const r = claude(body);
       return new Response(JSON.stringify(r.body), { status: r.status ?? 200 });
@@ -54,7 +60,7 @@ function mockFetch(meta: Record<string, Route>, claude: (body: Record<string, un
     if (body === undefined) return new Response(JSON.stringify({ error: { message: `no mock ${path}` } }), { status: 400 });
     return new Response(JSON.stringify(body), { status: (body as { error?: unknown }).error ? 400 : 200 });
   }) as typeof fetch;
-  return { fn, calls, claudeBodies };
+  return { fn, calls, claudeBodies, signals };
 }
 
 const answer = (o: Record<string, unknown>, usage = { input_tokens: 3000, output_tokens: 100 }) =>
@@ -188,16 +194,63 @@ Deno.test("an expired Facebook token: one clear message; a watch that fails does
   assert(!m2.calls.includes("me/accounts")); // the account id is known already
 });
 
-Deno.test("token close to expiry is renewed when the app id + secret are set", async () => {
+Deno.test("token close to expiry is renewed when the app id + secret are set – only if Meta confirms a later expiry", async () => {
+  const soon = Math.floor(NOW.getTime() / 1000) + 5 * 86400;
+  const debug = (expires: Record<string, number>) => (url: URL) => ({ data: { is_valid: true, expires_at: expires[url.searchParams.get("input_token")!] } });
   const a = fakeStore({}, []);
   const m = mockFetch({
     ...META_BASE,
-    debug_token: { data: { is_valid: true, expires_at: Math.floor(NOW.getTime() / 1000) + 5 * 86400 } },
-    "oauth/access_token": { access_token: "EAAnew", expires_in: 60 * 86400 },
+    debug_token: debug({ EAAtoken: soon, EAAnew: Math.floor(NOW.getTime() / 1000) + 60 * 86400 }),
+    "oauth/access_token": { access_token: "EAAnew" },   // no expires_in: the expiry comes from debug_token
   }, () => good("x"));
   await runOutreach({ store: a.store, fetch: m.fn, now: () => NOW, anthropicKey: "sk", meta: { appId: "1", appSecret: "s" }, deadline: Date.now() + 60_000 });
   assertEquals(a.storedTokens, ["EAAnew"]);
   assertEquals(a.settings.token_expires_at, new Date(NOW.getTime() + 60 * 864e5).toISOString());
+  assertEquals(a.settings.last_error, null);
+
+  // Meta hands back the same token: nothing stored, the known expiry stays, Christoph gets a note
+  const b = fakeStore({}, []);
+  const m2 = mockFetch({ ...META_BASE, debug_token: debug({ EAAtoken: soon }), "oauth/access_token": { access_token: "EAAtoken", expires_in: 60 * 86400 } }, () => good("x"));
+  await runOutreach({ store: b.store, fetch: m2.fn, now: () => NOW, anthropicKey: "sk", meta: { appId: "1", appSecret: "s" }, deadline: Date.now() + 60_000 });
+  assertEquals(b.storedTokens, []);
+  assertEquals(b.settings.token_expires_at, new Date(soon * 1000).toISOString());
+  assert(String(b.settings.last_error).includes("nicht verlängern"));
+});
+
+Deno.test("one run at a time; the lock is released even when the run fails", async () => {
+  const a = fakeStore({}, [W_ACC], { locked: true });
+  const m = mockFetch(META_BASE, () => good("x"));
+  const r = await runOutreach({ store: a.store, fetch: m.fn, now: () => NOW, anthropicKey: "sk", meta: null, deadline: Date.now() + 60_000 });
+  assertEquals(r.status, "busy");
+  assertEquals(m.calls, []);
+  const b = fakeStore({}, [W_ACC]);
+  b.store.insertItems = () => Promise.reject(new Error("insert failed: invalid input syntax for type json"));
+  const m2 = mockFetch({ ...META_BASE, "17841400000000001": { business_discovery: { username: "meteosuisse", media: { data: [media("1001", 0)] } } } }, () => good("x"));
+  const r2 = await runOutreach({ store: b.store, fetch: m2.fn, now: () => NOW, anthropicKey: "sk", meta: null, deadline: Date.now() + 60_000 });
+  assertEquals(r2.status, "failed");
+  assert(String(b.settings.last_error).includes("insert failed"));
+  assertEquals(b.lock.held, false);
+});
+
+Deno.test("long captions are cut by characters (no half emoji); a refused field is asked again without it; calls have a timeout", async () => {
+  const caption = "a".repeat(2199) + "😀b";
+  assertEquals(Array.from(cut(caption, 2200)).length, 2200);
+  assert(cut(caption, 2200).endsWith("😀"));
+  const a = fakeStore({}, [W_ACC]);
+  const m = mockFetch({ ...META_BASE, "17841400000000001": (url: URL) => url.searchParams.get("fields")!.includes("thumbnail_url")
+    ? { error: { message: "(#100) Tried accessing nonexisting field (thumbnail_url)", code: 100 } }
+    : { business_discovery: { username: "meteosuisse", media: { data: [media("1001", 0, { caption })] } } } }, () => good("Föhn dries the air as it sinks."));
+  await runOutreach({ store: a.store, fetch: m.fn, now: () => NOW, anthropicKey: "sk", meta: null, deadline: Date.now() + 60_000 });
+  assertEquals(a.items[0].status, "proposed");
+  assert(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(a.items[0].caption));
+  assertEquals(m.signals, [true]);
+});
+
+Deno.test("tokens and secrets never show up in error texts", () => {
+  const msg = "error sending request for url (https://graph.facebook.com/v25.0/debug_token?input_token=EAAsecret1&access_token=EAAsecret1): reset; oauth?client_secret=abc123&fb_exchange_token=EAAx2";
+  const clean = scrubToken(msg);
+  assert(!/EAAsecret1|abc123|EAAx2/.test(clean));
+  assert(clean.includes("input_token=…"));
 });
 
 Deno.test("parseSuggestion: JSON inside text; links, hashtags and self-promotion are dropped", () => {

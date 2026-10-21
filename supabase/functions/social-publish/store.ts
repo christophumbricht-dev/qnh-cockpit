@@ -129,14 +129,24 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
     },
     async freshItems(since) {
       return must(await db.from("outreach_items").select(ITEM_COLS).eq("status", "new")
-        .or(`posted_at.gte.${since},and(posted_at.is.null,found_at.gte.${since})`).limit(200), "fresh finds") as Item[];
+        .or(`posted_at.gte.${since},and(posted_at.is.null,found_at.gte.${since})`)
+        .order("posted_at", { ascending: false, nullsFirst: false }).order("found_at", { ascending: false }).limit(200), "fresh finds") as Item[];
     },
     async markStale(before) {
       must(await db.from("outreach_items").update({ status: "stale" }).eq("status", "new")
         .or(`posted_at.lt.${before},and(posted_at.is.null,found_at.lt.${before})`), "stale finds");
     },
     async updateItem(id, patch) {
-      must(await db.from("outreach_items").update(patch).eq("id", id), "suggestion");
+      // only a post that is still "new" gets a suggestion (never overwrite one that was already paid for)
+      must(await db.from("outreach_items").update(patch).eq("id", id).eq("status", "new"), "suggestion");
+    },
+    async claimRun(now, until) {
+      const rows = must(await db.from("outreach_settings").update({ run_lock_until: until.toISOString() }).eq("id", true)
+        .or(`run_lock_until.is.null,run_lock_until.lt.${now.toISOString()}`).select("id"), "run lock") as Array<{ id: boolean }>;
+      return rows.length === 1;
+    },
+    async releaseRun() {
+      must(await db.from("outreach_settings").update({ run_lock_until: null }).eq("id", true), "run lock");
     },
     async spentSince(since) {
       let usd = 0, calls = 0;

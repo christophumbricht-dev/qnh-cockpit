@@ -74,7 +74,10 @@ export const tokenDays = (iso, now = Date.now()) => (iso ? Math.floor((new Date(
 
 // settings form → checked patch, or a German error
 export function settingsPatch({ daily_limit, monthly_budget_usd, model, rules }) {
-  const limit = Number(daily_limit), budget = Number(String(monthly_budget_usd).replace(",", "."));
+  const limit = Number(daily_limit);
+  const rawBudget = String(monthly_budget_usd ?? "").trim().replace(/['’\s]/g, "").replace(",", ".");
+  if (!rawBudget) throw new Error("Budget pro Monat eingeben (0 = keine neuen Vorschläge).");
+  const budget = Number(rawBudget);
   if (!Number.isInteger(limit) || limit < 1 || limit > DAILY_MAX) throw new Error(`Vorschläge pro Tag: 1 bis ${DAILY_MAX}.`);
   if (!Number.isFinite(budget) || budget < 0 || budget > BUDGET_MAX) throw new Error(`Budget pro Monat: 0 bis ${BUDGET_MAX} USD.`);
   if (!MODELS.some(([m]) => m === model)) throw new Error("Unbekanntes Modell.");
