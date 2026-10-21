@@ -89,7 +89,7 @@ update public.social_accounts set token_expires_at = now() + interval '60 days' 
 ```
 
 ## 9. Server-Teil hochladen (10 Min.)
-In PowerShell im Ordner `C:\Projects\qnh-cockpit` (die Projekt-ID ist der Teil `xxxx` aus `https://xxxx.supabase.co`):
+In PowerShell im Ordner `C:\QNH\01_Firma\cockpit` (die Projekt-ID ist der Teil `xxxx` aus `https://xxxx.supabase.co`):
 ```
 npx supabase login
 npx supabase link --project-ref PROJEKT-ID
@@ -111,7 +111,7 @@ npx supabase secrets set SOCIAL_CRON_SECRET=DAS_ZUFALLSWORT --project-ref PROJEK
    Ab jetzt prüft Supabase **alle 10 Minuten**, ob ein freigegebener Beitrag fällig ist, erneuert montags die Tokens (wenn sie in weniger als 20 Tagen ablaufen) und löscht täglich die Dateien von Beiträgen, die vor mehr als 14 Tagen veröffentlicht wurden.
 
 ## 11. Cockpit verbinden (5 Min.)
-- **Lokal:** in `C:\Projects\qnh-cockpit\.env` ergänzen: `VITE_QNH_SUPABASE_URL=…` und `VITE_QNH_SUPABASE_ANON_KEY=…` (Werte aus Schritt 5.3).
+- **Lokal:** in `C:\QNH\01_Firma\cockpit\.env` ergänzen: `VITE_QNH_SUPABASE_URL=…` und `VITE_QNH_SUPABASE_ANON_KEY=…` (Werte aus Schritt 5.3).
 - **Online:** dieselben zwei Werte als GitHub-*Variables* (siehe `docs/hosting.md`, Schritt 3).
 - Cockpit neu laden → «QNH Cockpit – intern» → mit deiner E-Mail und dem Code anmelden → Reiter **Social**.
 
@@ -138,7 +138,7 @@ Das Cockpit holt alle 15 Minuten die Kommentare unter deinen eigenen Instagram-B
 
 Einrichten (einmal, ca. 10 Min.):
 1. **SQL Editor → New query** → Inhalt von `supabase/migrations/20261020100000_social_comments.sql` → **Run**.
-2. Server-Teil neu hochladen (PowerShell im Ordner `C:\Projects\qnh-cockpit`):
+2. Server-Teil neu hochladen (PowerShell im Ordner `C:\QNH\01_Firma\cockpit`):
    ```
    npx supabase functions deploy social-publish --project-ref PROJEKT-ID
    ```

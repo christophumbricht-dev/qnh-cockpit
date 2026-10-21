@@ -26,7 +26,7 @@ const DIR = join(ROOT, "pakete");
 const MARKERS = join(DIR, ".imported.json");
 const BUCKET = "social-media";
 // story images named in to-dos ("Bild s1-beta"): looked up in the package folder, then in the Downwind render output
-const ASSET_DIRS = [join(ROOT, "..", "downwind", "docs", "instagram", "out", "jpg")];
+const ASSET_DIRS = [join(ROOT, "..", "..", "02_Apps", "Downwind", "app", "docs", "instagram", "out", "jpg")]; // cockpit lives in C:/QNH/01_Firma/cockpit
 const ASSET_NAME = /\bBild ([a-z]\d{0,2}-[a-z0-9-]+)/gi;
 const STATUS = { draft: "Entwurf", approved: "freigegeben", publishing: "wird veröffentlicht", published: "veröffentlicht", failed: "Fehler", cancelled: "abgebrochen" };
 const ext = (type) => (type === "image/jpeg" ? "jpg" : type === "video/quicktime" ? "mov" : "mp4");

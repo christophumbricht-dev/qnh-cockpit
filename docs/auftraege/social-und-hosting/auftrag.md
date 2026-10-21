@@ -7,7 +7,7 @@ Goal: the cockpit runs online at **https://cockpit.setqnh.ch** and gets a **Soci
 Rules (as always): talk German to Christoph, code/commits English. Commit after each point on `main`
 (repo has no commits yet: first commit = current state, check `.env` is ignored). **No push, no repo creation,
 no deploys, no Supabase project creation, migrations written but not applied, no secrets anywhere in the repo or chat.**
-Do not touch `C:\Projects\downwind`. German summary + test list at the end.
+Do not touch `C:\QNH\02_Apps\Downwind\app`. German summary + test list at the end.
 
 ## H – Hosting on cockpit.setqnh.ch (static, GitHub Pages)
 - **H1 First commit + safety.** Rename branch to `main`. `.gitignore` covers `.env`, `dist`, `node_modules`.
@@ -31,7 +31,7 @@ Do not touch `C:\Projects\downwind`. German summary + test list at the end.
 
 ## S – Social module, stage 1 (publish with approval)
 Backend lives in a separate free Supabase project **"QNH Core"** (Christoph creates it; region Zurich if offered).
-First check `C:\Users\cu89\Desktop\Christoph\Fliegen\Website Flying\QNH Core` – if there is already a QNH Core
+First check `C:\QNH\02_Apps\_Vorlage-QNH-Core` – if there is already a QNH Core
 setup, build on it and tell Christoph; otherwise put the backend in `qnh-cockpit/supabase/` (migrations + functions).
 The cockpit signs in to QNH Core like to the apps (same 6-digit code flow, `shouldCreateUser: false`; Christoph
 creates his user once in the Supabase dashboard – describe it).

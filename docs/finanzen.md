@@ -31,7 +31,7 @@ Einmal im SQL-Editor `supabase/migrations/20261021120000_finance_private.sql` au
 - Beim Erfassen **«Bezahlt von: Christoph privat»** wählen – die Rechnung gilt als bezahlt, und die GmbH schuldet dir den Betrag. Dazu MWST und «Bezahlt mit» (Kreditkarte, Twint …).
 - Oben steht **«Offen an Christoph»** (pro Währung, nie umgerechnet), darunter die Liste. Überweist dir die GmbH das Geld: **«Zurückbezahlt ✓»** (einzeln oder alle auf einmal).
 - Viele Belege auf einmal: am Laptop eine `ausgaben.json` neben die PDFs legen und
-  `npm.cmd run finanzen -- import "C:\Projects\QNH-Ablage\Buchhaltung\<Ordner>\ausgaben.json"` ausführen (zuerst mit `--dry` als Probelauf).
+  `npm.cmd run finanzen -- import "C:\QNH\04_Finanzen\Buchhaltung\<Ordner>\ausgaben.json"` ausführen (zuerst mit `--dry` als Probelauf).
   Lädt jeden Beleg mit seinem PDF hoch, legt wiederkehrende Kosten als Abo an und überspringt, was schon im Cockpit ist – darf also mehrmals laufen. Einträge mit `"reimburse": false` (privat, nicht abrechnen) werden nicht übernommen. Format: siehe Kopf von `scripts/finanzen-lib.mjs`.
 - `npm.cmd run finanzen -- offen` zeigt, was die GmbH dir noch schuldet.
 

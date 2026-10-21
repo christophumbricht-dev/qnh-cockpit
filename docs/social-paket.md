@@ -80,9 +80,9 @@ Das Cockpit prüft alles beim Import und zeigt Fehler im Editor an. Ein Paket mi
 
 ## Vorlage für den Claude-Chat
 
-> Bereite einen Instagram-Beitrag für **Downwind** vor (Brand-Profil: `C:\Projects\downwind\docs\instagram\brand-profile.md`).
+> Bereite einen Instagram-Beitrag für **Downwind** vor (Brand-Profil: `C:\QNH\02_Apps\Downwind\app\docs\instagram\brand-profile.md`).
 > Thema: … · Art: Karussell mit 3 Bildern · geplant für Donnerstag 18:00.
-> Gib mir am Ende eine `post.json` im Format aus `C:\Projects\qnh-cockpit\docs\social-paket.md` und sag mir, welche Bilder ich als `1.jpg`, `2.jpg`, … in den Ordner legen soll.
+> Gib mir am Ende eine `post.json` im Format aus `C:\QNH\01_Firma\cockpit\docs\social-paket.md` und sag mir, welche Bilder ich als `1.jpg`, `2.jpg`, … in den Ordner legen soll.
 
 ## Automatisch importieren (Claude auf diesem PC)
 

@@ -108,7 +108,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
 
 - [ ] **C5 (nebenbei) Verlauf-Diagramme in Downwind freischalten**
   1. Supabase → **Downwind** → **SQL Editor** → **New query**.
-  2. Ganzen Inhalt von `C:\Projects\downwind\supabase\apply-pending.sql` einfügen → **Run** → «Success».
+  2. Ganzen Inhalt von `C:\QNH\02_Apps\Downwind\app\supabase\apply-pending.sql` einfügen → **Run** → «Success».
 
 ---
 
@@ -135,7 +135,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
   1. **Authentication → Users → Add user → Create new user**: `DEINE-ADMIN-EMAIL`, ein langes beliebiges Passwort, **Auto Confirm User** an → **Create**.
 
 - [ ] **D4 Datenbank einrichten**
-  1. **SQL Editor → New query** → ganzen Inhalt von `C:\Projects\qnh-cockpit\supabase\migrations\20261013100000_social.sql` einfügen → **Run** → «Success».
+  1. **SQL Editor → New query** → ganzen Inhalt von `C:\QNH\01_Firma\cockpit\supabase\migrations\20261013100000_social.sql` einfügen → **Run** → «Success».
   2. Neue Query:
      ```sql
      insert into public.qnh_admins (user_id)
@@ -153,7 +153,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
      | `VITE_QNH_SUPABASE_ANON_KEY` | anon-Key von qnh-core |
 
   2. **Actions** → letzter Lauf → **Re-run all jobs**.
-  3. **→ Claude:** «QNH Core ist angelegt» – ich trage die Werte auch in deine lokale `.env` ein, wenn du sie mir als *öffentliche* URL/anon-Key gibst (der anon-Key ist nicht geheim), oder du trägst sie selbst in `C:\Projects\qnh-cockpit\.env` ein.
+  3. **→ Claude:** «QNH Core ist angelegt» – ich trage die Werte auch in deine lokale `.env` ein, wenn du sie mir als *öffentliche* URL/anon-Key gibst (der anon-Key ist nicht geheim), oder du trägst sie selbst in `C:\QNH\01_Firma\cockpit\.env` ein.
   - ✅ Geklappt, wenn das Cockpit beim Anmelden jetzt einen Code von **QNH Core** schickt und danach der Reiter **Social** erscheint (noch ohne Konto).
 
 ---
@@ -199,7 +199,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
 
 - [ ] **F2 Server-Teil hochladen** (PowerShell)
   ```
-  cd C:\Projects\qnh-cockpit
+  cd C:\QNH\01_Firma\cockpit
   npx supabase login
   npx supabase link --project-ref PROJEKT-ID
   npx supabase functions deploy social-publish --project-ref PROJEKT-ID
@@ -221,7 +221,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
      ```
 
 - [ ] **F4 Zeitplan einschalten**
-  1. SQL Editor → neue Query → ganzen Inhalt von `C:\Projects\qnh-cockpit\supabase\migrations\20261013100100_social_cron.sql` → **Run**.
+  1. SQL Editor → neue Query → ganzen Inhalt von `C:\QNH\01_Firma\cockpit\supabase\migrations\20261013100100_social_cron.sql` → **Run**.
   - Ab jetzt prüft Supabase alle 10 Minuten, ob ein freigegebener Beitrag fällig ist.
 
 ---
@@ -240,7 +240,7 @@ Du musst nicht alles an einem Tag machen. Nach jedem Teil funktioniert das bishe
 
 ---
 
-## H – Profile (Texte zum Kopieren in `C:\Projects\setqnh-website\docs\social-profile.md`)
+## H – Profile (Texte zum Kopieren in `C:\QNH\01_Firma\website\docs\social-profile.md`)
 
 - [ ] **H1 LinkedIn-Unternehmensseite** «QNH GmbH», URL `linkedin.com/company/setqnh`, Logo und Titelbild aus `Website Flying\QNH Logo\social\`.
 - [ ] **H2 Instagram @setqnh** reservieren (Profil sauber, Inhalte laufen über @fly_downwind).

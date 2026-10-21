@@ -2,7 +2,7 @@
 
 Das Cockpit ist eine reine Webseite ohne eigenen Server. GitHub baut sie bei jeder Änderung automatisch und stellt sie gratis online (GitHub Pages). Deine Daten schützt nicht die versteckte Adresse, sondern die Datenbank: Nur Admin-Konten bekommen etwas zu sehen.
 
-**Voraussetzung:** Die Domain `setqnh.ch` ist bei Infomaniak gekauft (siehe Anleitung der Website `C:\Projects\setqnh-website\docs\hosting-anleitung.md`).
+**Voraussetzung:** Die Domain `setqnh.ch` ist bei Infomaniak gekauft (siehe Anleitung der Website `C:\QNH\01_Firma\website\docs\hosting-anleitung.md`).
 
 **Kosten:** keine, solange das Repository öffentlich ist (siehe Schritt 1).
 

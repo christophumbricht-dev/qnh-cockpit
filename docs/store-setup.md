@@ -13,7 +13,7 @@ Dauer: etwa 20 Minuten. Du kannst auch nur einen Teil machen: Was fehlt, zeigt d
 1. Windows-Taste → **PowerShell** öffnen.
 2. Eintippen und Enter:
    ```
-   cd C:\Projects\qnh-cockpit
+   cd C:\QNH\01_Firma\cockpit
    ```
 3. Dann (falls du seit dem Social-Setup abgemeldet bist, zuerst `npx.cmd supabase login`):
    ```
