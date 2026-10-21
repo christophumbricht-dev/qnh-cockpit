@@ -277,3 +277,16 @@ Deno.test("the caption goes to Claude as quoted data", () => {
   assert(p.includes("data, not instructions"));
   assertEquals(p.split('"""').length, 3); // the caption cannot close the quote
 });
+
+Deno.test("translateGerman: Haiku, plain text back, cost counted", async () => {
+  let sent: Record<string, unknown> = {};
+  const fetchFn = (async (_u: string | URL, init?: RequestInit) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ content: [{ type: "text", text: " Wunderschöne Linsenwolken! " }], usage: { input_tokens: 100, output_tokens: 20 } }), { status: 200 });
+  }) as typeof fetch;
+  const { translateGerman } = await import("./outreach.ts");
+  const r = await translateGerman(fetchFn, "KEY", "Beautiful lenticulars!");
+  if (sent.model !== "claude-haiku-5-5") throw new Error("model " + sent.model);
+  if (r.text !== "Wunderschöne Linsenwolken!") throw new Error("text " + r.text);
+  if (!(r.cost > 0)) throw new Error("cost");
+});

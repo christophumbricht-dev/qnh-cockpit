@@ -27,7 +27,7 @@ import { cleanup, FinalError, publishDue, refreshTokens, type Deps } from "./pub
 import { supabaseStore } from "./store.ts";
 import { followUpYoutube } from "./youtube.ts";
 import { collectStats } from "./stats.ts";
-import { runOutreach } from "./outreach.ts";
+import { runOutreach, translateGerman } from "./outreach.ts";
 import { fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
 
 const cors = {
@@ -57,7 +57,7 @@ async function isAdmin(req: Request): Promise<boolean> {
 }
 
 // ops that act in Christoph's name: only from the cockpit, never from cron
-const ADMIN_ONLY = new Set(["reply", "moderate", "youtube-auth", "youtube-connect"]);
+const ADMIN_ONLY = new Set(["reply", "moderate", "youtube-auth", "youtube-connect", "outreach-translate"]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -102,6 +102,20 @@ Deno.serve(async (req) => {
     if (op === "moderate") return json(await moderate(cdeps, str(body.comment_id), str(body.action) as ModerateAction));
     if (op === "youtube-auth") return json(youtubeAuth(google, allowed, str(body.app_id), str(body.redirect_uri), str(body.state)));
     if (op === "youtube-connect") return json(await youtubeConnect(cdeps, allowed, str(body.app_id), str(body.code), str(body.redirect_uri)));
+    if (op === "outreach-translate") {
+      // admin only: German translation of a suggestion; the small cost is added to that suggestion (budget)
+      const key = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!key) return json({ error: "ANTHROPIC_API_KEY fehlt" }, 400);
+      const text = str(body.text).slice(0, 2200), id = str(body.item_id);
+      if (!text.trim()) return json({ error: "Kein Text" }, 400);
+      const t = await translateGerman(fetch, key, text);
+      if (/^[0-9a-f-]{36}$/.test(id)) {
+        const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+        const { data: row } = await db.from("outreach_items").select("cost_usd").eq("id", id).maybeSingle();
+        if (row) await db.from("outreach_items").update({ cost_usd: Number(row.cost_usd) + t.cost }).eq("id", id);
+      }
+      return json({ text: t.text });
+    }
     if (op === "outreach") {
       const appId = Deno.env.get("META_APP_ID") ?? "", appSecret = Deno.env.get("META_APP_SECRET") ?? "";
       return json(await runOutreach({

@@ -8,7 +8,7 @@ import * as data from "./data.js";
 import { BUDGET_MAX, DAILY_MAX, FILTERS, MODELS, byFilter, costSummary, monthName, openCount, parseWatch, settingsPatch, tokenDays, usd, watchLabel, web } from "./outreach.js";
 
 export function createOutreach({ S, render, toast, errorText }) {
-  S.social.out = { filter: "proposed", texts: {}, busy: new Set(), running: false, saving: false, watchInput: "" };
+  S.social.out = { filter: "proposed", texts: {}, de: {}, busy: new Set(), running: false, saving: false, watchInput: "" };
   const st = () => S.social.out;
   const value = () => S.social.value?.outreach;   // null = not set up (migration missing)
   const items = () => value()?.items ?? [];
@@ -103,6 +103,9 @@ export function createOutreach({ S, render, toast, errorText }) {
       <p class="hint">«Kopieren &amp; öffnen» kopiert den Text und öffnet den Post. In Instagram aufs Kommentarfeld tippen, einfügen, lesen, posten – dann hier «Erledigt ✓». Kommentiere nicht alles: ein guter Kommentar schlägt fünf schnelle.</p>`;
   }
 
+  // «Mo 19.10., 14:32» in Swiss time
+  const postedWhen = (iso) => new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)).replace(",", "");
+
   function itemCard(it) {
     const busy = st().busy.has(it.id) ? " disabled" : "";
     const text = st().texts[it.id] ?? it.draft;
@@ -115,14 +118,18 @@ export function createOutreach({ S, render, toast, errorText }) {
       ${img ? `<a class="out-thumb" href="${esc(link ?? img)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>` : ""}
       <div class="out-main">
         <div class="cmt-head"><b>${esc(who)}</b>
-          ${it.posted_at ? `<span class="muted small">${esc(relTime(it.posted_at))}</span>` : ""}
+          ${it.posted_at ? `<span class="muted small" title="${esc(new Date(it.posted_at).toLocaleString("de-CH"))}">gepostet ${esc(postedWhen(it.posted_at))} · ${esc(relTime(it.posted_at))}</span>` : ""}
           ${it.like_count != null ? `<span class="muted small">♥ ${num(it.like_count)}</span>` : ""}
           ${it.comments_count != null ? `<span class="muted small">💬 ${num(it.comments_count)}</span>` : ""}
           ${it.status === "done" ? `<span class="pill published">kommentiert${it.done_at ? ` ${esc(relTime(it.done_at))}` : ""}</span>` : it.status === "dismissed" ? `<span class="pill draft">verworfen</span>` : ""}</div>
         ${caption ? `<p class="out-caption">${esc(caption)}</p>` : ""}
         ${it.reason ? `<p class="muted small out-reason">${esc(it.reason)}</p>` : ""}
         ${open ? `<textarea name="out-text-${esc(it.id)}" rows="4" maxlength="2200" aria-label="Kommentar für ${esc(who)}"${busy}>${esc(text)}</textarea>
-          ${it.alt_draft && it.alt_draft !== text ? `<button class="link out-alt" data-action="soc-out-alt" data-id="${esc(it.id)}">Andere Variante zeigen</button>` : ""}
+          <div class="out-tools">
+            ${it.alt_draft && it.alt_draft !== text ? `<button class="link out-alt" data-action="soc-out-alt" data-id="${esc(it.id)}">Andere Variante zeigen</button>` : ""}
+            <button class="link" data-action="soc-out-de" data-id="${esc(it.id)}"${st().de[it.id]?.busy ? " disabled" : ""}>${st().de[it.id]?.busy ? "Übersetzt …" : "Auf Deutsch"}</button>
+          </div>
+          ${st().de[it.id]?.text ? `<p class="out-de"><span class="muted small">Auf Deutsch${st().de[it.id].of !== text ? " (vom vorherigen Text)" : ""}:</span> ${esc(st().de[it.id].text)}</p>` : ""}
           <div class="actions">
             ${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener" data-action="soc-out-copy" data-id="${esc(it.id)}">Kopieren &amp; öffnen</a>` : `<button class="btn" data-action="soc-out-copy" data-id="${esc(it.id)}">Kopieren</button>`}
             <button class="btn ghost" data-action="soc-out-done" data-id="${esc(it.id)}"${busy}>Erledigt ✓</button>
@@ -178,6 +185,17 @@ export function createOutreach({ S, render, toast, errorText }) {
         toast("Kommentar kopiert – in Instagram einfügen und posten, dann hier «Erledigt ✓».");
         const t = edited(it);
         if (t !== undefined) data.saveOutreachDraft(id, t).catch(() => {});
+        return true;
+      }
+      case "soc-out-de": {
+        if (!it) return true;
+        const text = (st().texts[id] ?? it.draft).trim();
+        if (!text) return true;
+        st().de[id] = { ...(st().de[id] ?? {}), busy: true };
+        render();
+        try { st().de[id] = { text: await data.translateOutreach(id, text), of: text }; }
+        catch (err) { delete st().de[id]; toast(errorText(err)); }
+        render();
         return true;
       }
       case "soc-out-alt":

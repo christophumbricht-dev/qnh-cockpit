@@ -117,6 +117,11 @@ export async function saveOutreachDraft(id, draft) {
   if (DEMO) return demo.outreachItem(id, { draft });
   must(await sb().from("outreach_items").update({ draft }).eq("id", id), "suggestion");
 }
+// German translation of a suggestion (cheap Claude call on the server, cost counts to the budget)
+export async function translateOutreach(id, text) {
+  if (DEMO) return `(Deutsch) ${text}`;
+  return (await op({ op: "outreach-translate", item_id: id, text })).text ?? "";
+}
 export const runOutreach = async () => (DEMO ? demo.runOutreach() : op({ op: "outreach" }));
 export function subscribeOutreach(onChange) {
   if (DEMO) return demo.subscribe(onChange);
