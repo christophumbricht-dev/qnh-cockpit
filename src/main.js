@@ -409,11 +409,19 @@ function socialItems(today) {
   const outreach = social.outreachCount();
   if (outreach) out.push({ key: "outreach", lane: "today", tone: "info", title: `${outreach} Kommentar-Vorschl${outreach === 1 ? "ag" : "äge"} für andere Accounts`, sub: "kopieren, in Instagram posten, abhaken", where: "Social", href: "#social/bei-anderen" });
   for (const p of v.posts) {
-    if (!["draft", "approved"].includes(p.status) || !p.scheduled_at || !social.todoOpen(p.todo)) continue;
+    if (!social.todoOpen(p.todo)) continue;
+    const task = social.todoFirstOpen(p.todo).slice(0, 90);
+    if (p.status === "published" && p.published_at) {
+      // published in the last 3 days and not everything ticked off
+      if (now - new Date(p.published_at).getTime() > 3 * 864e5) continue;
+      out.push({ key: `hand:${p.id}`, lane: "now", tone: "alert", title: `Nach dem Posten: ${task}`, sub: `${where(p)} · veröffentlicht ${formatZurich(p.published_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+      continue;
+    }
+    if (!["draft", "approved"].includes(p.status) || !p.scheduled_at) continue;
     const day = zurichToday(new Date(p.scheduled_at));
     const lane = laneForDate(day, today, { weekDays: 2 });
     if (!lane) continue;
-    out.push({ key: `hand:${p.id}`, lane, tone: "info", date: day, title: `Von Hand: ${p.todo.trim().split("\n")[0].slice(0, 90)}`, sub: `${where(p)} · ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+    out.push({ key: `hand:${p.id}`, lane, tone: "info", date: day, title: `Von Hand: ${task}`, sub: `${where(p)} · ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
   }
   for (const a of v.accounts) {
     const days = a.token_expires_at ? Math.floor((new Date(a.token_expires_at) - now) / 864e5) : null;

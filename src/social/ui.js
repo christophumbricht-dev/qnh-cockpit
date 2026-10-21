@@ -296,7 +296,21 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // "what Christoph still does by hand in Instagram" – shown unless it says there is nothing to do
-  const todoOpen = (t) => Boolean(t?.trim()) && !/^nichts\b/i.test(t.trim());
+  // one task per line; a done task starts with "✓ " (stored in the note, so every device and the CLI see it)
+  const todoLines = (t) => (/^nichts\b/i.test(String(t ?? "").trim()) ? [] : String(t ?? "").split("\n").map((l) => l.trim()).filter(Boolean)
+    .map((l) => ({ done: /^✓\s*/.test(l), text: l.replace(/^✓\s*/, "") })));
+  const todoOpen = (t) => todoLines(t).some((l) => !l.done);
+  const todoFirstOpen = (t) => todoLines(t).find((l) => !l.done)?.text ?? "";
+  function toggleTodoLine(t, index) {
+    const lines = String(t ?? "").split("\n");
+    let n = -1;
+    return lines.map((l) => {
+      if (!l.trim()) return l;
+      n++;
+      if (n !== index) return l;
+      return /^\s*✓\s*/.test(l) ? l.replace(/^\s*✓\s*/, "") : `✓ ${l.trim()}`;
+    }).join("\n");
+  }
   // "Bild s1-beta" → link to the story image (save it on the phone); web addresses → link + copy button for link stickers
   function todoHtml(t) {
     return esc(t.trim())
@@ -335,7 +349,15 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const found = HOWTO.filter(([a, b]) => String(t).split("\n").some((line) => a.test(line) && b.test(line)));
     return found.map(([, , title, steps]) => `<details class="howto"><summary>So geht's: ${title}</summary><ol>${steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></details>`).join("");
   }
-  const todoBox = (t, where = "Instagram") => (todoOpen(t) ? `<div class="soc-todo"><b>Selbst in ${esc(where)} erledigen</b><p>${todoHtml(t)}</p>${howtoHtml(t)}</div>` : "");
+  // checklist: tick each hand job off after doing it in the app
+  function todoBox(t, where = "Instagram", id = null) {
+    const lines = todoLines(t);
+    if (!lines.length) return "";
+    const done = lines.filter((l) => l.done).length, all = done === lines.length;
+    const items = lines.map((l, i) => `<li class="${l.done ? "done" : ""}"><label>${id ? `<input type="checkbox" data-action="soc-todo-check" data-id="${esc(id)}" data-value="${i}"${l.done ? " checked" : ""}>` : ""}<span>${todoHtml(l.text)}</span></label></li>`).join("");
+    return `<div class="soc-todo${all ? " all-done" : ""}"><b>${all ? "✓ Alles erledigt" : `Selbst in ${esc(where)} erledigen`}</b> <span class="muted small">${done}/${lines.length}</span>
+      <ul class="todo-check">${items}</ul>${all ? "" : howtoHtml(lines.filter((l) => !l.done).map((l) => l.text).join("\n"))}</div>`;
+  }
 
   function postItem(p) {
     const a = account(p.account_id);
@@ -360,7 +382,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         ${p.title ? `<p class="text"><b>${esc(p.title)}</b></p>` : ""}
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
         ${twinHtml(twinOf(p))}
-        ${todoBox(p.todo, PLATFORM[a?.platform] ?? "Instagram")}
+        ${todoBox(p.todo, PLATFORM[a?.platform] ?? "Instagram", p.id)}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
         <div class="actions">${actions.join("")}</div>
       </div>
@@ -518,7 +540,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
           ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in ${esc(where)} erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
-            ${todoOpen(ed.todo) ? `<p class="soc-todo-preview">${todoHtml(ed.todo)}</p>${howtoHtml(ed.todo)}` : ""}
+            ${todoLines(ed.todo).length ? todoBox(ed.todo, "", ed.isNew ? null : ed.id).replace(/<b>[^<]*<\/b>/, "") : ""}
             <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
             ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
@@ -754,6 +776,17 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         try { await navigator.clipboard.writeText(el.dataset.value); toast("Link kopiert – im Story-Editor beim Link-Sticker einfügen"); }
         catch { prompt("Link kopieren:", el.dataset.value); }
         return true;
+      case "soc-todo-check": {
+        const p = posts().find((x) => x.id === id);
+        if (!p) return true;
+        const before = p.todo;
+        p.todo = toggleTodoLine(before, Number(el.dataset.value));
+        if (st.editor?.id === id) st.editor.todo = p.todo;
+        render();
+        try { await data.setTodo(id, p.todo); }
+        catch (err) { p.todo = before; if (st.editor?.id === id) st.editor.todo = before; toast(errorText(err)); render(); }
+        return true;
+      }
       case "soc-save-todo":
         await busy(ed, async () => { await data.setTodo(ed.id, ed.todo ?? ""); ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
         return true;
@@ -957,6 +990,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
   const setMode = (mode) => { if (["list", "calendar", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
-  return { onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+  return { todoFirstOpen, onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }
