@@ -47,5 +47,8 @@ Unten auf der Seite: **Zeitraum** wählen (dieses Jahr, letztes Jahr, alles), da
 - Auf «Heute» verschiebt **Morgen** einen fälligen Eintrag auf morgen.
 - Claude macht es gleich: `npm run roadmap -- set <id> --status done` schiebt einen wiederkehrenden Eintrag weiter; nur mit `--final` wird er abgeschlossen.
 
+## API-Verbrauch (Kommentar-Vorschläge)
+Unter **Kosten & Abos** zeigt der Block **«API-Verbrauch»**, was die Kommentar-Vorschläge von Social → «Bei anderen» bei Anthropic kosten: diesen Monat (Schweizer Zeit) im Verhältnis zum Monatsbudget, die letzten Monate und das laufende Jahr. Gerechnet wird pro Vorschlag aus den Tokens mit den Preisen von Anthropic (USD). Das ist der **Verbrauch** – bezahlt wird über Guthaben, das du bei Anthropic per Kreditkarte auflädst. Diese Aufladungen erfasst du wie jede Quittung als Beleg (Kategorie «Software»). Ein/Aus und Budget stellst du in «Bei anderen» ein (`docs/social-outreach.md`).
+
 ## Später (noch nicht eingebaut)
 Belege per Foto (Spesen), Einnahmen aus dem App Store, Anbindung an die Buchhaltung (z. B. Bexio), pain.001-Datei für den Sammelauftrag im E-Banking.

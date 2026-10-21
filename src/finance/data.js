@@ -31,7 +31,19 @@ export async function loadFinance() {
   const bills = await sb().from("fin_bills").select("*")
     .or(`status.eq.open,updated_at.gte.${since}${privateOk ? ",and(paid_by.eq.privat,reimbursed_at.is.null)" : ""}`)
     .order("due_date", { ascending: true, nullsFirst: false }).limit(1000);
-  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk };
+  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk, api: await loadApiCosts() };
+}
+
+// What the comment suggestions («Bei anderen», Anthropic API) cost per month – computed by social-publish from the
+// tokens of each suggestion (migration 20261021140000_social_outreach.sql). null = not set up yet.
+export async function loadApiCosts() {
+  if (DEMO) return demo.apiCosts();
+  const [months, settings] = await Promise.all([
+    sb().from("outreach_cost_months").select("month, calls, suggestions, usd").order("month", { ascending: false }).limit(24),
+    sb().from("outreach_settings").select("enabled, monthly_budget_usd, model").maybeSingle(),
+  ]);
+  if (months.error || settings.error || !settings.data) return null;
+  return { months: months.data, budget: settings.data.monthly_budget_usd, enabled: settings.data.enabled, model: settings.data.model };
 }
 
 export async function saveCost(row) {
@@ -113,5 +125,9 @@ export function subscribe(onChange) {
   const ch = sb().channel("finance")
     .on("postgres_changes", { event: "*", schema: "public", table: "fin_bills" }, onChange)
     .subscribe();
-  return () => sb().removeChannel(ch);
+  // own channel: until the outreach migration has run, this table does not exist – that must not stop the bills
+  const api = sb().channel("finance-api")
+    .on("postgres_changes", { event: "*", schema: "public", table: "outreach_items" }, onChange)   // new suggestion = new cost
+    .subscribe();
+  return () => { sb().removeChannel(ch); sb().removeChannel(api); };
 }

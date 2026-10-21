@@ -4,6 +4,7 @@ import type { Account, Post, Store } from "./publish.ts";
 import type { MediaRow, StatsStore } from "./stats.ts";
 import type { CommentsStore, StoredComment } from "./comments.ts";
 import type { FollowUpStore } from "./youtube.ts";
+import type { Item, OutreachSettings, OutreachStore, Watch } from "./outreach.ts";
 
 const BUCKET = "social-media";
 const ACCOUNT_COLS = "id, app_id, platform, remote_id, handle, active, token_expires_at";
@@ -14,7 +15,9 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
   return r.data;
 }
 
-export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore {
+const ITEM_COLS = "id, watch_id, source, media_id, username, permalink, caption, media_type, image_url, posted_at, like_count, comments_count, status, found_at";
+
+export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & OutreachStore {
   return {
     async claim(postId) {
       return must(await db.rpc("social_claim", { p_post_id: postId ?? null, p_limit: 5 }), "claim") as Post[];
@@ -96,6 +99,58 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
     },
     async upsertAccount(row) {
       return must(await db.from("social_accounts").upsert({ ...row, active: true }, { onConflict: "app_id,platform" }).select(ACCOUNT_COLS).single(), "account") as Account;
+    },
+
+    // ---------- «Bei anderen» (outreach) ----------
+    async outreachSettings() {
+      const r = await db.from("outreach_settings").select("enabled, daily_limit, monthly_budget_usd, model, rules, ig_user_id, ig_username, token_expires_at").maybeSingle();
+      if (r.error && /does not exist|could not find/i.test(r.error.message)) return null; // migration not run yet
+      return must(r, "outreach settings") as OutreachSettings | null;
+    },
+    async saveOutreachSettings(patch) {
+      must(await db.from("outreach_settings").update(patch).eq("id", true), "outreach settings");
+    },
+    async watches() {
+      return must(await db.from("outreach_watch").select("id, kind, value, active, hashtag_id").order("created_at"), "watch list") as Watch[];
+    },
+    async updateWatch(id, patch) {
+      must(await db.from("outreach_watch").update(patch).eq("id", id), "watch");
+    },
+    async knownMedia(ids) {
+      const out = new Set<string>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const rows = must(await db.from("outreach_items").select("media_id").in("media_id", ids.slice(i, i + 200)), "known media") as Array<{ media_id: string }>;
+        rows.forEach((r) => out.add(r.media_id));
+      }
+      return out;
+    },
+    async insertItems(rows) {
+      if (rows.length) must(await db.from("outreach_items").upsert(rows, { onConflict: "media_id", ignoreDuplicates: true }), "insert finds");
+    },
+    async freshItems(since) {
+      return must(await db.from("outreach_items").select(ITEM_COLS).eq("status", "new")
+        .or(`posted_at.gte.${since},and(posted_at.is.null,found_at.gte.${since})`).limit(200), "fresh finds") as Item[];
+    },
+    async markStale(before) {
+      must(await db.from("outreach_items").update({ status: "stale" }).eq("status", "new")
+        .or(`posted_at.lt.${before},and(posted_at.is.null,found_at.lt.${before})`), "stale finds");
+    },
+    async updateItem(id, patch) {
+      must(await db.from("outreach_items").update(patch).eq("id", id), "suggestion");
+    },
+    async spentSince(since) {
+      let usd = 0, calls = 0;
+      for (let from = 0; ; from += 1000) {
+        const rows = must(await db.from("outreach_items").select("cost_usd").gte("drafted_at", since).order("drafted_at").range(from, from + 999), "costs") as Array<{ cost_usd: number | string }>;
+        rows.forEach((r) => { usd += Number(r.cost_usd) || 0; calls++; });
+        if (rows.length < 1000) return { usd, calls };
+      }
+    },
+    async outreachToken() {
+      return must(await db.rpc("outreach_token"), "outreach token") as string | null;
+    },
+    async storeOutreachToken(token, expiresAt) {
+      must(await db.rpc("outreach_store_token", { p_token: token, p_expires_at: expiresAt ? expiresAt.toISOString() : null }), "store outreach token");
     },
   };
 }

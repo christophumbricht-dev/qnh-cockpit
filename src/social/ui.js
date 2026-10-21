@@ -7,6 +7,7 @@ import { readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
+import { createOutreach } from "./outreach-ui.js";
 
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
@@ -18,6 +19,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   let unsubscribe = null;
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
+  const outreach = createOutreach({ S, render, toast, errorText });
   let connectChecked = false;
 
   // ---------- data ----------
@@ -35,9 +37,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     st.loading = false;
     if (st.value) {
       inbox.watch();
+      outreach.watch();
       if (!connectChecked) { connectChecked = true; inbox.finishConnect(); } // back from «YouTube verbinden»
     }
-    const typing = document.activeElement?.closest?.(".soc-editor, .cmt-reply");
+    const typing = document.activeElement?.closest?.(".soc-editor, .cmt-reply, .out-item, .out-settings, .out-watch");
     if (!typing) render();
   }
 
@@ -98,7 +101,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const chips = [["all", "Alle Apps"], ...apps.map((id) => [id, appName(id)])]
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const openComments = inbox.count(false);
-    const modes = [["list", "Beiträge"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
+    const openOut = outreach.count();
+    const modes = [["list", "Beiträge"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
@@ -109,11 +113,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <button class="btn ghost desk-only" data-action="soc-pick-package">Paket importieren</button>
           <button class="btn desk-only" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
-      ${apps.length > 1 ? `<div class="chips soc-apps">${chips}</div>` : ""}
+      ${apps.length > 1 && st.mode !== "outreach" ? `<div class="chips soc-apps">${chips}</div>` : ""}
       ${st.mode !== "list" ? "" : accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
         : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
-      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
+      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
         const rows = shown.filter((p) => statuses.includes(p.status))
           .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
         return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
@@ -206,7 +210,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "stats", "comments"].includes(m) ? m : "list"; } catch { return "list"; }
+    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -714,6 +718,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   // ---------- events (called from main.js) ----------
   async function onClick(action, el) {
     if (action.startsWith("soc-cmt-") || action.startsWith("soc-yt-")) return inbox.onClick(action, el);
+    if (action.startsWith("soc-out-")) return outreach.onClick(action, el);
     const st = S.social;
     const ed = st.editor;
     const id = el.dataset.id;
@@ -831,6 +836,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   function onInput(e) {
     if (inbox.onInput(e)) return true;
+    if (outreach.onInput(e)) return true;
     const ed = S.social.editor;
     const name = e.target.name ?? "";
     if (!ed || !name.startsWith("soc-")) return false;
@@ -949,7 +955,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
   }
 
-  // #social/kommentare opens the inbox (link from «Heute»)
-  const setMode = (mode) => { if (["list", "calendar", "comments", "stats"].includes(mode)) S.social.mode = mode; };
-  return { onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode, commentCount: () => inbox.count() };
+  // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
+  const setMode = (mode) => { if (["list", "calendar", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
+  return { onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+    commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }

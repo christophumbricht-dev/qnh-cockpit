@@ -15,6 +15,7 @@ const SQL6 = readFileSync(new URL("../supabase/migrations/20261020100000_social_
 const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_youtube.sql", import.meta.url), "utf8");
 const SQL8 = readFileSync(new URL("../supabase/migrations/20261021100000_finance.sql", import.meta.url), "utf8");
 const SQL9 = readFileSync(new URL("../supabase/migrations/20261021120000_finance_private.sql", import.meta.url), "utf8");
+const SQL10 = readFileSync(new URL("../supabase/migrations/20261021140000_social_outreach.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -55,6 +56,8 @@ await db.exec(SQL8);
 await db.exec(SQL8);
 await db.exec(SQL9);
 await db.exec(SQL9);
+await db.exec(SQL10);
+await db.exec(SQL10);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -309,4 +312,72 @@ test("roadmap: what the CLI writes for «done» fits the table (roll forward, --
   assert.deepEqual(rolled, { status: "next", due: "2026-12-31", repeat: "quarterly", repeat_day: 31 });
   const closed = (await apply(item.id, setPatch({ ...item, ...rolled }, { status: "done", final: true }, "2026-10-20").patch)).rows[0];
   assert.deepEqual(closed, { status: "done", due: "2026-12-31", repeat: null, repeat_day: null });
+});
+
+test("outreach: off by default; admins switch it and set limits, never the server fields", async () => {
+  assert.equal((await as(ADMIN, "select enabled, daily_limit, model from outreach_settings")).rows[0].enabled, false);
+  assert.equal((await as(OTHER, "select count(*)::int n from outreach_settings")).rows[0].n, 0);
+  await assert.rejects(as(null, "select * from outreach_settings"));
+  await as(ADMIN, "update outreach_settings set enabled = true, daily_limit = 12, monthly_budget_usd = 5, model = 'claude-haiku-5-5', rules = 'Keine Emojis.'");
+  const s = (await as(ADMIN, "select enabled, daily_limit, monthly_budget_usd::text b, model, rules from outreach_settings")).rows[0];
+  assert.deepEqual(s, { enabled: true, daily_limit: 12, b: "5.00", model: "claude-haiku-5-5", rules: "Keine Emojis." });
+  await assert.rejects(as(ADMIN, "update outreach_settings set ig_user_id = '17841400000000000'"));
+  await assert.rejects(as(ADMIN, "update outreach_settings set daily_limit = 100"));
+  await assert.rejects(as(ADMIN, "update outreach_settings set model = 'gpt-9'"));
+  await assert.rejects(as(ADMIN, "insert into outreach_settings (id) values (false)"));
+  // OTHER cannot switch it back on/off (RLS: no row visible → nothing changes)
+  await as(OTHER, "update outreach_settings set enabled = false");
+  assert.equal((await as(ADMIN, "select enabled from outreach_settings")).rows[0].enabled, true);
+  await as(ADMIN, "update outreach_settings set enabled = false");
+});
+
+test("outreach: watch list takes clean @accounts and #hashtags; server fields stay server-side", async () => {
+  await as(ADMIN, "insert into outreach_watch (kind, value) values ('account', 'meteosuisse'), ('hashtag', 'föhn'), ('hashtag', 'lenticularclouds')");
+  await assert.rejects(as(ADMIN, "insert into outreach_watch (kind, value) values ('account', 'Meteo Suisse')"));
+  await assert.rejects(as(ADMIN, "insert into outreach_watch (kind, value) values ('account', 'MeteoSuisse')"));
+  await assert.rejects(as(ADMIN, "insert into outreach_watch (kind, value) values ('hashtag', '#föhn')"));
+  await assert.rejects(as(ADMIN, "insert into outreach_watch (kind, value) values ('account', 'meteosuisse')"), /duplicate|unique/);
+  await assert.rejects(as(ADMIN, "insert into outreach_watch (kind, value, hashtag_id) values ('hashtag', 'wave', '123456')"));
+  await assert.rejects(as(OTHER, "insert into outreach_watch (kind, value) values ('account', 'someone')"));
+  const id = (await as(ADMIN, "select id from outreach_watch where value = 'lenticularclouds'")).rows[0].id;
+  await as(ADMIN, `update outreach_watch set active = false where id = '${id}'`);
+  await assert.rejects(as(ADMIN, `update outreach_watch set last_error = 'x' where id = '${id}'`));
+  await as("service", `update outreach_watch set hashtag_id = '17843853986012965', last_checked_at = now() where id = '${id}'`);
+  await as(ADMIN, `delete from outreach_watch where id = '${id}'`);
+  assert.equal((await as(ADMIN, "select count(*)::int n from outreach_watch")).rows[0].n, 2);
+});
+
+test("outreach: the server writes finds and suggestions; the cockpit marks done/dismissed and edits the text", async () => {
+  const w = (await as(ADMIN, "select id from outreach_watch where value = 'meteosuisse'")).rows[0].id;
+  await assert.rejects(as(ADMIN, "insert into outreach_items (source, media_id) values ('account', '17900000000000010')"));
+  const it = (await as("service", `insert into outreach_items (watch_id, source, media_id, username, permalink, caption, status, draft, model, input_tokens, output_tokens, cost_usd, drafted_at)
+    values ('${w}', 'account', '17900000000000010', 'meteosuisse', 'https://www.instagram.com/p/abc/', 'Lenticularis über dem Jura', 'proposed', 'Those lenses mark a standing wave.', 'claude-sonnet-5-5', 3800, 120, 0.0088, '2026-10-21T05:00:00Z') returning id`)).rows[0].id;
+  await as("service", `insert into outreach_items (source, media_id, status, cost_usd, drafted_at) values ('hashtag', '17900000000000011', 'skipped', 0.004, '2026-10-21T05:01:00Z'), ('hashtag', '17900000000000012', 'new', 0, null)`);
+  await assert.rejects(as(OTHER, `update outreach_items set status = 'done' where id = '${it}' returning id`).then((r) => { if (!r.rows.length) throw new Error("invisible"); }));
+  await as(ADMIN, `update outreach_items set draft = 'Those stacked lenses mark a standing wave downwind of the Jura.' where id = '${it}'`);
+  const done = (await as(ADMIN, `update outreach_items set status = 'done' where id = '${it}' returning done_at`)).rows[0];
+  assert.ok(done.done_at);
+  const back = (await as(ADMIN, `update outreach_items set status = 'proposed' where id = '${it}' returning done_at`)).rows[0];
+  assert.equal(back.done_at, null);
+  await assert.rejects(as(ADMIN, `update outreach_items set status = 'new' where id = '${it}'`), /Server/);
+  await assert.rejects(as(ADMIN, `update outreach_items set cost_usd = 0 where id = '${it}'`));
+  await assert.rejects(as(ADMIN, "update outreach_items set status = 'proposed' where media_id = '17900000000000011'"), /Server/);
+  await assert.rejects(as("service", "insert into outreach_items (source, media_id, permalink) values ('account', '17900000000000013', 'javascript:alert(1)')"));
+  // a watch removed later keeps its finds
+  await as(ADMIN, `delete from outreach_watch where id = '${w}'`);
+  assert.equal((await as(ADMIN, `select watch_id from outreach_items where id = '${it}'`)).rows[0].watch_id, null);
+});
+
+test("outreach: costs per Swiss month for admins only; the token stays in Vault", async () => {
+  await as("service", "insert into outreach_items (source, media_id, status, cost_usd, drafted_at) values ('hashtag', '17900000000000020', 'proposed', 0.01, '2026-09-30T22:30:00Z')"); // 1 Oct in Zurich
+  const rows = (await as(ADMIN, "select month, calls, suggestions, usd::text from outreach_cost_months order by month")).rows;
+  assert.deepEqual(rows, [{ month: "2026-10", calls: 3, suggestions: 2, usd: "0.022800" }]);
+  assert.equal((await as(OTHER, "select count(*)::int n from outreach_cost_months")).rows[0].n, 0);
+  await assert.rejects(as(null, "select * from outreach_cost_months"));
+  await assert.rejects(as(ADMIN, "select public.outreach_token()"));
+  await as("service", "select public.outreach_store_token('EAAfaketoken', '2026-12-20T00:00:00Z')");
+  assert.equal((await as("service", "select public.outreach_token() t")).rows[0].t, "EAAfaketoken");
+  await as("service", "select public.outreach_store_token('EAAnewtoken', null)");
+  assert.equal((await as("service", "select public.outreach_token() t")).rows[0].t, "EAAnewtoken");
+  assert.equal((await as(ADMIN, "select token_expires_at from outreach_settings")).rows[0].token_expires_at, null);
 });

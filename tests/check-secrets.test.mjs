@@ -33,6 +33,11 @@ test("secret key and Meta tokens are found", () => {
   assert.equal(p.length, 3);
 });
 
+test("Anthropic API keys are found, the docs' placeholder is not", () => {
+  assert.equal(checkSecrets(project({ "supabase/functions/f/index.ts": `const k = "sk-ant-api03-${"z".repeat(40)}";` })).length, 1);
+  assert.equal(checkSecrets(project({ "src/a.js": `// beginnt mit sk-ant-` })).length, 0);
+});
+
 test("the word service_role is not allowed in browser code", () => {
   assert.equal(checkSecrets(project({ "src/a.js": "// uses the service_role key" })).length, 1);
 });

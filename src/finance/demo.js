@@ -33,7 +33,11 @@ const bills = [
   { id: "b6", payee: "Treuhand Muster AG", amount: 420, currency: "CHF", due_date: `${lastYear}-12-20`, status: "paid", iban: "CH9300762011623852957", reference: "", message: "Beratung Gründung", invoice_no: "T-88", scope: "qnh", category: "Treuhand", cost_id: null, file_path: null, note: "", source: "cockpit", paid_at: `${lastYear}-12-18T09:00:00Z`, created_at: `${lastYear}-11-30T09:00:00Z`, archived: true },
 ];
 
-export const load = () => wait({ costs, bills: bills.filter((b) => !b.archived), privateOk: true });
+export const load = async () => ({ ...(await wait({ costs, bills: bills.filter((b) => !b.archived), privateOk: true })), api: await apiCosts() });
+// invented API usage of «Bei anderen» (USD per Swiss month)
+const monthBack = (k) => { const d = new Date(); d.setUTCDate(15); d.setUTCMonth(d.getUTCMonth() - k); return d.toISOString().slice(0, 7); };
+export const apiCosts = () => wait({ enabled: true, budget: "10.00", model: "claude-sonnet-5-5", months: [
+  { month: monthBack(0), calls: 34, suggestions: 29, usd: "0.27" }, { month: monthBack(1), calls: 61, suggestions: 52, usd: "0.48" }, { month: monthBack(2), calls: 12, suggestions: 10, usd: "0.09" }] });
 export async function setReimbursed(ids, at) { for (const b of bills) if (ids.includes(b.id)) b.reimbursed_at = at; emit(); }
 export const exportBills = (period) => wait(bills.filter((b) => inPeriod(b, period)), 300);
 export async function saveCost(row) {

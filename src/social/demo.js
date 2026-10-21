@@ -24,7 +24,7 @@ const posts = [
 ];
 
 const locations = [{ id: "loc1", page_id: "112233445566", name: "Flugplatz Birrfeld" }, { id: "loc2", page_id: "223344556677", name: "Jungfraujoch" }];
-export const load = async () => { await wait(); return { accounts: clone(accounts), posts: clone(posts.filter((p) => p.status !== "cancelled")), locations: clone(locations), comments: clone(demoComments) }; };
+export const load = async () => { await wait(); return { accounts: clone(accounts), posts: clone(posts.filter((p) => p.status !== "cancelled")), locations: clone(locations), comments: clone(demoComments), outreach: await outreach() }; };
 export async function stats(days) {
   await wait();
   const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
@@ -97,3 +97,38 @@ export async function moderate(id, action) {
   emit();
   return { id, status: action };
 }
+
+// ---------- «Bei anderen»: invented creators and suggestions ----------
+const out = {
+  settings: { enabled: true, daily_limit: 10, monthly_budget_usd: "10.00", model: "claude-sonnet-5-5", rules: "", ig_username: "leesidelab", token_expires_at: new Date(Date.now() + 47 * day).toISOString(), last_run_at: ago(95), last_error: null },
+  watch: [
+    { id: "w1", kind: "account", value: "alpine.skies.demo", active: true, last_checked_at: ago(95), last_error: null },
+    { id: "w2", kind: "account", value: "glider_notes", active: true, last_checked_at: ago(95), last_error: null },
+    { id: "w3", kind: "hashtag", value: "föhn", active: true, last_checked_at: ago(95), last_error: null },
+    { id: "w4", kind: "hashtag", value: "lenticularclouds", active: false, last_checked_at: null, last_error: null },
+  ],
+  items: [
+    { id: "o1", source: "account", username: "alpine.skies.demo", permalink: "https://www.instagram.com/", caption: "Stacked lenses over the Jungfrau this morning 🤩 #clouds #alps", media_type: "FEED", image_url: null, posted_at: ago(160), like_count: 412, comments_count: 18,
+      status: "proposed", draft: "Those stacked lenses mark a standing wave: the air rises and sinks downwind of the ridge, and each layer condenses where it is lifted just enough.", alt_draft: "Lenticulars barely move even in strong wind – the cloud keeps forming at the wave crest and evaporating behind it.", reason: "Linsenwolken über dem Berner Oberland – Welle erklären passt genau.", cost_usd: 0.0081, drafted_at: ago(95), done_at: null },
+    { id: "o2", source: "account", username: "glider_notes", permalink: "https://www.instagram.com/", caption: "Fog sea below, sunshine above. Perfect day for the ridge.", media_type: "REELS", image_url: null, posted_at: ago(300), like_count: 88, comments_count: 4,
+      status: "proposed", draft: "That fog sea sits under an inversion lid: cold air pooled in the valley, warmer air above stops it from mixing up.", alt_draft: "The flat top of a fog sea shows exactly where the inversion starts – the cloud can't rise into the warmer air above.", reason: "Nebelmeer mit klarer Obergrenze – Inversion als Erklärung.", cost_usd: 0.0076, drafted_at: ago(95), done_at: null },
+    { id: "o3", source: "hashtag", username: "", permalink: "https://www.instagram.com/", caption: "Föhnstimmung in Altdorf, 22 Grad im Oktober!", media_type: "FEED", image_url: null, posted_at: ago(500), like_count: 61, comments_count: 2,
+      status: "done", draft: "Föhn warms the air as it sinks down the lee side – about 1 °C per 100 m, which is why Altdorf gets summer days in October.", alt_draft: "", reason: "Föhn in Altdorf – Erwärmung beim Absinken.", cost_usd: 0.0069, drafted_at: ago(1500), done_at: ago(1300) },
+  ],
+  months: [{ month: "", calls: 34, suggestions: 29, usd: "0.27" }, { month: "", calls: 61, suggestions: 52, usd: "0.48" }],
+};
+const monthOf = (back) => { const d = new Date(); d.setUTCDate(15); d.setUTCMonth(d.getUTCMonth() - back); return d.toISOString().slice(0, 7); };
+out.months[0].month = monthOf(0); out.months[1].month = monthOf(1);
+export async function outreach() { await wait(); return clone(out); }
+export async function outreachSettings(patch) { Object.assign(out.settings, patch); emit(); }
+export async function addWatch(kind, value) {
+  if (out.watch.some((w) => w.kind === kind && w.value === value)) throw new Error("Steht schon auf der Liste.");
+  out.watch.push({ id: `w${out.watch.length + 1}`, kind, value, active: true, last_checked_at: null, last_error: null }); emit();
+}
+export async function removeWatch(id) { out.watch.splice(out.watch.findIndex((w) => w.id === id), 1); emit(); }
+export async function watchActive(id, active) { out.watch.find((w) => w.id === id).active = active; emit(); }
+export async function outreachItem(id, patch) {
+  const it = out.items.find((i) => i.id === id);
+  Object.assign(it, patch, patch.status ? { done_at: patch.status === "done" ? new Date().toISOString() : null } : {}); emit();
+}
+export async function runOutreach() { await wait(800); out.settings.last_run_at = new Date().toISOString(); emit(); return { status: out.settings.enabled ? "ok" : "off", found: 0, suggested: 0, skipped: 0, errors: [] }; }

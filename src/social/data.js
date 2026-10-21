@@ -23,7 +23,8 @@ export async function loadSocial() {
   // what is already on Instagram (from the daily statistics; empty until that is set up)
   const seen = await sb().from("social_media_stats").select("media_id, account_id, caption, posted_at, permalink").order("day", { ascending: false }).limit(500);
   const published = [...new Map((seen.data ?? []).map((m) => [m.media_id, m])).values()];
-  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [], published, comments: await loadComments() };
+  const [comments, outreach] = await Promise.all([loadComments(), loadOutreach()]);
+  return { accounts: must(accounts, "accounts"), posts: rows, locations: places.data ?? [], published, comments, outreach };
 }
 
 // ---------- comment inbox (table from migration 20261020100000_social_comments.sql) ----------
@@ -68,6 +69,59 @@ export function subscribeComments(onChange) {
   if (DEMO) return demo.subscribe(onChange);
   const channel = sb().channel("social-comments")
     .on("postgres_changes", { event: "*", schema: "public", table: "social_comments" }, onChange)
+    .subscribe();
+  return () => sb().removeChannel(channel);
+}
+
+// ---------- «Bei anderen»: comment suggestions for other creators' posts (migration 20261021140000_social_outreach.sql) ----------
+// Nothing here posts anything: Christoph copies a suggestion and comments himself in the Instagram app.
+const OUT_ITEM_COLS = "id, source, username, permalink, caption, media_type, image_url, posted_at, like_count, comments_count, status, draft, alt_draft, reason, cost_usd, drafted_at, done_at";
+// null = not set up yet (migration missing); outreachError keeps the database's answer
+export let outreachError = null;
+export async function loadOutreach() {
+  if (DEMO) return demo.outreach();
+  const since = new Date(Date.now() - 45 * 864e5).toISOString();
+  const [settings, watch, items, months] = await Promise.all([
+    sb().from("outreach_settings").select("enabled, daily_limit, monthly_budget_usd, model, rules, ig_username, token_expires_at, last_run_at, last_error").maybeSingle(),
+    sb().from("outreach_watch").select("id, kind, value, active, last_checked_at, last_error").order("created_at"),
+    sb().from("outreach_items").select(OUT_ITEM_COLS).in("status", ["proposed", "done", "dismissed"]).gte("drafted_at", since).order("drafted_at", { ascending: false }).limit(300),
+    sb().from("outreach_cost_months").select("month, calls, suggestions, usd").order("month", { ascending: false }).limit(24),
+  ]);
+  const err = settings.error ?? watch.error ?? items.error ?? months.error;
+  outreachError = err ? [err.code, err.message].filter(Boolean).join(": ") : null;
+  if (err || !settings.data) return null;
+  return { settings: settings.data, watch: watch.data, items: items.data, months: months.data };
+}
+export async function saveOutreachSettings(patch) {
+  if (DEMO) return demo.outreachSettings(patch);
+  must(await sb().from("outreach_settings").update(patch).eq("id", true), "outreach");
+}
+export async function addWatch(kind, value) {
+  if (DEMO) return demo.addWatch(kind, value);
+  must(await sb().from("outreach_watch").insert({ kind, value }), "watch");
+}
+export async function removeWatch(id) {
+  if (DEMO) return demo.removeWatch(id);
+  must(await sb().from("outreach_watch").delete().eq("id", id), "watch");
+}
+export async function setWatchActive(id, active) {
+  if (DEMO) return demo.watchActive(id, active);
+  must(await sb().from("outreach_watch").update({ active }).eq("id", id), "watch");
+}
+export async function setOutreachStatus(id, status, draft) {
+  const patch = draft === undefined ? { status } : { status, draft };
+  if (DEMO) return demo.outreachItem(id, patch);
+  must(await sb().from("outreach_items").update(patch).eq("id", id), "suggestion");
+}
+export async function saveOutreachDraft(id, draft) {
+  if (DEMO) return demo.outreachItem(id, { draft });
+  must(await sb().from("outreach_items").update({ draft }).eq("id", id), "suggestion");
+}
+export const runOutreach = async () => (DEMO ? demo.runOutreach() : op({ op: "outreach" }));
+export function subscribeOutreach(onChange) {
+  if (DEMO) return demo.subscribe(onChange);
+  const channel = sb().channel("social-outreach")
+    .on("postgres_changes", { event: "*", schema: "public", table: "outreach_items" }, onChange)
     .subscribe();
   return () => sb().removeChannel(channel);
 }

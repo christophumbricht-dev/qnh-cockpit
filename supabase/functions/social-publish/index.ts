@@ -10,12 +10,16 @@
 // POST { op: "moderate", comment_id, action }                admin only: hide | show | approve | delete (own)
 // POST { op: "youtube-auth", app_id, redirect_uri, state }   admin only: Google sign-in URL («YouTube verbinden»)
 // POST { op: "youtube-connect", app_id, code, redirect_uri } admin only: store the channel's refresh token in Vault
+// POST { op: "outreach" }            «Bei anderen»: read posts of watched accounts/hashtags, ask Claude for comment
+//                                    suggestions (cron twice a day, or «Jetzt suchen»). Off in the cockpit = does nothing.
+//                                    Never posts, likes or follows anything.
 //
 // Allowed callers: pg_cron with header x-cron-secret = SOCIAL_CRON_SECRET, or a signed-in QNH admin
 // (cockpit; checked with is_qnh_admin()). verify_jwt is off in config.toml because cron has no JWT.
 //
 // Secrets (supabase secrets set …): SOCIAL_CRON_SECRET; optional FACEBOOK_ENABLED=true;
-// for YouTube GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET (and optionally GOOGLE_REDIRECT_URIS, comma-separated).
+// for YouTube GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET (and optionally GOOGLE_REDIRECT_URIS, comma-separated);
+// for «Bei anderen» ANTHROPIC_API_KEY, optionally META_APP_ID + META_APP_SECRET (renews the Facebook token).
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -23,6 +27,7 @@ import { cleanup, FinalError, publishDue, refreshTokens, type Deps } from "./pub
 import { supabaseStore } from "./store.ts";
 import { followUpYoutube } from "./youtube.ts";
 import { collectStats } from "./stats.ts";
+import { runOutreach } from "./outreach.ts";
 import { fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
 
 const cors = {
@@ -97,6 +102,14 @@ Deno.serve(async (req) => {
     if (op === "moderate") return json(await moderate(cdeps, str(body.comment_id), str(body.action) as ModerateAction));
     if (op === "youtube-auth") return json(youtubeAuth(google, allowed, str(body.app_id), str(body.redirect_uri), str(body.state)));
     if (op === "youtube-connect") return json(await youtubeConnect(cdeps, allowed, str(body.app_id), str(body.code), str(body.redirect_uri)));
+    if (op === "outreach") {
+      const appId = Deno.env.get("META_APP_ID") ?? "", appSecret = Deno.env.get("META_APP_SECRET") ?? "";
+      return json(await runOutreach({
+        store, fetch, now: deps.now, deadline: deps.deadline ?? Date.now() + 100_000,
+        anthropicKey: Deno.env.get("ANTHROPIC_API_KEY") || null,
+        meta: appId && appSecret ? { appId, appSecret } : null,
+      }));
+    }
     return json({ error: "unknown_op" }, 400);
   } catch (err) {
     // FinalError = a message for Christoph (German), everything else is logged

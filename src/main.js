@@ -123,6 +123,7 @@ function route() {
   if (first === "social") {
     S.tab = "social";
     if (second === "kommentare") social.setMode("comments");
+    else if (second === "bei-anderen") social.setMode("outreach");
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }
   else if (first === "apps") S.tab = "apps";
@@ -405,6 +406,8 @@ function socialItems(today) {
   if (rest) out.push({ key: "drafts", lane: "week", tone: "info", title: `${rest} Entw${rest === 1 ? "urf wartet" : "ürfe warten"} auf Freigabe`, sub: "Social → Freigabe-Runde", where: "Social", href: "#social" });
   const comments = social.commentCount();
   if (comments) out.push({ key: "comments", lane: "today", tone: "info", title: `${comments} Kommentar${comments === 1 ? " wartet" : "e warten"} auf Antwort`, where: "Social", href: "#social/kommentare" });
+  const outreach = social.outreachCount();
+  if (outreach) out.push({ key: "outreach", lane: "today", tone: "info", title: `${outreach} Kommentar-Vorschl${outreach === 1 ? "ag" : "äge"} für andere Accounts`, sub: "kopieren, in Instagram posten, abhaken", where: "Social", href: "#social/bei-anderen" });
   for (const p of v.posts) {
     if (!["draft", "approved"].includes(p.status) || !p.scheduled_at || !social.todoOpen(p.todo)) continue;
     const day = zurichToday(new Date(p.scheduled_at));
@@ -1088,6 +1091,7 @@ root.addEventListener("change", async (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (social.onKeydown(e)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
     return S.search.open ? closeSearch() : openSearch();

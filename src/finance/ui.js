@@ -4,6 +4,7 @@ import { esc } from "../format.js";
 import * as data from "./data.js";
 import { BILL_FILE_ACCEPT, INTERVALS, addDays, amountText, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, owedPrivately, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
 import { QrBillError, formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
+import { MODELS, costSummary, monthName, usd } from "../social/outreach.js";
 
 const CURRENCIES = ["CHF", "EUR", "USD"];
 const QR_ICON = `<svg class="ico fin-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></svg>`;
@@ -129,6 +130,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         </div>
         <div class="fin-col-side">
           <section class="block"><h2 class="section-title">Kosten &amp; Abos</h2>${costList(cs, today)}</section>
+          ${apiBlock()}
           ${scopeBars(cs)}
           <section class="block"><h2 class="section-title">Export für den Treuhänder</h2>${exportBox(today)}</section>
         </div>
@@ -236,6 +238,25 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       <button class="btn ghost" data-action="fin-new-cost">+ Abo / Kosten</button></div>`
       : `<p class="muted">Noch keine Kosten erfasst. Tipp: eine Vorlage antippen und den Betrag ergänzen.</p>`;
     return `${list}${tpl ? `<div class="chips fin-templates"><span class="muted small">Vorlagen:</span>${tpl}</div>` : ""}`;
+  }
+
+  // usage-based API costs: the comment suggestions of Social → «Bei anderen» (computed from the tokens of each one)
+  function apiBlock() {
+    const api = st().value?.api;
+    if (!api || (st().scope !== "all" && st().scope !== "leesidelab")) return "";
+    const c = costSummary(api.months, api.budget);
+    const pct = Math.round(c.share * 100);
+    const model = MODELS.find(([m]) => m === api.model)?.[1].replace(/ \(.*\)$/, "") ?? api.model;
+    const older = c.months.filter((m) => m.month !== c.thisMonth.month).slice(0, 5);
+    return `<section class="block"><h2 class="section-title">API-Verbrauch</h2><div class="card fin-api">
+      <div class="fin-api-head"><span><b>Kommentar-Vorschläge</b><span class="muted small"> · Anthropic, ${esc(model)}</span></span><span class="pill${api.enabled ? " published" : " draft"}">${api.enabled ? "ein" : "aus"}</span></div>
+      <div class="fin-api-now"><span class="muted small">${esc(monthName(c.thisMonth.month))}</span><b class="mono-num">${esc(usd(c.thisMonth.usd))}</b><span class="muted small">von ${esc(usd(c.budget))} Budget · ${c.thisMonth.suggestions} Vorschläge</span></div>
+      <div class="goal-track"><span class="out-budget-fill${pct >= 90 ? " hot" : ""}" style="width:${pct}%"></span></div>
+      ${older.length ? `<ul class="fin-api-months">${older.map((m) => `<li><span>${esc(monthName(m.month))}</span><span class="mono-num">${esc(usd(m.usd))}</span></li>`).join("")}</ul>` : ""}
+      <p class="fc-total"><span>Dieses Jahr</span><b class="mono-num">${esc(usd(c.year))}</b></p>
+      <p class="muted small">Verbrauch nach Token, gerechnet mit den Preisen von Anthropic. Die Aufladungen bei Anthropic (Kreditkarte) erfasst du wie gewohnt als Beleg. Ein/Aus und Budget: Social → «Bei anderen».</p>
+      <a class="link" href="#social/bei-anderen">Zu den Vorschlägen</a>
+    </div></section>`;
   }
 
   // monthly fixed costs per app/brand (each currency its own bar)

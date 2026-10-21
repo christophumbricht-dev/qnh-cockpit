@@ -6,6 +6,7 @@
 //   - JWTs whose payload has role "service_role"
 //   - Supabase secret keys (sb_secret_…)
 //   - Meta / Instagram access tokens (EAA…, IGAA…), Google client secrets and tokens (GOCSPX-…, 1//…, ya29.…)
+//   - Anthropic API keys (sk-ant-…)
 //   - the word "service_role" in browser code (src/, public/, dist/)
 //   - any value from .env that is not a VITE_*_URL / VITE_*_ANON_KEY
 // Usage: node scripts/check-secrets.mjs [rootDir]
@@ -26,6 +27,7 @@ const PATTERNS = [
   { name: "Google OAuth client secret (GOCSPX-…)", re: /\bGOCSPX-[A-Za-z0-9_-]{20,}/g },
   { name: "Google refresh token (1//…)", re: /(?<![A-Za-z0-9:])1\/\/0[A-Za-z0-9_-]{40,}/g },
   { name: "Google access token (ya29.…)", re: /\bya29\.[A-Za-z0-9_-]{30,}/g },
+  { name: "Anthropic API key (sk-ant-…)", re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g },
 ];
 const JWT = /eyJ[A-Za-z0-9_-]{8,}\.(eyJ[A-Za-z0-9_-]{8,})\.[A-Za-z0-9_-]{8,}/g;
 
