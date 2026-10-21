@@ -73,3 +73,30 @@ Deno.test("a missing permission fails one account, not the whole run", async () 
   const res = await collectStats({ store, fetch: fn, now: () => NOW });
   assertEquals(res[0].status, "failed");
 });
+
+Deno.test("YouTube: channel totals and per-video views/likes/comments", async () => {
+  const days: Array<{ metrics: Record<string, number> }> = [];
+  const media: MediaRow[] = [];
+  const store: StatsStore = {
+    async accounts() { return [{ id: "yt1", platform: "youtube", remote_id: "UC123", handle: "leesidelab", active: true }]; },
+    async token() { return "REFRESH"; },
+    async saveAccountDay(_a, _d, metrics) { days.push({ metrics }); },
+    async saveMediaDays(rows) { media.push(...rows); },
+  };
+  const fn = (async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const body = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
+    if (url.host === "oauth2.googleapis.com") return body({ access_token: "ACCESS" });
+    assertEquals(new Headers(init?.headers).get("Authorization"), "Bearer ACCESS");
+    if (url.pathname.endsWith("/channels")) return body({ items: [{ statistics: { subscriberCount: "12", viewCount: "8100", videoCount: "3" }, contentDetails: { relatedPlaylists: { uploads: "UU123" } } }] });
+    if (url.pathname.endsWith("/playlistItems")) return body({ items: [{ contentDetails: { videoId: "abc_DEF-123" } }] });
+    if (url.pathname.endsWith("/videos")) return body({ items: [{ id: "abc_DEF-123", snippet: { title: "Föhn, part 1 #Shorts", publishedAt: "2026-10-21T13:17:00Z" }, statistics: { viewCount: "540", likeCount: "21", commentCount: "4" } }] });
+    return new Response("{}", { status: 404 });
+  }) as typeof fetch;
+  const res = await collectStats({ store, fetch: fn, now: () => NOW, google: { clientId: "C", clientSecret: "S" } });
+  assertEquals(res, [{ account: "leesidelab", status: "ok", media: 1, followers: 12 }]);
+  assertEquals(days[0].metrics, { followers_count: 12, views_total: 8100, media_count: 3 });
+  assertEquals(media[0].kind, "SHORT");
+  assertEquals(media[0].permalink, "https://youtube.com/shorts/abc_DEF-123");
+  assertEquals(media[0].metrics, { views: 540, likes: 21, comments: 4 });
+});

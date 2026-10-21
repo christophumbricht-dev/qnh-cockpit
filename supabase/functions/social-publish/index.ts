@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     }
     if (op === "refresh-tokens") return json({ results: await refreshTokens(deps) });
     if (op === "cleanup") return json({ results: await cleanup(deps) });
-    if (op === "stats") return json({ results: await collectStats({ store, fetch, now: deps.now }) });
+    if (op === "stats") return json({ results: await collectStats({ store, fetch, now: deps.now, google }) });
     if (op === "comments") return json({ results: await fetchComments(cdeps) });
     if (op === "reply") return json(await replyTo(cdeps, str(body.comment_id), str(body.text)));
     if (op === "moderate") return json(await moderate(cdeps, str(body.comment_id), str(body.action) as ModerateAction));

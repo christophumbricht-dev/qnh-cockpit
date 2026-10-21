@@ -3,6 +3,7 @@
 // Metric names change between API versions – every set is fetched tolerantly: if Instagram refuses the set,
 // each metric is asked for alone and the ones it refuses are left out.
 import { graph, GraphError, IG_HOST, type FetchFn } from "./graph.ts";
+import { accessToken, youtube, type GoogleConfig } from "./google.ts";
 
 export type StatsAccount = { id: string; platform: string; remote_id: string; handle: string; active: boolean };
 export type MediaRow = {
@@ -15,7 +16,7 @@ export type StatsStore = {
   saveAccountDay(accountId: string, day: string, metrics: Record<string, number>): Promise<void>;
   saveMediaDays(rows: MediaRow[]): Promise<void>;
 };
-export type StatsDeps = { store: StatsStore; fetch: FetchFn; now: () => Date };
+export type StatsDeps = { store: StatsStore; fetch: FetchFn; now: () => Date; google?: GoogleConfig | null };
 
 // per media type (Instagram API with Instagram Login, v25). impressions/plays are gone – "views" replaces them.
 export const MEDIA_METRICS: Record<string, string[]> = {
@@ -55,11 +56,51 @@ async function tolerant(ask: (metrics: string[]) => Promise<Record<string, numbe
 
 export type StatsResult = { account: string; status: "ok" | "failed"; media?: number; followers?: number; error?: string };
 
+// YouTube (Data API, scope youtube.force-ssl): channel totals + per video views/likes/comments.
+// Watch time and reach would need the YouTube Analytics API (extra scope) – not collected.
+async function youtubeStats(deps: StatsDeps, acc: StatsAccount, day: string, limit: number): Promise<StatsResult> {
+  try {
+    if (!deps.google) throw new Error("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET fehlen");
+    const yt = youtube(deps.fetch, await accessToken(deps.fetch, deps.google, await deps.store.token(acc.id)));
+    const ch = (await yt.get("channels", { part: "statistics,contentDetails", id: acc.remote_id })).items?.[0];
+    if (!ch) throw new Error("Kanal nicht gefunden");
+    const s = ch.statistics ?? {};
+    const n = (v: unknown) => (v == null || v === "" ? undefined : Number(v));
+    const metrics: Record<string, number> = {};
+    for (const [k, v] of [["followers_count", s.hiddenSubscriberCount ? undefined : n(s.subscriberCount)], ["views_total", n(s.viewCount)], ["media_count", n(s.videoCount)]] as const) {
+      if (typeof v === "number" && Number.isFinite(v)) metrics[k] = v;
+    }
+    await deps.store.saveAccountDay(acc.id, day, metrics);
+
+    const uploads = ch.contentDetails?.relatedPlaylists?.uploads;
+    const ids: string[] = uploads
+      ? ((await yt.get("playlistItems", { part: "contentDetails", playlistId: uploads, maxResults: Math.min(limit, 50) })).items ?? []).map((i: { contentDetails: { videoId: string } }) => i.contentDetails.videoId)
+      : [];
+    const rows: MediaRow[] = [];
+    if (ids.length) {
+      for (const v of (await yt.get("videos", { part: "snippet,statistics", id: ids.join(",") })).items ?? []) {
+        const st = v.statistics ?? {}, m: Record<string, number> = {};
+        for (const [k, val] of [["views", n(st.viewCount)], ["likes", n(st.likeCount)], ["comments", n(st.commentCount)]] as const) if (typeof val === "number") m[k] = val;
+        rows.push({
+          media_id: String(v.id), account_id: acc.id, day, kind: "SHORT",
+          permalink: `https://youtube.com/shorts/${v.id}`, caption: String(v.snippet?.title ?? "").slice(0, 300), posted_at: v.snippet?.publishedAt ?? null, metrics: m,
+        });
+      }
+    }
+    await deps.store.saveMediaDays(rows);
+    return { account: acc.handle, status: "ok", media: rows.length, followers: metrics.followers_count };
+  } catch (err) {
+    return { account: acc.handle, status: "failed", error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function collectStats(deps: StatsDeps, mediaLimit = 50): Promise<StatsResult[]> {
   const day = zurichDay(deps.now());
   const out: StatsResult[] = [];
   for (const acc of await deps.store.accounts()) {
-    if (!acc.active || acc.platform !== "instagram") continue;
+    if (!acc.active) continue;
+    if (acc.platform === "youtube") { out.push(await youtubeStats(deps, acc, day, mediaLimit)); continue; }
+    if (acc.platform !== "instagram") continue;
     try {
       const g = graph(deps.fetch, IG_HOST, await deps.store.token(acc.id));
       const ig = acc.remote_id;

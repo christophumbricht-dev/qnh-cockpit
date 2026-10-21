@@ -16,6 +16,7 @@ const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_
 const SQL8 = readFileSync(new URL("../supabase/migrations/20261021100000_finance.sql", import.meta.url), "utf8");
 const SQL9 = readFileSync(new URL("../supabase/migrations/20261021120000_finance_private.sql", import.meta.url), "utf8");
 const SQL10 = readFileSync(new URL("../supabase/migrations/20261021140000_social_outreach.sql", import.meta.url), "utf8");
+const SQL_YT_STATS = readFileSync(new URL("../supabase/migrations/20261021160000_social_stats_youtube.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
 const db = new PGlite();
@@ -48,6 +49,8 @@ await db.exec(SQL4);
 await db.exec("create schema if not exists cron; create or replace function cron.schedule(text, text, text) returns bigint language sql as $$ select 1::bigint $$;");
 await db.exec(SQL5);
 await db.exec(SQL5);
+await db.exec(SQL_YT_STATS);
+await db.exec(SQL_YT_STATS);
 await db.exec(SQL6);
 await db.exec(SQL6);
 await db.exec(SQL7);
@@ -386,4 +389,9 @@ test("outreach: costs per Swiss month for admins only; the token stays in Vault"
   await as("service", "select public.outreach_store_token('EAAnewtoken', null)");
   assert.equal((await as("service", "select public.outreach_token() t")).rows[0].t, "EAAnewtoken");
   assert.equal((await as(ADMIN, "select token_expires_at from outreach_settings")).rows[0].token_expires_at, null);
+});
+
+test("stats: YouTube video ids (letters, - and _) are accepted, junk is not", async () => {
+  await as("service", `insert into social_media_stats (media_id, day, account_id, kind) values ('abc_DEF-123', '2026-10-21', '${ACC}', 'SHORT')`);
+  await assert.rejects(as("service", `insert into social_media_stats (media_id, day, account_id) values ('x y', '2026-10-21', '${ACC}')`));
 });

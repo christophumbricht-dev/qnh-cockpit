@@ -157,7 +157,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- statistics ----------
   const STAT_COLS = [["views", "Views"], ["reach", "Reichweite"], ["likes", "Likes"], ["comments", "Kommentare"], ["saved", "Gespeichert"], ["shares", "Geteilt"], ["follows", "Neue Follower"]];
-  const KIND_LABEL = { FEED: "Bild", CAROUSEL: "Karussell", REELS: "Reel", STORY: "Story" };
+  const KIND_LABEL = { FEED: "Bild", CAROUSEL: "Karussell", REELS: "Reel", STORY: "Story", SHORT: "Short" };
   async function loadStats(force = false) {
     const st = S.social;
     if (st.stats?.loading || (st.stats?.value && !force && st.stats.days === st.statsDays)) return;
@@ -192,13 +192,16 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const delta = last.followers_count != null && first.followers_count != null ? last.followers_count - first.followers_count : null;
       const followerSeries = series.map((d) => d.metrics.followers_count).filter((v) => v != null);
       const tile = (label, value, sub = "") => `<div class="stat-tile"><span class="muted small">${label}</span><b>${value}</b>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>`;
-      if (!series.length && !media.length) return `<section class="card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)}</h3><p class="muted">Noch keine Zahlen. Sie werden täglich um ca. 06:23 abgeholt – oder jetzt mit «Jetzt aktualisieren».</p></section>`;
-      return `<section class="card stats-card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)}</h3>
+      if (!series.length && !media.length) return `<section class="card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3><p class="muted">Noch keine Zahlen. Sie werden täglich um ca. 06:23 abgeholt – oder jetzt mit «Jetzt aktualisieren».</p></section>`;
+      return `<section class="card stats-card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3>
         <div class="stat-tiles">
+          ${acc.platform === "youtube" ? `${tile("Abonnenten", last.followers_count ?? "–", delta != null ? `${delta >= 0 ? "+" : ""}${delta} in ${st.statsDays} Tagen` : "")}
+            ${tile("Aufrufe gesamt", last.views_total != null ? num(last.views_total) : "–", first.views_total != null && last.views_total != null ? `+${num(last.views_total - first.views_total)} in ${st.statsDays} Tagen` : "")}
+            ${tile("Videos", last.media_count ?? "–")}` : `
           ${tile("Follower", last.followers_count ?? "–", delta != null ? `${delta >= 0 ? "+" : ""}${delta} in ${st.statsDays} Tagen` : "")}
           ${tile("Reichweite", num(sum("reach")), "erreichte Konten, Summe")}
           ${tile("Views", num(sum("views")))}
-          ${tile("Interaktionen", num(sum("total_interactions")), `${num(sum("profile_links_taps"))} Link-Taps`)}
+          ${tile("Interaktionen", num(sum("total_interactions")), `${num(sum("profile_links_taps"))} Link-Taps`)}`}
         </div>
         ${followerSeries.length > 1 ? `<div class="stats-spark"><span class="muted small">Follower-Verlauf</span>${sparkSvg(followerSeries, "line")}</div>` : `<p class="muted small">Follower-Verlauf erscheint ab dem zweiten Tag. Manche Werte liefert Instagram erst ab 100 Followern.</p>`}
         ${media.length ? `<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Beitrag</th>${STAT_COLS.map(([k, l]) => `<th><button class="link${st.statsSort === k ? " on" : ""}" data-action="soc-stats-sort" data-value="${k}">${l}${st.statsSort === k ? " ▾" : ""}</button></th>`).join("")}</tr></thead>
