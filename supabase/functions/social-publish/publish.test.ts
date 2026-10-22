@@ -321,6 +321,50 @@ Deno.test("location: sent for images (not stories); refused location → posted 
   assertMatch(refused[0].last_error!, /Standort «Flugplatz Birrfeld»/);
 });
 
+Deno.test("AI label: is_ai_generated on image, reel and carousel parent – not on children, not without the flag", async () => {
+  const media2 = [{ path: "a/1.jpg", type: "image/jpeg", width: 1080, height: 1350 }, { path: "a/2.jpg", type: "image/jpeg", width: 1080, height: 1350 }];
+  const posts = [
+    post({ id: "p1", ai_generated: true }),
+    post({ id: "p2", kind: "reel", ai_generated: true, media: [{ path: "a/v.mp4", type: "video/mp4", width: 1080, height: 1920 }] }),
+    post({ id: "p3", kind: "carousel", ai_generated: true, media: media2 }),
+    post({ id: "p4" }),
+  ];
+  const { store } = fakeStore(posts);
+  let n = 0;
+  const routes: Record<string, unknown> = {
+    "GET IG1/content_publishing_limit": LIMIT_OK,
+    "POST IG1/media": () => ({ id: `K${++n}` }),
+    "POST IG1/media_publish": () => ({ id: `M${n}` }),
+  };
+  for (let i = 1; i <= 8; i++) { routes[`GET K${i}`] = { status_code: "FINISHED" }; routes[`GET M${i}`] = {}; routes[`POST M${i}/comments`] = { id: `C${i}` }; }
+  const g = mockGraph(routes);
+  await publishDue(deps(store, g.fetchFn));
+  const creates = g.calls.filter((c) => c.path === "IG1/media" && c.method === "POST").map((c) => c.params);
+  assertEquals(posts.map((p) => p.status), ["published", "published", "published", "published"]);
+  assertEquals(String(creates[0].is_ai_generated), "true"); // image
+  assertEquals(String(creates[1].is_ai_generated), "true"); // reel
+  assertEquals(creates[2].is_ai_generated, undefined); // carousel child
+  assertEquals(creates[3].is_ai_generated, undefined); // carousel child
+  assertEquals(String(creates[4].is_ai_generated), "true"); // carousel container
+  assertEquals(creates[5].is_ai_generated, undefined); // no flag
+});
+
+Deno.test("AI label on a story: tried; refused → story posted without, with a note", async () => {
+  const story = [post({ id: "s1", kind: "story", ai_generated: true })];
+  const { store } = fakeStore(story);
+  let tries = 0;
+  const g = mockGraph({
+    "GET IG1/content_publishing_limit": LIMIT_OK,
+    "POST IG1/media": (params: Record<string, string>) => (++tries, params.is_ai_generated ? { error: { message: "(#100) Invalid parameter", code: 100 } } : { id: "K7" }),
+    "GET K7": { status_code: "FINISHED" },
+    "POST IG1/media_publish": { id: "M7" }, "GET M7": {},
+  });
+  await publishDue(deps(store, g.fetchFn));
+  assertEquals(tries, 2);
+  assertEquals(story[0].status, "published");
+  assertMatch(story[0].last_error!, /KI-Info bei Storys/);
+});
+
 Deno.test("files are checked before Instagram: missing file or no media → failed at once, nothing sent", async () => {
   const posts = [post({ id: "p1" }), post({ id: "p2", media: [] })];
   const { store } = fakeStore(posts);

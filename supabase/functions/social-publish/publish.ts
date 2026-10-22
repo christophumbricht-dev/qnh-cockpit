@@ -43,6 +43,8 @@ export type Post = {
   media_deleted_at?: string | null;
   location?: { id: string; name?: string } | null;
   location_dropped?: boolean; // set while publishing when Instagram refused the location
+  ai_generated?: boolean; // Instagram «KI-Info» – cannot be changed after publishing
+  ai_dropped?: boolean; // set while publishing when Instagram refused the AI label on a story
 };
 export type Account = { id: string; app_id?: string; platform: "instagram" | "facebook" | "youtube"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
 
@@ -174,13 +176,23 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
     }
   };
 
+  // AI label («KI-Info»): image, reel and the carousel container – never on carousel children
+  const ai = post.ai_generated ? { is_ai_generated: true } : {};
+
   if (post.kind === "image") {
-    return await withLocation({ image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first) });
+    return await withLocation({ image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first), ...ai });
   }
   if (post.kind === "story") {
-    return (await g.post(`${ig}/media`, isVideo(first)
-      ? { media_type: "STORIES", video_url: url(first) }
-      : { media_type: "STORIES", image_url: url(first) })).id;
+    const story = isVideo(first) ? { media_type: "STORIES", video_url: url(first) } : { media_type: "STORIES", image_url: url(first) };
+    if (!post.ai_generated) return (await g.post(`${ig}/media`, story)).id;
+    // not documented for stories: try it, and if Instagram refuses, post the story without the label and say so
+    try {
+      return (await g.post(`${ig}/media`, { ...story, ...ai })).id;
+    } catch (err) {
+      if (!(err instanceof GraphError) || !(err.code === 100 || /ai_generated|\bai\b/i.test(err.message))) throw err;
+      post.ai_dropped = true;
+      return (await g.post(`${ig}/media`, story)).id;
+    }
   }
   if (post.kind === "reel") {
     return await withLocation({
@@ -189,6 +201,7 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
       caption: post.caption,
       cover_url: post.cover_path ? deps.store.publicUrl(post.cover_path) : undefined,
       share_to_feed: true,
+      ...ai,
     });
   }
   // carousel: 2–10 child containers, then the carousel container
@@ -200,7 +213,7 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
       : { image_url: url(m), is_carousel_item: true, alt_text: m.alt || undefined, user_tags: userTags(m) })).id);
   }
   for (const child of children) if (!(await waitUntilFinished(deps, g, child))) throw new Error("Instagram verarbeitet ein Karussell-Video noch.");
-  return await withLocation({ media_type: "CAROUSEL", children: children.join(","), caption: post.caption });
+  return await withLocation({ media_type: "CAROUSEL", children: children.join(","), caption: post.caption, ...ai });
 }
 
 const VIDEO_ERROR = "Instagram konnte die Datei nicht verarbeiten. Bitte Format prüfen (Bild: JPEG; Video: MP4, H.264, AAC) und neu hochladen.";
@@ -233,6 +246,7 @@ async function finish(deps: Deps, g: ReturnType<typeof graph>, post: Post, media
     status: "published", published_at: deps.now().toISOString(), remote_media_id: mediaId,
     last_error: post.location_dropped ? `Veröffentlicht, aber Instagram hat den Standort «${post.location?.name ?? post.location?.id}» nicht angenommen – bitte in der App ergänzen.` : null,
   };
+  if (post.ai_dropped) patch.last_error = `${patch.last_error ? `${patch.last_error} ` : ""}Veröffentlicht, aber Instagram nimmt die KI-Info bei Storys nicht an – die Story ist ohne KI-Info online.`;
   try {
     patch.permalink = (await g.get(mediaId, { fields: "permalink" }))?.permalink ?? null;
   } catch { /* stories may have no permalink */ }
