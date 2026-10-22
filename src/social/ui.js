@@ -370,6 +370,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (p.status === "draft" || p.status === "failed") actions.push(btn("soc-open", "Bearbeiten", false));
     else actions.push(btn("soc-open", "Ansehen"));
     if (p.status === "approved") actions.push(btn("soc-withdraw", "Zurückziehen"));
+    if (p.status === "failed") actions.push(btn("soc-retry", "Erneut versuchen", false));
     if (["draft", "approved", "failed"].includes(p.status)) actions.push(btn("soc-publish-now", "Jetzt veröffentlichen"));
     actions.push(btn("soc-duplicate", "Duplizieren"));
     if (p.permalink) actions.push(`<a class="btn ghost" href="${esc(p.permalink)}" target="_blank" rel="noopener">Auf ${PLATFORM[a?.platform] ?? "Instagram"} öffnen</a>`);
@@ -429,6 +430,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       id: post && !duplicate ? post.id : crypto.randomUUID(),
       isNew: !post || duplicate,
       status: post && !duplicate ? post.status : "draft",
+      updated_at: post && !duplicate ? post.updated_at ?? null : null,
       account_id: post?.account_id ?? fallback?.id,
       kind: post?.kind ?? (fallback?.platform === "youtube" ? "reel" : "image"),
       title: post?.title ?? "",
@@ -486,7 +488,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const where = platformName(ed.account_id);
     const kinds = Object.entries(yt ? { reel: "Video (Short)" } : KINDS).map(([k, l]) =>
       `<button class="chip${ed.kind === k ? " on" : ""}" data-action="soc-kind" data-value="${k}"${dis}>${l}</button>`).join("");
-    const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,video/mp4,video/quicktime";
+    const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.heic,.heif" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.heic,.heif,video/mp4,video/quicktime";
     const itemsHtml = ed.items.map((it, i) => `<li class="soc-file">
         ${thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "thumb small")}
         <div><span class="small muted">${/^video\//.test(it.type) ? "Video" : "Bild"} · ${aspectLabel(it.width, it.height)}${it.width ? ` · ${it.width}×${it.height}` : ""}${it.duration ? ` · ${Math.round(it.duration)} s` : ""}${it.size ? ` · ${(it.size / 1048576).toFixed(1)} MB` : ""}</span>
@@ -648,10 +650,35 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
   const guessType = (name) => (/\.jpe?g$/i.test(name) ? "image/jpeg" : /\.mp4$/i.test(name) ? "video/mp4" : /\.mov$/i.test(name) ? "video/quicktime" : "");
 
+  // Instagram takes JPEG only: PNG/WebP (and HEIC where the browser can read it) become JPEG here
+  async function toJpeg(file) {
+    const type = file.type || guessType(file.name);
+    if (!/^image\//.test(type) && !/\.(png|webp|heic|heif)$/i.test(file.name)) return file;
+    if (type === "image/jpeg") return file;
+    try {
+      const bmp = await createImageBitmap(file);
+      const c = document.createElement("canvas");
+      c.width = bmp.width; c.height = bmp.height;
+      const g = c.getContext("2d");
+      g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); // transparent PNG → white, not black
+      g.drawImage(bmp, 0, 0);
+      bmp.close();
+      const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+      if (!blob) throw new Error("toBlob");
+      toast(`«${file.name}» als JPEG übernommen`);
+      return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+    } catch {
+      toast(`«${file.name}» kann der Browser nicht umwandeln – bitte als JPEG (.jpg) speichern und nochmals hochladen.`);
+      return null;
+    }
+  }
+
   async function addFiles(fileList) {
     const ed = S.social.editor;
     if (!ed || readonly(ed)) return;
-    const added = await Promise.all([...fileList].map(probe));
+    const files = (await Promise.all([...fileList].map(toJpeg))).filter(Boolean);
+    if (!files.length) return;
+    const added = await Promise.all(files.map(probe));
     ed.items = ed.kind === "carousel" ? [...ed.items, ...added].slice(0, 12) : added.slice(0, 1);
     ed.preview = 0;
     ed.dirty = true;
@@ -681,7 +708,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
       scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
     };
-    const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row);
+    const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row, ed.updated_at);
+    ed.updated_at = saved?.updated_at ?? ed.updated_at;
     ed.isNew = false;
     ed.dirty = false;
     ed.status = saved?.status ?? ed.status;
@@ -786,12 +814,25 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         p.todo = toggleTodoLine(before, Number(el.dataset.value));
         if (st.editor?.id === id) st.editor.todo = p.todo;
         render();
-        try { await data.setTodo(id, p.todo); }
+        try { const row = await data.setTodo(id, p.todo); if (row?.updated_at) { p.updated_at = row.updated_at; if (st.editor?.id === id) st.editor.updated_at = row.updated_at; } }
         catch (err) { p.todo = before; if (st.editor?.id === id) st.editor.todo = before; toast(errorText(err)); render(); }
         return true;
       }
+      case "soc-retry": {
+        // failed → approved again, due in 2 minutes (the publish run every 10 min picks it up)
+        const p = posts().find((x) => x.id === id);
+        if (!p) return true;
+        const when = new Date(Date.now() + 2 * 60e3).toISOString();
+        const { errors } = validatePost({ kind: p.kind, items: p.media ?? [], caption: p.caption, first_comment: p.first_comment, title: p.title }, { forApproval: true, scheduledAt: when });
+        if (!p.media?.length) { toast("Kein Bild/Video im Beitrag – zuerst «Bearbeiten» und hochladen."); return true; }
+        if (errors.length) { toast(errors[0]); return true; }
+        if (!confirm("Nochmals versuchen? Der Beitrag wird in den nächsten Minuten veröffentlicht.")) return true;
+        try { await data.setStatus(id, "approved", when); toast("Wird in den nächsten Minuten erneut veröffentlicht."); await load(true); }
+        catch (err) { toast(errorText(err)); }
+        return true;
+      }
       case "soc-save-todo":
-        await busy(ed, async () => { await data.setTodo(ed.id, ed.todo ?? ""); ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
+        await busy(ed, async () => { const row = await data.setTodo(ed.id, ed.todo ?? ""); if (row?.updated_at) ed.updated_at = row.updated_at; ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
         return true;
       case "soc-review": {
         st.review = { skipped: new Set(), done: 0 };
@@ -856,7 +897,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       }
       case "soc-pick-files": {
         if (!ed || readonly(ed)) return true;
-        const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,video/mp4,video/quicktime";
+        const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.heic,.heif" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.heic,.heif,video/mp4,video/quicktime";
         const files = await pickFiles(accept, ed.kind === "carousel");
         if (files.length) await addFiles(files);
         return true;

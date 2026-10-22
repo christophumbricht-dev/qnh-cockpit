@@ -58,6 +58,16 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
         .gte("published_at", since.toISOString()).limit(20), "youtube follow-up") as Array<Post & { social_accounts?: unknown }>;
       return rows.map(({ social_accounts: _a, ...p }) => p as Post).filter((p) => p.first_comment.trim()); // only spaces: nothing to write
     },
+    async missingFiles(paths: string[]) {
+      const missing: string[] = [];
+      for (const p of paths) {
+        const i = p.lastIndexOf("/");
+        const { data, error } = await db.storage.from(BUCKET).list(p.slice(0, i), { search: p.slice(i + 1), limit: 10 });
+        if (error) continue; // cannot tell – let Instagram try
+        if (!(data ?? []).some((f: { name: string }) => f.name === p.slice(i + 1))) missing.push(p);
+      }
+      return missing;
+    },
     async removeFiles(paths) {
       if (paths.length) must(await db.storage.from(BUCKET).remove(paths), "remove files");
     },

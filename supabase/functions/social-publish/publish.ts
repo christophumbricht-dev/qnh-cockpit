@@ -56,6 +56,7 @@ export interface Store {
   publicUrl(path: string): string;
   publishedWithFiles(before: Date): Promise<Post[]>;
   removeFiles(paths: string[]): Promise<void>;
+  missingFiles?(paths: string[]): Promise<string[]>; // paths that are not in the bucket
 }
 
 export type Deps = {
@@ -96,6 +97,7 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
     const g = graph(deps.fetch, IG_HOST, await store.token(account.id));
 
     if (post.remote_media_id) return await finish(deps, g, post, post.remote_media_id); // published before, only finish
+    if (!post.remote_container_id) await checkFiles(deps, post);
 
     let container = post.remote_container_id;
     if (container) {
@@ -132,6 +134,14 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
   } catch (err) {
     return await fail(deps, post, err);
   }
+}
+
+// before Instagram fetches anything: the post has media and every file is really in the bucket
+export async function checkFiles(deps: Deps, post: Post) {
+  if (!post.media?.length) throw new FinalError("Kein Bild/Video im Beitrag – bitte im Cockpit hochladen und «Erneut versuchen».");
+  if (!deps.store.missingFiles) return;
+  const missing = await deps.store.missingFiles([...post.media.map((m) => m.path), ...(post.cover_path ? [post.cover_path] : [])]);
+  if (missing.length) throw new FinalError(`Datei fehlt im Speicher (${missing.map((p) => p.split("/").pop()).join(", ")}) – bitte im Cockpit neu hochladen und «Erneut versuchen».`);
 }
 
 async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account: Account, post: Post): Promise<string> {
@@ -258,8 +268,10 @@ export function germanError(err: unknown): string {
     if (err.code === 190) return "Der Instagram-Zugang (Token) ist abgelaufen oder ungültig. Neuen Token eintragen (docs/social-setup.md).";
     if (err.code === 10 || err.code === 200) return "Der App fehlt eine Berechtigung bei Meta (instagram_business_content_publish).";
     if (err.code === 4 || err.code === 17 || err.code === 32 || err.code === 613) return "Zu viele Anfragen an Instagram. Neuer Versuch später.";
-    if (err.code === 9004 || err.subcode === 2207052) return "Instagram konnte die Datei nicht von Supabase laden.";
-    return `Instagram meldet: ${err.message}`;
+    const code = ` (Code ${err.code ?? "?"}${err.subcode ? `/${err.subcode}` : ""})`;
+    if (err.code === 9004 || err.subcode === 2207052) return `Instagram konnte die Datei nicht von Supabase laden – meist fehlt die Datei oder sie ist kein JPEG/MP4. Bild im Cockpit prüfen bzw. neu hochladen, dann «Erneut versuchen».${code}`;
+    if (err.subcode === 2207026 || err.subcode === 2207004) return `Instagram lehnt das Format ab (Bild: JPEG 4:5 bis 1.91:1, max. 8 MB; Video: MP4 H.264). Datei anpassen, dann «Erneut versuchen».${code}`;
+    return `Instagram meldet: ${err.message}${code}`;
   }
   return scrubToken(err instanceof Error ? err.message : String(err));
 }

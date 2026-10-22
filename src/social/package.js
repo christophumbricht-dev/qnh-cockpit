@@ -53,7 +53,7 @@ export async function parsePackage(entries, accounts) {
   const files = names.map((n) => {
     const f = entries.get(base(n));
     if (!f) throw new PackageError(`Die Datei «${n}» aus post.json fehlt im Paket.`);
-    if (!typeOf(n)) throw new PackageError(`«${n}»: nur JPEG (.jpg) und MP4/MOV sind erlaubt.`);
+    if (!typeOf(n)) throw new PackageError(/\.(png|webp|heic|heif|gif)$/i.test(n) ? `«${n}»: Instagram nimmt nur JPEG – das Bild bitte als .jpg speichern.` : `«${n}»: nur JPEG (.jpg) und MP4/MOV sind erlaubt.`);
     return f.type ? f : new File([f], f.name, { type: typeOf(n) });
   });
   const total = files.reduce((s, f) => s + f.size, 0);

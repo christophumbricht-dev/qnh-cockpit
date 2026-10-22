@@ -177,6 +177,14 @@ Was dabei passiert: Der dauerhafte Zugang von Google landet direkt in Supabase V
 
 **Kosten/Kontingent:** gratis. YouTube gibt jedem Projekt ein Tageskontingent; Kommentare abholen kostet wenige Einheiten pro Durchgang, eine Antwort 50 Einheiten.
 
+## Fehler «Instagram konnte die Datei nicht von Supabase laden» / «Datei fehlt im Speicher»
+Der Beitrag steht auf **Fehler**. Meist fehlt das Bild im Speicher oder es ist kein JPEG.
+1. Social → den Beitrag → **Bearbeiten**: Ist das Bild in der Vorschau zu sehen? Wenn nicht: Bild neu hochladen (PNG/WebP wandelt das Cockpit selbst in JPEG um) → **Speichern**.
+2. In der Liste **«Erneut versuchen»** – der Beitrag geht in den nächsten Minuten raus.
+3. Steht in der Meldung ein Code (z. B. «Code 9004/2207052»), diesen bei Rückfragen an Claude mitschicken.
+
+Seit dem 22.10.2026 prüft das Cockpit vor dem Senden, ob alle Dateien da sind, und ein lange offener Editor kann einen inzwischen geänderten Beitrag nicht mehr mit alten Daten überschreiben (Ursache des Fehlers vom 21.10.).
+
 ## Was das System macht (und was nicht)
 - Veröffentlicht **nur freigegebene** Beiträge, nie automatisch einen Entwurf. Die Datenbank erzwingt das zusätzlich.
 - Höchstens **3 Versuche** pro Beitrag, mit verständlicher Fehlermeldung. Kein doppeltes Posten.

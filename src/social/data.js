@@ -170,9 +170,17 @@ export async function insertPost(id, post) {
   return must(await sb().from("social_posts").insert({ id, ...pick(post) }).select().single(), "insert");
 }
 
-export async function updatePost(id, post) {
+// expectedUpdatedAt: only save if nobody changed the post since it was opened (e.g. a package import) –
+// otherwise an editor that was open for a while would put back files that no longer exist
+export async function updatePost(id, post, expectedUpdatedAt) {
   if (DEMO) return demo.update(id, pick(post));
-  return must(await sb().from("social_posts").update(pick(post)).eq("id", id).select().single(), "update");
+  let q = sb().from("social_posts").update(pick(post)).eq("id", id);
+  if (expectedUpdatedAt) q = q.eq("updated_at", expectedUpdatedAt);
+  const r = await q.select().maybeSingle();
+  if (!r.error && !r.data && expectedUpdatedAt) {
+    throw Object.assign(new Error("Dieser Beitrag wurde inzwischen geändert (z. B. durch einen Paket-Import). Bitte «Zurück» und neu öffnen – hier ist nichts gespeichert."), { code: "stale" });
+  }
+  return must(r, "update");
 }
 
 export async function setStatus(id, status, scheduledAt) {
