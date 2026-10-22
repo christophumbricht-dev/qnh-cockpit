@@ -29,11 +29,14 @@ export async function stats(days) {
   await wait();
   const day = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
   const accountDays = Array.from({ length: Math.min(days, 28) }, (_, i) => ({ account_id: "acc-dw", day: day(27 - i), metrics: { followers_count: 120 + i * 2 + (i % 3), reach: 80 + (i * 37) % 90, views: 150 + (i * 53) % 160, total_interactions: 12 + (i * 7) % 15, profile_links_taps: i % 4 } }));
-  const m = (id, d, kind, caption, metrics) => ({ media_id: id, account_id: "acc-dw", day: day(0), kind, permalink: "https://www.instagram.com/", caption, posted_at: new Date(Date.now() - d * 864e5).toISOString(), metrics });
+  // YouTube channel of Leeside Lab: subscribers, total views, videos
+  accountDays.push(...Array.from({ length: Math.min(days, 28) }, (_, i) => ({ account_id: "acc-ly", day: day(27 - i), metrics: { followers_count: 2 + Math.floor(i / 9), views_total: 300 + i * 30, media_count: 2 + Math.floor(i / 14) } })));
+  const m = (id, d, kind, caption, metrics, account_id = "acc-dw") => ({ media_id: id, account_id, day: day(0), kind, permalink: "https://www.instagram.com/", caption, posted_at: new Date(Date.now() - d * 864e5).toISOString(), metrics });
   return { accountDays, mediaDays: [
     m("1790001", 3, "CAROUSEL", "Your logbook flies with you now. ✈️", { views: 1480, reach: 920, likes: 64, comments: 9, saved: 31, shares: 12, follows: 6 }),
     m("1790002", 8, "REELS", "Take off. Record. Share.", { views: 3210, reach: 2400, likes: 118, comments: 14, saved: 22, shares: 40, ig_reels_avg_watch_time: 6200 }),
     m("1790003", 12, "FEED", "Fly. 🛩️", { views: 610, reach: 430, likes: 41, comments: 3, saved: 4, shares: 2 }),
+    m("yt-nebel-1", 1, "SHORT", "Why is there a sea of fog over Switzerland? | Nebelmeer explained, part 1", { views: 607, likes: 4, comments: 1 }, "acc-ly"),
   ] };
 }
 export async function addLocation(row) { const l = { id: `loc${locations.length + 1}`, ...row }; locations.push(l); return clone(l); }

@@ -230,7 +230,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
     if (!st.stats.value) return `<p class="muted loading">Lädt Statistik …</p>`;
     const { accountDays, mediaDays } = st.stats.value;
-    const accs = accounts().filter((a) => a.platform === "instagram" && (st.filter === "all" || a.app_id === st.filter)); // statistics: Instagram only so far
+    // Instagram first, then YouTube (same app next to each other)
+    const accs = accounts().filter((a) => ["instagram", "youtube"].includes(a.platform) && (st.filter === "all" || a.app_id === st.filter))
+      .sort((a, b) => String(a.app_id).localeCompare(String(b.app_id)) || (a.platform === "instagram" ? -1 : 1));
     const daysChips = [[7, "7 Tage"], [28, "28 Tage"], [90, "90 Tage"]].map(([d, l]) => `<button class="chip${st.statsDays === d ? " on" : ""}" data-action="soc-stats-days" data-value="${d}">${l}</button>`).join("");
     const head = `<div class="cal-head"><div class="chips">${daysChips}</div>
       <button class="btn ghost" data-action="soc-stats-refresh"${st.stats.loading ? " disabled" : ""}>${st.stats.loading ? "Holt Zahlen …" : "Jetzt aktualisieren"}</button></div>`;
@@ -262,7 +264,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <tbody>${media.map((m) => `<tr><td><a href="${esc(m.permalink ?? "#")}" target="_blank" rel="noopener">${esc(m.caption.split("\n")[0].slice(0, 60) || "(ohne Text)")}</a><br><span class="muted small">${esc(KIND_LABEL[m.kind] ?? m.kind)} · ${m.posted_at ? esc(formatZurichDate(m.posted_at)) : ""}</span></td>${STAT_COLS.map(([k]) => `<td>${m.metrics[k] == null ? "–" : num(m.metrics[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">Keine Beiträge in diesem Zeitraum.</p>`}
       </section>`;
     }).join("");
-    return `${head}${blocks}<p class="hint">Zahlen von Instagram, einmal täglich abgeholt (Verzögerung bis 48 h). Nach einer Spalte sortieren: Spaltentitel antippen.</p>`;
+    return `${head}${blocks}<p class="hint">Zahlen von Instagram und YouTube, einmal täglich abgeholt (Instagram: Verzögerung bis 48 h). Nach einer Spalte sortieren: Spaltentitel antippen.</p>`;
   }
 
   // ---------- calendar (month view, Swiss time) ----------
