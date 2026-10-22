@@ -954,3 +954,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 .out-tools { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
 .out-de { margin: 6px 0 2px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 14px; white-space: pre-line; }
+
+/* ---- AI label ---- */
+.ai-field span:first-child { display: flex; gap: 8px; align-items: center; }
+.ai-field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--brand); }
+.pill.ai { background: #ede7ff; color: #5b3cc4; }
+.phone-ai { margin-left: 6px; font-size: 10px; color: #737373; }
+.ai-hint { margin: 8px 0 0; }

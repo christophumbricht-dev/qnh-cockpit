@@ -17,7 +17,7 @@ export async function loadSocial() {
     sb().from("social_posts").select("*").neq("status", "cancelled").order("created_at", { ascending: false }).limit(300),
   ]);
   const rows = must(posts, "posts");
-  if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; hasTitle = "title" in rows[0]; }
+  if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; hasTitle = "title" in rows[0]; hasAi = "ai_generated" in rows[0]; }
   else hasTitle = !(await sb().from("social_posts").select("title").limit(1)).error; // empty table: ask for the column
   const places = hasLocation ? await sb().from("social_locations").select("id, page_id, name").order("name") : { data: [] };
   // what is already on Instagram (from the daily statistics; empty until that is set up)
@@ -153,7 +153,10 @@ export async function copyFile(fromPath, postId, type, i) {
   return path;
 }
 
-const FIELDS = ["account_id", "kind", "title", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location"];
+const FIELDS = ["account_id", "kind", "title", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location", "ai_generated"];
+// "ai_generated" exists after migration 20261022100000_social_ai_label.sql
+let hasAi = DEMO;
+export const aiSupported = () => hasAi;
 // "todo" exists after migration 20261014120000_social_todo.sql; until then it is left out
 let hasTodo = DEMO;
 // "location" + table social_locations exist after migration 20261019100000_social_location.sql
@@ -163,7 +166,7 @@ let hasTitle = DEMO;
 export const titleSupported = () => hasTitle;
 export const locationSupported = () => hasLocation;
 export const todoSupported = () => hasTodo;
-const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation) && (k !== "title" || hasTitle)).map((k) => [k, post[k]]));
+const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation) && (k !== "title" || hasTitle) && (k !== "ai_generated" || hasAi)).map((k) => [k, post[k]]));
 
 export async function insertPost(id, post) {
   if (DEMO) return demo.insert({ id, ...pick(post) });

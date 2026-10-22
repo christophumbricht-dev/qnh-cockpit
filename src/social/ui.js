@@ -382,6 +382,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
           ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
+          ${p.ai_generated ? `<span class="pill ai" title="Wird mit «KI-Info» veröffentlicht">KI</span>` : ""}
           ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
         ${p.title ? `<p class="text"><b>${esc(p.title)}</b></p>` : ""}
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
@@ -438,6 +439,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       first_comment: post?.first_comment ?? "",
       todo: duplicate ? "" : post?.todo ?? "",
       location: post?.location ?? null,
+      ai: post?.ai_generated === true,
       scheduledLocal: post?.scheduled_at ? utcToZurichLocal(post.scheduled_at) : tomorrowAt18(),
       items,
       cover: post?.cover_path ? (duplicate ? { copyFrom: post.cover_path, type: "image/jpeg" } : { path: post.cover_path, type: "image/jpeg" }) : null,
@@ -501,6 +503,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       actions.push(`<button class="btn ghost" data-action="soc-save"${dis}>Speichern (Entwurf)</button>`);
       actions.push(`<button class="btn" data-action="soc-approve"${dis}>Freigeben …</button>`);
     }
+    const aiHint = ed.ai && !isYoutube(ed.account_id) ? `<p class="note small ai-hint">🤖 Wird mit <b>KI-Info</b> veröffentlicht – später nicht mehr änderbar.</p>` : "";
     if (!ed.isNew && ed.status === "approved") actions.push(`<button class="btn ghost" data-action="soc-withdraw" data-id="${ed.id}"${ed.busy ? " disabled" : ""}>Zurückziehen</button>`);
     if (["draft", "approved", "failed"].includes(ed.status)) actions.push(`<button class="btn ghost" data-action="soc-publish-now" data-id="${ed.id}"${ed.busy ? " disabled" : ""}>Jetzt veröffentlichen …</button>`);
     if (!ed.isNew) actions.push(`<button class="btn ghost" data-action="soc-duplicate" data-id="${ed.id}">Duplizieren</button>`);
@@ -535,6 +538,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
             <textarea name="soc-caption" rows="7" maxlength="${yt ? 5200 : 2400}"${dis}>${esc(ed.caption)}</textarea></label>
           <label class="field">${yt ? "Erster Kommentar (optional – anpinnen geht nur in YouTube von Hand)" : "Erster Kommentar (optional, z. B. Hashtags)"}
             <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>`}
+          ${data.aiSupported() && !yt ? `<label class="field ai-field"><span><input type="checkbox" name="soc-ai"${ed.ai ? " checked" : ""}${dis}> <b>KI-Info</b> – mit KI erstellt (z. B. KI-Stimme, KI-Musik, KI-Bild)</span>
+            <span class="muted small">Instagram zeigt dann «KI-Info» unter deinem Namen. Nach dem Veröffentlichen nicht mehr änderbar.</span></label>` : ""}
           ${data.locationSupported() && ed.kind !== "story" && !yt ? `<label class="field">Standort (optional)
             <select name="soc-location"${dis}>
               <option value="">Kein Standort</option>
@@ -549,7 +554,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
             <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
             ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
-          <div class="actions">${actions.join("")}</div>
+          ${aiHint}<div class="actions">${actions.join("")}</div>
         </div>
         <aside class="soc-preview" id="soc-preview">${previewHtml(ed, acc)}</aside>
       </section>`;
@@ -574,7 +579,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       ? `<div class="phone-dots">${ed.items.map((_, i) => `<button class="${i === ed.preview ? "on" : ""}" data-action="soc-preview" data-value="${i}" aria-label="Datei ${i + 1}"></button>`).join("")}</div>` : "";
     const cap = ed.caption.length > 125 ? `${esc(ed.caption.slice(0, 125))}… <span class="muted">mehr</span>` : esc(ed.caption);
     return `<div class="phone${vertical ? " vertical" : ""}">
-      <div class="phone-head"><span class="avatar"></span><b>${esc(handle)}</b>${ed.kind === "story" ? `<span class="muted small">Story</span>` : ""}</div>
+      <div class="phone-head"><span class="avatar"></span><b>${esc(handle)}</b>${ed.ai && !isYoutube(ed.account_id) ? `<span class="phone-ai">KI-Info</span>` : ""}${ed.kind === "story" ? `<span class="muted small">Story</span>` : ""}</div>
       <div class="phone-media${slider ? " slider" : ""}" style="aspect-ratio:${ratio}">${media}</div>
       ${dots}
       ${isYoutube(ed.account_id) ? `<div class="phone-caption"><b>${esc(ed.title || "(Titel fehlt)")}</b><br><span class="muted small">@${esc(handle)} · YouTube Short</span></div>` : ""}
@@ -707,6 +712,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       account_id: ed.account_id, kind: ed.kind, title: isYoutube(ed.account_id) ? String(ed.title ?? "").trim() : "", caption: ed.kind === "story" ? "" : ed.caption,
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
       scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
+      ai_generated: !isYoutube(ed.account_id) && ed.ai === true,
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row, ed.updated_at);
     ed.updated_at = saved?.updated_at ?? ed.updated_at;
@@ -943,6 +949,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       if (wasYt !== isYoutube(ed.account_id)) render(); else refreshBits();
       return true;
     }
+    if (name === "soc-ai" && ed) { ed.ai = e.target.checked; ed.dirty = true; render(); return true; }
     if (name === "soc-location" && ed) {
       const v = e.target.value;
       if (v !== "__new") { const p = places().find((x) => x.page_id === v); ed.location = v ? { id: v, name: p?.name ?? ed.location?.name ?? v } : null; ed.dirty = true; return true; }
@@ -1019,7 +1026,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, ai: pkg.ai === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };
