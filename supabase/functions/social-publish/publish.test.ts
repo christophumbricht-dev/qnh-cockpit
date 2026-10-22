@@ -320,3 +320,23 @@ Deno.test("location: sent for images (not stories); refused location → posted 
   assertEquals(refused[0].status, "published");
   assertMatch(refused[0].last_error!, /Standort «Flugplatz Birrfeld»/);
 });
+
+Deno.test("files are checked before Instagram: missing file or no media → failed at once, nothing sent", async () => {
+  const posts = [post({ id: "p1" }), post({ id: "p2", media: [] })];
+  const { store } = fakeStore(posts);
+  store.missingFiles = async (paths) => paths.filter((p) => p.includes("acc1/p1"));
+  const g = mockGraph({ "GET IG1/content_publishing_limit": LIMIT_OK });
+  await publishDue(deps(store, g.fetchFn));
+  assertEquals(g.calls.filter((c) => c.method === "POST").length, 0);
+  assertEquals(posts[0].status, "failed");
+  assertMatch(posts[0].last_error!, /Datei fehlt im Speicher \(1\.jpg\).*Erneut versuchen/);
+  assertEquals(posts[1].status, "failed");
+  assertMatch(posts[1].last_error!, /Kein Bild\/Video/);
+});
+
+Deno.test("Graph error text names the code and what to do", async () => {
+  const { germanError } = await import("./publish.ts");
+  const { GraphError } = await import("./graph.ts");
+  assertMatch(germanError(new GraphError("Media download has failed", 400, 9004, 2207052)), /neu hochladen.*\(Code 9004\/2207052\)/);
+  assertMatch(germanError(new GraphError("Something else", 400, 100)), /Instagram meldet: Something else \(Code 100\)/);
+});

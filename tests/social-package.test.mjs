@@ -92,3 +92,10 @@ test("YouTube package: title for the video, longer than 100 characters is refuse
   assert.equal(p.title, "Föhn, part 1");
   await assert.rejects(parsePackage(files({ ...yt, title: "x".repeat(101) }), accounts), /höchstens 100/);
 });
+
+test("import: PNG/WebP/HEIC get a clear 'save as JPEG' message; a missing file stops the package", async () => {
+  const png = new Map([["post.json", new File([JSON.stringify({ ...POST, media: ["1.png"] })], "post.json")], ["1.png", new File([new Uint8Array(10)], "1.png")]]);
+  await assert.rejects(parsePackage(png, ACCOUNTS), /nur JPEG – das Bild bitte als \.jpg speichern/);
+  const missing = new Map([["post.json", new File([JSON.stringify({ ...POST, media: ["1.jpg", "3.jpg"] })], "post.json")], ["1.jpg", new File([new Uint8Array(10)], "1.jpg", { type: "image/jpeg" })]]);
+  await assert.rejects(parsePackage(missing, ACCOUNTS), /3\.jpg.*fehlt im Paket/);
+});
