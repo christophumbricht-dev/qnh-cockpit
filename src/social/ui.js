@@ -726,7 +726,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const acc = account(ed.account_id);
     const lines = firstLines(ed.caption) || (ed.kind === "story" ? "(Story)" : "(kein Text)");
     const yt = acc?.platform === "youtube";
-    return `${title}\n\nKonto: ${accountLabel(acc)}\nArt: ${yt ? "YouTube-Video" : KINDS[ed.kind]}\nZeit: ${formatZurich(zurichToUtc(ed.scheduledLocal))}\n\n${yt ? `«${ed.title}»\n` : ""}${lines}`;
+    return `${title}\n\nKonto: ${accountLabel(acc)}\nArt: ${yt ? "YouTube-Video" : KINDS[ed.kind]}\nZeit: ${formatZurich(zurichToUtc(ed.scheduledLocal))}\n\n${yt ? `«${ed.title}»\n` : ""}${lines}${!yt && ed.ai ? "\n\n🤖 Mit KI-Info – später nicht mehr änderbar." : ""}`;
   }
 
   async function busy(ed, fn) {
