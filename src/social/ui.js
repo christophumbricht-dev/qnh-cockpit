@@ -382,7 +382,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
           ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
-          ${p.ai_generated ? `<span class="pill ai" title="Wird mit «KI-Info» veröffentlicht">KI</span>` : ""}
+          ${p.ai_generated && !isYoutube(p.account_id) ? `<span class="pill ai" title="Wird mit «KI-Info» veröffentlicht">KI</span>` : ""}
           ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
         ${p.title ? `<p class="text"><b>${esc(p.title)}</b></p>` : ""}
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
@@ -538,7 +538,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
             <textarea name="soc-caption" rows="7" maxlength="${yt ? 5200 : 2400}"${dis}>${esc(ed.caption)}</textarea></label>
           <label class="field">${yt ? "Erster Kommentar (optional – anpinnen geht nur in YouTube von Hand)" : "Erster Kommentar (optional, z. B. Hashtags)"}
             <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>`}
-          ${data.aiSupported() && !yt ? `<label class="field ai-field"><span><input type="checkbox" name="soc-ai"${ed.ai ? " checked" : ""}${dis}> <b>KI-Info</b> – mit KI erstellt (z. B. KI-Stimme, KI-Musik, KI-Bild)</span>
+          ${data.aiSupported() && !yt ? `<label class="field ai-field"><span class="ai-row"><input type="checkbox" name="soc-ai"${ed.ai ? " checked" : ""}${dis}><span><b>KI-Info</b> – mit KI erstellt (z. B. KI-Stimme, KI-Musik, KI-Bild)</span></span>
             <span class="muted small">Instagram zeigt dann «KI-Info» unter deinem Namen. Nach dem Veröffentlichen nicht mehr änderbar.</span></label>` : ""}
           ${data.locationSupported() && ed.kind !== "story" && !yt ? `<label class="field">Standort (optional)
             <select name="soc-location"${dis}>
