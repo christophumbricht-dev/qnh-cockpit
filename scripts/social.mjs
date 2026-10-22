@@ -86,6 +86,7 @@ async function save(sb, p, id, isNew) {
     media, cover_path, scheduled_at: p.suggested_time ?? tomorrow18(),
     ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
     ...(p.hasLocation ? { location: p.pkg.kind === "story" ? null : p.place } : {}),
+    ...(p.hasAi ? { ai_generated: p.pkg.ai === true } : {}),
   };
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
@@ -143,12 +144,16 @@ async function main() {
   const rows = plan(pkgs, markers, posts).map((r) => (r.action === "past" && only.has(r.folder) ? { ...r, action: "new" } : r));
   const handle = (id) => `@${accounts.find((x) => x.id === id)?.handle ?? "?"}`;
   const hasLocation = posts.length ? "location" in posts[0] : true;
+  // column ai_generated exists after migration 20261022100000_social_ai_label.sql
+  const hasAi = posts.length ? "ai_generated" in posts[0] : true;
+  const aiMissing = !hasAi && pkgs.some((p) => p.pkg.ai);
   // column "title" exists after migration 20261020110000_social_youtube.sql
   const hasTitle = posts.length ? "title" in posts[0] : true;
   const places = placeRows ?? [];
   for (const r of rows) {
     r.hasTodo = hasTodo;
     r.hasLocation = hasLocation;
+    r.hasAi = hasAi;
     r.hasTitle = hasTitle;
     const loc = r.pkg.location;
     if (loc?.id) r.place = { id: loc.id, name: loc.name || places.find((p) => p.page_id === loc.id)?.name || loc.id };
@@ -262,6 +267,7 @@ async function main() {
   const count = (act) => rows.filter((r) => r.action === act).length;
   console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
     `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
+  if (aiMissing) console.log("Hinweis: «ai»: true (KI-Info) wird erst übernommen, wenn die Migration 20261022100000_social_ai_label.sql eingespielt ist.");
   if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
   if (cmd === "status" && (todo.length || notes.length || placeFills.length)) console.log("Importieren mit: npm run social -- import");
   if (cmd === "import" && todo.some((r) => r.done)) console.log("Als Entwürfe im Cockpit: https://cockpit.setqnh.ch/#social – freigeben machst nur du.");

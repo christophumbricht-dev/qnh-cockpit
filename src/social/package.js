@@ -111,6 +111,7 @@ export async function parsePackage(entries, accounts) {
     todo,
     tags,
     location,
+    ai: post.ai === true, // «KI-Info» on Instagram (AI voice, AI music, AI image)
     files,
     cover,
   };

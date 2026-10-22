@@ -83,6 +83,12 @@ test("location: a saved place by name, or a Facebook Page ID with name", async (
   await assert.rejects(parsePackage(entries({ ...POST, location: { id: "birrfeld" } }), ACCOUNTS), /Facebook-Seiten-ID/);
 });
 
+test("ai: true marks the post for Instagram's «KI-Info», default off", async () => {
+  assert.equal((await parsePackage(entries(), ACCOUNTS)).ai, false);
+  assert.equal((await parsePackage(entries({ ...POST, ai: true }), ACCOUNTS)).ai, true);
+  assert.equal((await parsePackage(entries({ ...POST, ai: "yes" }), ACCOUNTS)).ai, false);
+});
+
 test("YouTube package: title for the video, longer than 100 characters is refused", async () => {
   const accounts = [...ACCOUNTS, { id: "acc-ly", app_id: "leesidelab", platform: "youtube", handle: "leesidelab" }];
   const yt = { account: "leesidelab/youtube", kind: "reel", title: " Föhn, part 1 ", caption: "Why is it warm?", media: ["v.mp4"] };
