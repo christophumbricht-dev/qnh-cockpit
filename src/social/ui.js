@@ -26,7 +26,7 @@ const STATUS_FILTERS = [
 ];
 
 export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [] }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all" };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform() };
   let unsubscribe = null;
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
@@ -108,7 +108,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (st.editor) return editorView(st.editor);
     if (!st.value) return st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : `<p class="muted loading">Lädt …</p>`;
     const apps = [...new Set(accounts().map((a) => a.app_id))];
-    const shown = posts().filter((p) => (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && matchesSearch(p));
+    const shown = posts().filter((p) => (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && matchesSearch(p));
     const chips = [["all", "Alle Apps"], ...apps.map((id) => [id, appName(id)])]
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const openComments = inbox.count(false);
@@ -149,15 +149,34 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .filter(Boolean).join(" \n ").toLowerCase();
     return words.every((w) => hay.includes(w));
   }
+  // platform filter (Instagram / YouTube): list, calendar and the review round; remembered per device
+  function savedPlatform() {
+    try { const v = localStorage.getItem("qnh-social-platform"); return ["instagram", "youtube"].includes(v) ? v : "all"; } catch { return "all"; }
+  }
+  function onPlatform(p) {
+    const pf = S.social.platform;
+    return pf === "all" || account(p.account_id)?.platform === pf;
+  }
+  function platformChips() {
+    const st = S.social;
+    const have = new Set(accounts().map((a) => a.platform));
+    if (!(have.has("instagram") && have.has("youtube"))) return "";
+    return [["all", "Alle"], ["instagram", "Instagram"], ["youtube", "YouTube"]].map(([v, l]) =>
+      `<button class="seg-btn${st.platform === v ? " on" : ""}" data-action="soc-platform" data-value="${v}" aria-pressed="${st.platform === v}">${l}</button>`).join("");
+  }
   function searchBar(shown) {
     const st = S.social;
+    const pf = platformChips();
     const chips = st.mode !== "list" ? "" : STATUS_FILTERS.map(([v, label, , tip]) => {
       const n = v === "all" ? shown.length : shown.filter(statusTest(v)).length;
       if (n === 0 && v !== "all" && st.status !== v) return ""; // hide empty filters, except the active one
       return `<button class="chip${st.status === v ? " on" : ""}" data-action="soc-status" data-value="${v}" aria-pressed="${st.status === v}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)} <span class="muted">${n}</span></button>`;
     }).join("");
     return `<div class="soc-search">
-        <input type="search" name="soc-search" value="${esc(st.q)}" placeholder="Suchen: Text, Konto, Ort, #hashtag, @markiert …" autocomplete="off" spellcheck="false" aria-label="Beiträge durchsuchen">
+        <div class="soc-search-row">
+          <input type="search" name="soc-search" value="${esc(st.q)}" placeholder="Suchen: Text, Konto, Ort, #hashtag, @markiert …" autocomplete="off" spellcheck="false" aria-label="Beiträge durchsuchen">
+          ${pf ? `<div class="seg seg-small" role="group" aria-label="Plattform">${pf}</div>` : ""}
+        </div>
         ${chips ? `<div class="chips soc-status" role="group" aria-label="Nach Status filtern">${chips}</div>` : ""}
       </div>`;
   }
@@ -467,7 +486,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function reviewQueue() {
     const st = S.social;
     return posts()
-      .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter))
+      .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p))
       .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {
@@ -848,6 +867,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         render();
         return true;
       case "soc-status": st.status = el.dataset.value; render(); return true;
+      case "soc-platform":
+        st.platform = el.dataset.value;
+        try { localStorage.setItem("qnh-social-platform", st.platform); } catch { /* private mode */ }
+        render();
+        return true;
       case "soc-stats-days": st.statsDays = Number(el.dataset.value); render(); return true;
       case "soc-stats-sort": st.statsSort = el.dataset.value; render(); return true;
       case "soc-stats-refresh":

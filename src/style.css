@@ -986,3 +986,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .out-variant p { margin: 4px 0 6px; font-size: 14px; white-space: pre-line; }
 .out-tools .btn.small { padding: 6px 12px; font-size: 13px; }
 .out-tools { align-items: center; }
+
+.soc-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.soc-search-row input[type="search"] { flex: 1 1 260px; }
+.seg.seg-small .seg-btn { padding: 7px 12px; font-size: 13px; }
