@@ -13,9 +13,20 @@ const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröf
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
 const PLATFORM = { instagram: "Instagram", facebook: "Facebook", youtube: "YouTube" };
 const LOCKED = ["approved", "publishing", "published"];
+// status filter above the post list: [value, label, test, tooltip]
+const STATUS_FILTERS = [
+  ["all", "Alle", () => true, ""],
+  ["review", "Zu prüfen", (p) => p.status === "draft" || p.status === "failed", "Entwürfe und fehlgeschlagene Beiträge – hier braucht es dich"],
+  ["draft", "Entwürfe", (p) => p.status === "draft", ""],
+  ["approved", "Freigegeben", (p) => p.status === "approved" || p.status === "publishing", "freigegeben, wird zur geplanten Zeit veröffentlicht"],
+  ["published", "Veröffentlicht", (p) => p.status === "published", ""],
+  ["failed", "Fehlgeschlagen", (p) => p.status === "failed", ""],
+  ["todo", "Offene Aufgaben", null, "Beiträge mit noch nicht abgehakten «Selbst in Instagram erledigen»-Punkten"],
+  ["ai", "KI-Info", (p) => p.ai_generated === true, "mit «KI-Info» markiert"],
+];
 
 export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [] }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views" };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all" };
   let unsubscribe = null;
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
@@ -97,7 +108,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (st.editor) return editorView(st.editor);
     if (!st.value) return st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : `<p class="muted loading">Lädt …</p>`;
     const apps = [...new Set(accounts().map((a) => a.app_id))];
-    const shown = posts().filter((p) => st.filter === "all" || account(p.account_id)?.app_id === st.filter);
+    const shown = posts().filter((p) => (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && matchesSearch(p));
     const chips = [["all", "Alle Apps"], ...apps.map((id) => [id, appName(id)])]
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const openComments = inbox.count(false);
@@ -117,11 +128,54 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       ${st.mode !== "list" ? "" : accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
         : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
-      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "calendar" ? calendarView(shown) : GROUPS.map(([title, statuses]) => {
-        const rows = shown.filter((p) => statuses.includes(p.status))
-          .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
-        return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
-      }).join("")}`;
+      ${st.mode === "list" || st.mode === "calendar" ? searchBar(shown) : ""}
+      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "calendar" ? calendarView(shown) : listView(shown)}`;
+  }
+
+  // ---------- search + status filter ----------
+  function statusTest(v) {
+    if (v === "todo") return (p) => todoOpen(p.todo);
+    return STATUS_FILTERS.find((f) => f[0] === v)?.[2] ?? (() => true);
+  }
+  // everything Christoph might remember about a post: text, title, account, app, place, tags, hand jobs, status
+  function matchesSearch(p) {
+    const words = S.social.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const a = account(p.account_id);
+    const hay = [p.caption, p.title, p.first_comment, p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && PLATFORM[a.platform],
+      p.location?.name, STATUS[p.status], KINDS[p.kind], p.ai_generated && "KI", p.source === "package" && "Paket",
+      ...(p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)),
+      p.scheduled_at && formatZurich(p.scheduled_at), p.published_at && formatZurich(p.published_at)]
+      .filter(Boolean).join(" \n ").toLowerCase();
+    return words.every((w) => hay.includes(w));
+  }
+  function searchBar(shown) {
+    const st = S.social;
+    const chips = st.mode !== "list" ? "" : STATUS_FILTERS.map(([v, label, , tip]) => {
+      const n = v === "all" ? shown.length : shown.filter(statusTest(v)).length;
+      if (n === 0 && v !== "all" && st.status !== v) return ""; // hide empty filters, except the active one
+      return `<button class="chip${st.status === v ? " on" : ""}" data-action="soc-status" data-value="${v}" aria-pressed="${st.status === v}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)} <span class="muted">${n}</span></button>`;
+    }).join("");
+    return `<div class="soc-search">
+        <input type="search" name="soc-search" value="${esc(st.q)}" placeholder="Suchen: Text, Konto, Ort, #hashtag, @markiert …" autocomplete="off" spellcheck="false" aria-label="Beiträge durchsuchen">
+        ${chips ? `<div class="chips soc-status" role="group" aria-label="Nach Status filtern">${chips}</div>` : ""}
+      </div>`;
+  }
+  function listView(shown) {
+    const st = S.social;
+    const searching = st.q.trim() !== "";
+    if (st.status !== "all") {
+      // one flat list: published newest first, everything else by planned time
+      const rows = shown.filter(statusTest(st.status)).sort((a, b) => (a.status === "published" && b.status === "published" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
+      return rows.length ? rows.map(postItem).join("") : `<p class="muted">${searching ? "Nichts gefunden." : "Keine Beiträge mit diesem Status."}</p>`;
+    }
+    if (searching && !shown.length) return `<p class="muted">Nichts gefunden für «${esc(st.q.trim())}».</p>`;
+    return GROUPS.map(([title, statuses]) => {
+      const rows = shown.filter((p) => statuses.includes(p.status))
+        .sort((a, b) => (title === "Veröffentlicht" ? byTime(b, a, "published_at") : byTime(a, b, "scheduled_at")));
+      if (searching && !rows.length) return "";
+      return `<h3 class="group">${title} <span class="muted">${rows.length}</span></h3>${rows.length ? rows.map(postItem).join("") : `<p class="muted small">–</p>`}`;
+    }).join("");
   }
 
   // «Mi 21.10. 19:00»
@@ -631,7 +685,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (ed && i !== ed.preview) { ed.preview = i; markSlide(); }
     return true;
   }
-  const afterRender = () => { if (S.social.editor) syncSlider(false); };
+  const afterRender = () => {
+    if (S.social.editor) syncSlider(false);
+    const s = document.activeElement;
+    if (s?.name === "soc-search") s.setSelectionRange(s.value.length, s.value.length);
+  };
 
   async function probe(file) {
     const url = URL.createObjectURL(file);
@@ -787,6 +845,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         try { history.replaceState(null, "", st.filter === "all" ? "#social" : `#social/${st.filter}`); } catch { /* sandboxed */ }
         render();
         return true;
+      case "soc-status": st.status = el.dataset.value; render(); return true;
       case "soc-stats-days": st.statsDays = Number(el.dataset.value); render(); return true;
       case "soc-stats-sort": st.statsSort = el.dataset.value; render(); return true;
       case "soc-stats-refresh":
@@ -922,6 +981,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (outreach.onInput(e)) return true;
     const ed = S.social.editor;
     const name = e.target.name ?? "";
+    if (name === "soc-search") { S.social.q = e.target.value; render(); return true; }
     if (!ed || !name.startsWith("soc-")) return false;
     if (name === "soc-caption") ed.caption = e.target.value;
     else if (name === "soc-title") ed.title = e.target.value;

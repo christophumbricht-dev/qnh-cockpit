@@ -961,3 +961,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .pill.ai { background: #ede7ff; color: #5b3cc4; }
 .phone-ai { margin-left: 6px; font-size: 10px; color: #737373; }
 .ai-hint { margin: 8px 0 0; }
+
+/* ---- social: search + status filter ---- */
+.soc-search { margin: 14px 0 6px; }
+.soc-search input[type="search"] { width: 100%; max-width: 520px; font: 15px/1.3 var(--body); padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); }
+.soc-search input[type="search"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+.soc-status { margin: 10px 0 4px; }
+.soc-status .chip .muted { font-weight: 500; margin-left: 2px; }
