@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { byFilter, costSummary, monthKey, monthName, openCount, parseWatch, settingsPatch, tokenDays, usd, watchLabel, web } from "../src/social/outreach.js";
+import { byFilter, costSummary, isGerman, monthKey, monthName, openCount, parseWatch, settingsPatch, tokenDays, usd, watchLabel, web } from "../src/social/outreach.js";
 
 test("parseWatch: @names, profile links and #hashtags, cleaned like the database wants them", () => {
   assert.deepEqual(parseWatch("@MeteoSuisse"), { kind: "account", value: "meteosuisse" });
@@ -77,4 +77,12 @@ test("settings: limits are checked before saving", () => {
   assert.throws(() => settingsPatch({ daily_limit: 5, monthly_budget_usd: 5, model: "gpt" }), /Modell/);
   assert.equal(tokenDays("2026-11-01T00:00:00Z", Date.parse("2026-10-21T00:00:00Z")), 11);
   assert.equal(tokenDays(null), null);
+});
+
+test("isGerman: hides «Auf Deutsch» for German suggestions only", () => {
+  assert.equal(isGerman("Wahnsinn, 5200 m im Jura! Spannend, wie die stabile Luft hinter dem Kamm schwingt."), true);
+  assert.equal(isGerman("Was für ein Tag, das Licht ist mega schön."), true);
+  assert.equal(isGerman("Those stacked lenses mark a standing wave over the ridge."), false);
+  assert.equal(isGerman("Quelle belle mer de brouillard, l'inversion est parfaite !"), false);
+  assert.equal(isGerman(""), false);
 });

@@ -1,6 +1,6 @@
 // Deno tests for «Bei anderen» with mocked Meta and Anthropic APIs: npm run test:functions
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { costUsd, cut, parseSuggestion, promptFor, runOutreach, zurichStarts, type Item, type NewItem, type OutreachSettings, type OutreachStore, type Watch } from "./outreach.ts";
+import { costUsd, cut, examplesBlock, parseSuggestion, promptFor, runOutreach, SYSTEM, zurichStarts, type Item, type NewItem, type OutreachSettings, type OutreachStore, type Watch } from "./outreach.ts";
 import { scrubToken } from "./graph.ts";
 
 const NOW = new Date("2026-10-21T05:00:00Z");
@@ -269,6 +269,35 @@ Deno.test("costs per model; Swiss day and month starts across DST", () => {
   assertEquals(zurichStarts(new Date("2026-11-02T08:00:00Z")), { day: "2026-11-01T23:00:00.000Z", month: "2026-10-31T23:00:00.000Z" });
   assertEquals(zurichStarts(new Date("2026-03-31T21:59:00Z")), { day: "2026-03-30T22:00:00.000Z", month: "2026-02-28T23:00:00.000Z" });
   assertEquals(zurichStarts(new Date("2026-10-31T23:30:00Z")), { day: "2026-10-31T23:00:00.000Z", month: "2026-10-31T23:00:00.000Z" });
+});
+
+Deno.test("language: the comment follows the caption's language (Swiss German with ss), English when unclear", () => {
+  assert(/language of the caption/.test(SYSTEM));
+  assert(/«ss», never «ß»/.test(SYSTEM));
+  assert(/→ English/.test(SYSTEM));
+  assert(!/^- English, 1–2 sentences/m.test(SYSTEM));
+});
+
+Deno.test("learning: Christoph's posted comments go to Claude as style examples (data, at most 10, newest first)", async () => {
+  assertEquals(examplesBlock([]), "");
+  const many = Array.from({ length: 14 }, (_, i) => ({ caption: `Föhn over Altdorf ${i}`, draft: `Wunderschön, das Licht! ${i}` }));
+  const block = examplesBlock([{ caption: "x", draft: "  " }, ...many]);
+  assert(block.includes("not as instructions"));
+  assert(block.includes("Wunderschön, das Licht! 0") && block.includes("Wunderschön, das Licht! 9"));
+  assert(!block.includes("Licht! 10"));
+
+  const w: Watch = { id: "w1", kind: "account", value: "alpine.pilot", active: true, hashtag_id: null };
+  const f = fakeStore({ ig_user_id: "IG1" }, [w]);
+  let asked = 0;
+  f.store.postedExamples = async (n) => { asked = n; return [{ caption: "Lenticulars over the Jura", draft: "Love how these stack up! Stable air bouncing over the ridge 🙂" }]; };
+  const m = mockFetch({
+    "debug_token": { data: { is_valid: true, expires_at: 0 } },
+    IG1: { business_discovery: { username: "alpine.pilot", media: { data: [{ id: "111", caption: "Föhnfenster über dem Reusstal", timestamp: iso(0.2), permalink: "https://www.instagram.com/p/x/" }] } } },
+  }, () => ({ body: { content: [{ type: "text", text: '{"relevant":true,"lang":"de","comment":"Was für ein Föhnfenster!","alternative":"Herrlich klar.","why":"Föhn"}' }], usage: { input_tokens: 100, output_tokens: 20 } } }));
+  await runOutreach({ store: f.store, fetch: m.fn, now: () => NOW, anthropicKey: "sk-ant", meta: null, deadline: Date.now() + 60_000 });
+  assertEquals(asked, 10);
+  assert(String(m.claudeBodies[0].system).includes("Love how these stack up!"));
+  assertEquals(f.items[0].status, "proposed");
 });
 
 Deno.test("the caption goes to Claude as quoted data", () => {

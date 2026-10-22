@@ -5,10 +5,10 @@
 import { DEMO } from "../api.js";
 import { esc, num, relTime } from "../format.js";
 import * as data from "./data.js";
-import { BUDGET_MAX, DAILY_MAX, FILTERS, MODELS, byFilter, costSummary, monthName, openCount, parseWatch, settingsPatch, tokenDays, usd, watchLabel, web } from "./outreach.js";
+import { BUDGET_MAX, DAILY_MAX, FILTERS, MODELS, byFilter, costSummary, isGerman, monthName, openCount, parseWatch, settingsPatch, tokenDays, usd, watchLabel, web } from "./outreach.js";
 
 export function createOutreach({ S, render, toast, errorText }) {
-  S.social.out = { filter: "proposed", texts: {}, de: {}, busy: new Set(), running: false, saving: false, watchInput: "" };
+  S.social.out = { filter: "proposed", texts: {}, de: {}, copied: {}, orig: {}, busy: new Set(), running: false, saving: false, watchInput: "" };
   const st = () => S.social.out;
   const value = () => S.social.value?.outreach;   // null = not set up (migration missing)
   const items = () => value()?.items ?? [];
@@ -74,7 +74,7 @@ export function createOutreach({ S, render, toast, errorText }) {
       <label class="field">Zusatzregeln für Claude <span class="muted small">(optional, z. B. «Keine Emojis», «Nie über Segelflug-Wettbewerbe»)</span>
         <textarea name="out-rules" rows="3" maxlength="2000">${esc(s.rules ?? "")}</textarea></label>
       <div class="actions"><button class="btn" data-action="soc-out-save"${st().saving ? " disabled" : ""}>Speichern</button></div>
-      <p class="muted small">Ist das Budget erreicht, gibt es bis zum Monatsende keine neuen Vorschläge. Grundregeln immer: Englisch, 1–2 Sätze, erklären statt bewerten (kein Go/No-Go), keine Links, keine Eigenwerbung, nichts über dich.</p>
+      <p class="muted small">Ist das Budget erreicht, gibt es bis zum Monatsende keine neuen Vorschläge. Grundregeln immer: in der Sprache des Posts (unklar → Englisch), 1–2 Sätze, im Stil deiner bisher geposteten Kommentare, erklären statt bewerten (kein Go/No-Go), keine Links, keine Eigenwerbung, nichts über dich.</p>
     </details>`;
   }
 
@@ -100,7 +100,7 @@ export function createOutreach({ S, render, toast, errorText }) {
     return `<div class="cal-head"><div class="chips">${chips}</div>
         ${v.settings.enabled ? `<button class="btn ghost" data-action="soc-out-run"${st().running ? " disabled" : ""}>${st().running ? "Sucht …" : "Jetzt suchen"}</button>` : ""}</div>
       ${list.length ? list.map(itemCard).join("") : `<p class="muted cmt-empty">${empty}</p>`}
-      <p class="hint">«Kopieren &amp; öffnen» kopiert den Text und öffnet den Post. In Instagram aufs Kommentarfeld tippen, einfügen, lesen, posten – dann hier «Erledigt ✓». Kommentiere nicht alles: ein guter Kommentar schlägt fünf schnelle.</p>`;
+      <p class="hint">Variante wählen → «Kopieren &amp; öffnen» kopiert sie und öffnet den Post. In Instagram aufs Kommentarfeld tippen, einfügen, posten – zurück hier «Gepostet ✓». Was du postest (auch deine Änderungen), nimmt Claude als Vorbild für die nächsten Vorschläge. Kommentiere nicht alles: ein guter Kommentar schlägt fünf schnelle.</p>`;
   }
 
   // «Mo 19.10., 14:32» in Swiss time
@@ -124,21 +124,38 @@ export function createOutreach({ S, render, toast, errorText }) {
           ${it.status === "done" ? `<span class="pill published">kommentiert${it.done_at ? ` ${esc(relTime(it.done_at))}` : ""}</span>` : it.status === "dismissed" ? `<span class="pill draft">verworfen</span>` : ""}</div>
         ${caption ? `<p class="out-caption">${esc(caption)}</p>` : ""}
         ${it.reason ? `<p class="muted small out-reason">${esc(it.reason)}</p>` : ""}
-        ${open ? `<textarea name="out-text-${esc(it.id)}" rows="4" maxlength="2200" aria-label="Kommentar für ${esc(who)}"${busy}>${esc(text)}</textarea>
+        ${open ? `<textarea name="out-text-${esc(it.id)}" rows="3" maxlength="2200" aria-label="Kommentar für ${esc(who)}"${busy}>${esc(text)}</textarea>
           <div class="out-tools">
-            ${it.alt_draft && it.alt_draft !== text ? `<button class="link out-alt" data-action="soc-out-alt" data-id="${esc(it.id)}">Andere Variante zeigen</button>` : ""}
-            <button class="link" data-action="soc-out-de" data-id="${esc(it.id)}"${st().de[it.id]?.busy ? " disabled" : ""}>${st().de[it.id]?.busy ? "Übersetzt …" : "Auf Deutsch"}</button>
+            ${copyBtn(it, link, "main")}
+            ${isGerman(text) ? "" : `<button class="link" data-action="soc-out-de" data-id="${esc(it.id)}"${st().de[it.id]?.busy ? " disabled" : ""}>${st().de[it.id]?.busy ? "Übersetzt …" : "Auf Deutsch"}</button>`}
           </div>
-          ${st().de[it.id]?.text ? `<p class="out-de"><span class="muted small">Auf Deutsch${st().de[it.id].of !== text ? " (vom vorherigen Text)" : ""}:</span> ${esc(st().de[it.id].text)}</p>` : ""}
+          ${st().de[it.id]?.text && !isGerman(text) ? `<p class="out-de"><span class="muted small">Auf Deutsch${st().de[it.id].of !== text ? " (vom vorherigen Text)" : ""}:</span> ${esc(st().de[it.id].text)}</p>` : ""}
+          ${other(it) ? `<div class="out-variant"><span class="muted small">Andere Variante</span><p>${esc(other(it))}</p>
+            <div class="out-tools">${copyBtn(it, link, "alt")}<button class="link" data-action="soc-out-alt" data-id="${esc(it.id)}">Ins Textfeld (zum Ändern)</button></div></div>` : ""}
           <div class="actions">
-            ${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener" data-action="soc-out-copy" data-id="${esc(it.id)}">Kopieren &amp; öffnen</a>` : `<button class="btn" data-action="soc-out-copy" data-id="${esc(it.id)}">Kopieren</button>`}
-            <button class="btn ghost" data-action="soc-out-done" data-id="${esc(it.id)}"${busy}>Erledigt ✓</button>
+            <button class="btn${st().copied[it.id] ? "" : " ghost"}" data-action="soc-out-done" data-id="${esc(it.id)}"${busy}>Gepostet ✓</button>
             <button class="link" data-action="soc-out-dismiss" data-id="${esc(it.id)}"${busy}>Verwerfen</button>
-          </div>`
+          </div>
+          ${st().copied[it.id] ? `<p class="muted small">Kopiert – in Instagram einfügen und posten, dann hier «Gepostet ✓».</p>` : ""}`
         : `<p class="cmt-body">${esc(it.draft)}</p>
           <div class="cmt-actions"><button class="link" data-action="soc-out-reopen" data-id="${esc(it.id)}"${busy}>Wieder offen</button>${link ? `<a class="link" href="${esc(link)}" target="_blank" rel="noopener">Post öffnen ↗</a>` : ""}</div>`}
       </div>
     </article>`;
+  }
+
+  // the variant not in the text field: Claude's alternative – or, once that is in the field, the first suggestion
+  function other(it) {
+    const text = (st().texts[it.id] ?? it.draft).trim();
+    // st().orig: the first suggestion, kept here because copying another variant saves it over «draft»
+    return [st().orig[it.id], it.draft, it.alt_draft].map((x) => String(x ?? "").trim()).find((x) => x && x !== text) ?? "";
+  }
+
+  // «Kopieren & öffnen» for one variant: a link (opens the post itself, also in the Instagram app on the phone)
+  function copyBtn(it, link, variant) {
+    const label = variant === "alt" ? "Diese kopieren &amp; öffnen" : "Kopieren &amp; öffnen";
+    const attrs = `data-action="soc-out-copy" data-id="${esc(it.id)}" data-value="${variant}"`;
+    return link ? `<a class="btn${variant === "alt" ? " ghost" : ""} small" href="${esc(link)}" target="_blank" rel="noopener" ${attrs}>${label}</a>`
+      : `<button class="btn${variant === "alt" ? " ghost" : ""} small" ${attrs}>${variant === "alt" ? "Diese kopieren" : "Kopieren"}</button>`;
   }
 
   // ---------- events ----------
@@ -179,12 +196,17 @@ export function createOutreach({ S, render, toast, errorText }) {
       case "soc-out-filter": st().filter = el.dataset.value; render(); return true;
       case "soc-out-copy": {
         if (!it) return true;
-        const text = (st().texts[id] ?? it.draft).trim();
+        const alt = el.dataset.value === "alt";
+        const text = (alt ? other(it) : st().texts[id] ?? it.draft).trim();
         if (!text) { toast("Der Kommentar ist leer."); return true; }
         copy(text);   // the link opens the post by itself (no preventDefault)
-        toast("Kommentar kopiert – in Instagram einfügen und posten, dann hier «Erledigt ✓».");
+        toast("Kopiert – in Instagram einfügen und posten, dann hier «Gepostet ✓».");
+        // the copied variant becomes the text: «Gepostet ✓» stores it, and Claude learns from it
+        if (alt) { st().orig[id] ??= it.draft; st().texts[id] = text; }
+        st().copied[id] = true;
         const t = edited(it);
         if (t !== undefined) data.saveOutreachDraft(id, t).catch(() => {});
+        setTimeout(render, 400);   // after the browser has followed the link
         return true;
       }
       case "soc-out-de": {
@@ -199,15 +221,17 @@ export function createOutreach({ S, render, toast, errorText }) {
         return true;
       }
       case "soc-out-alt":
-        if (it) { st().texts[id] = it.alt_draft; render(); }
+        if (it && other(it)) { st().orig[id] ??= it.draft; st().texts[id] = other(it); render(); }
         return true;
       case "soc-out-done": case "soc-out-dismiss": case "soc-out-reopen": {
         if (!it) return true;
         const status = action === "soc-out-done" ? "done" : action === "soc-out-dismiss" ? "dismissed" : "proposed";
         const t = status === "proposed" ? undefined : edited(it);
         it.status = status;   // at once on screen, the database follows
+        if (t !== undefined) it.draft = t;
         delete st().texts[id];
-        await act(id, () => data.setOutreachStatus(id, status, t), status === "done" ? "Erledigt – danke!" : status === "dismissed" ? "Verworfen" : "");
+        delete st().copied[id];
+        await act(id, () => data.setOutreachStatus(id, status, t), status === "done" ? "Gepostet – gemerkt als Vorbild für die nächsten Vorschläge." : status === "dismissed" ? "Verworfen" : "");
         return true;
       }
       case "soc-out-toggle": {

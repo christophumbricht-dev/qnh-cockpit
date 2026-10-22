@@ -155,6 +155,10 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
         .or(`run_lock_until.is.null,run_lock_until.lt.${now.toISOString()}`).select("id"), "run lock") as Array<{ id: boolean }>;
       return rows.length === 1;
     },
+    async postedExamples(limit) {
+      return must(await db.from("outreach_items").select("caption, draft").eq("status", "done").neq("draft", "")
+        .order("done_at", { ascending: false, nullsFirst: false }).limit(limit), "posted examples") as Array<{ caption: string; draft: string }>;
+    },
     async releaseRun() {
       must(await db.from("outreach_settings").update({ run_lock_until: null }).eq("id", true), "run lock");
     },

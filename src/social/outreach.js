@@ -34,6 +34,15 @@ export const watchLabel = (w) => `${w.kind === "hashtag" ? "#" : "@"}${w.value}`
 // only http(s) links from Meta become href / src
 export const web = (url) => (/^https:\/\//i.test(String(url ?? "")) ? url : null);
 
+// rough check: enough common German words (or ä/ö/ü) → German; used to hide «Auf Deutsch»
+const DE_WORDS = new Set("und der die das ist nicht ich du mit auf ein eine einen sehr schön wie schon auch für über dem den des im ins am vom zum zur so wenn dann noch nur hier da was wer wo warum weil aber oder doch mal immer bei sich es wir ihr sie man kann wird sind war hat haben genau wirklich toll mega".split(" "));
+export function isGerman(text) {
+  const words = String(text ?? "").toLowerCase().match(/[a-zäöüß]+/g) ?? [];
+  if (!words.length) return false;
+  const hits = words.filter((w) => DE_WORDS.has(w)).length + (/[äöü]/i.test(String(text)) ? 1 : 0);
+  return hits >= 2 && hits / words.length >= 0.12;
+}
+
 export const openCount = (items) => (items ?? []).filter((i) => i.status === "proposed").length;
 export const byFilter = (items, filter) => (items ?? [])
   .filter((i) => i.status === filter)
