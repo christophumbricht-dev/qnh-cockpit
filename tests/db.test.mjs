@@ -16,6 +16,7 @@ const SQL7 = readFileSync(new URL("../supabase/migrations/20261020110000_social_
 const SQL8 = readFileSync(new URL("../supabase/migrations/20261021100000_finance.sql", import.meta.url), "utf8");
 const SQL9 = readFileSync(new URL("../supabase/migrations/20261021120000_finance_private.sql", import.meta.url), "utf8");
 const SQL10 = readFileSync(new URL("../supabase/migrations/20261021140000_social_outreach.sql", import.meta.url), "utf8");
+const SQL_AI = readFileSync(new URL("../supabase/migrations/20261022100000_social_ai_label.sql", import.meta.url), "utf8");
 const SQL_YT_STATS = readFileSync(new URL("../supabase/migrations/20261021160000_social_stats_youtube.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
@@ -61,6 +62,8 @@ await db.exec(SQL9);
 await db.exec(SQL9);
 await db.exec(SQL10);
 await db.exec(SQL10);
+await db.exec(SQL_AI); // last: redefines the guard after all earlier migrations
+await db.exec(SQL_AI);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -394,4 +397,12 @@ test("outreach: costs per Swiss month for admins only; the token stays in Vault"
 test("stats: YouTube video ids (letters, - and _) are accepted, junk is not", async () => {
   await as("service", `insert into social_media_stats (media_id, day, account_id, kind) values ('abc_DEF-123', '2026-10-21', '${ACC}', 'SHORT')`);
   await assert.rejects(as("service", `insert into social_media_stats (media_id, day, account_id) values ('x y', '2026-10-21', '${ACC}')`));
+});
+
+test("AI label: default off, settable on drafts, frozen once approved", async () => {
+  const id = await newPost();
+  assert.equal((await as(ADMIN, `select ai_generated from social_posts where id='${id}'`)).rows[0].ai_generated, false);
+  await as(ADMIN, `update social_posts set ai_generated=true where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set ai_generated=false where id='${id}'`), /zurückziehen/);
 });
