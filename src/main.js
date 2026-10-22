@@ -485,7 +485,7 @@ function agendaItem(t, lane) {
         <span class="ag-text"><span class="ag-title">${esc(t.title)}</span><span class="ag-sub">${esc([sub, t.progress ? `${t.progress.done}/${t.progress.total} erledigt` : ""].filter(Boolean).join(" · "))}</span></span>
         <span class="ag-chevron" aria-hidden="true">▾</span>
       </summary>
-      <div class="ag-body">${social.todoChecklist(t.checklist)}<a class="link" href="${esc(t.href ?? "#social")}">Beitrag öffnen</a></div>
+      <div class="ag-body"><div class="ag-main">${social.todoChecklist(t.checklist)}<a class="link" href="${esc(t.href ?? "#social")}">Beitrag öffnen</a></div>${social.miniPhone(t.checklist)}</div>
     </details></li>`;
   }
   return `<li class="ag-item ${t.tone === "alert" ? "alert" : "info"}">

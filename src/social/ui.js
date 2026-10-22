@@ -1106,7 +1106,28 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const p = posts().find((x) => x.id === id);
     return p ? todoBox(p.todo, PLATFORM[account(p.account_id)?.platform] ?? "Instagram", p.id) : "";
   }
+  // small still phone for the «Heute» list: which post is it? (cover or first frame, handle, start of the text)
+  function miniPhone(id) {
+    const p = posts().find((x) => x.id === id);
+    if (!p) return "";
+    const a = account(p.account_id);
+    const yt = isYoutube(p.account_id);
+    const first = p.media?.[0];
+    const vertical = p.kind === "story" || p.kind === "reel" || yt;
+    let media = `<span class="phone-img empty">kein Bild</span>`;
+    if (p.media_deleted_at) media = `<span class="phone-img empty">Datei entfernt</span>`;
+    else if (p.cover_path) media = `<img class="phone-img" src="${esc(data.mediaUrl(p.cover_path))}" alt="" loading="lazy" decoding="async">`;
+    else if (first && /^video\//.test(first.type)) media = `<video class="phone-img" src="${esc(data.mediaUrl(first.path))}#t=0.5" muted playsinline preload="metadata"></video>`;
+    else if (first) media = `<img class="phone-img" src="${esc(data.mediaUrl(first.path))}" alt="${esc(first.alt ?? "")}" loading="lazy" decoding="async">`;
+    const ratio = vertical ? "9 / 16" : first?.width ? `${first.width} / ${first.height}` : "4 / 5";
+    const text = yt ? p.title || p.caption : p.caption;
+    return `<div class="phone mini${vertical ? " vertical" : ""}" aria-label="Vorschau des Beitrags">
+      <div class="phone-head"><span class="avatar"></span><b>${esc(a?.handle ?? "konto")}</b></div>
+      <div class="phone-media" style="aspect-ratio:${ratio}">${media}${p.kind === "reel" || yt ? `<span class="mini-play" aria-hidden="true">▶</span>` : ""}</div>
+      ${text?.trim() ? `<div class="phone-caption">${esc(firstLines(text, 2).slice(0, 70))}</div>` : ""}
+    </div>`;
+  }
   const todoProgress = (t) => { const l = todoLines(t); return { done: l.filter((x) => x.done).length, total: l.length }; };
-  return { todoChecklist, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+  return { todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }
