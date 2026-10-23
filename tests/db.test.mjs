@@ -17,6 +17,7 @@ const SQL8 = readFileSync(new URL("../supabase/migrations/20261021100000_finance
 const SQL9 = readFileSync(new URL("../supabase/migrations/20261021120000_finance_private.sql", import.meta.url), "utf8");
 const SQL10 = readFileSync(new URL("../supabase/migrations/20261021140000_social_outreach.sql", import.meta.url), "utf8");
 const SQL_AI = readFileSync(new URL("../supabase/migrations/20261022100000_social_ai_label.sql", import.meta.url), "utf8");
+const SQL_REPLY = readFileSync(new URL("../supabase/migrations/20261023100000_social_comment_reply.sql", import.meta.url), "utf8");
 const SQL_YT_STATS = readFileSync(new URL("../supabase/migrations/20261021160000_social_stats_youtube.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
@@ -62,8 +63,10 @@ await db.exec(SQL9);
 await db.exec(SQL9);
 await db.exec(SQL10);
 await db.exec(SQL10);
-await db.exec(SQL_AI); // last: redefines the guard after all earlier migrations
 await db.exec(SQL_AI);
+await db.exec(SQL_AI);
+await db.exec(SQL_REPLY); // last: redefines the guard after all earlier migrations
+await db.exec(SQL_REPLY);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -405,4 +408,23 @@ test("AI label: default off, settable on drafts, frozen once approved", async ()
   await as(ADMIN, `update social_posts set ai_generated=true where id='${id}'`);
   await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
   await assert.rejects(as(ADMIN, `update social_posts set ai_generated=false where id='${id}'`), /zurückziehen/);
+});
+
+test("first comment reply: frozen once approved, needs a first comment, status only from the server", async () => {
+  const id = await newPost();
+  const row = (await as(ADMIN, `select first_comment_reply, first_comment_reply_after_hours, first_comment_reply_status from social_posts where id='${id}'`)).rows[0];
+  assert.deepEqual([row.first_comment_reply, Number(row.first_comment_reply_after_hours), row.first_comment_reply_status], ["", 4, null]);
+  await as(ADMIN, `update social_posts set first_comment_reply='183 wäre zu einfach', first_comment_reply_after_hours=3.5 where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set first_comment_reply_after_hours=0 where id='${id}'`));
+  await assert.rejects(as(ADMIN, `update social_posts set first_comment_reply_status='sent' where id='${id}'`), /nur der Server/);
+  // an answer needs a first comment to stand below
+  await assert.rejects(as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`), /ersten Kommentar/);
+  await as(ADMIN, `update social_posts set first_comment='Warum 190 hPa?' where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set first_comment_reply='anders' where id='${id}'`), /zurückziehen/);
+  await assert.rejects(as(ADMIN, `update social_posts set first_comment_reply_after_hours=8 where id='${id}'`), /zurückziehen/);
+  await as("service", `update social_posts set first_comment_reply_status='sending' where id='${id}'`);
+  // a new post cannot bring its own server fields
+  const id2 = await newPost("first_comment_reply_status='sent'");
+  assert.equal((await as(ADMIN, `select first_comment_reply_status from social_posts where id='${id2}'`)).rows[0].first_comment_reply_status, null);
 });

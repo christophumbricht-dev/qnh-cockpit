@@ -4,6 +4,7 @@
 export const LIMITS = {
   caption: 2200,
   firstComment: 2200,
+  reply: 2200, // answer below our own first comment (sent hours later)
   alt: 1000,
   hashtagsWarn: 15,
   hashtagsMax: 30,
@@ -106,7 +107,16 @@ export function validateYoutubeItem(item) {
   return { errors, warnings };
 }
 
-// post: { kind, items, caption, first_comment, platform?, title? }; opts: { forApproval, scheduledAt (ISO), now (Date) }
+// answer below our own first comment: after how many hours (default 4, half hours allowed)
+export const REPLY_HOURS = { min: 0.5, max: 72, default: 4 };
+export const replyHours = (v) => {
+  const n = v == null || v === "" ? REPLY_HOURS.default : Number(v);
+  return Number.isFinite(n) && n >= REPLY_HOURS.min && n <= REPLY_HOURS.max ? Math.round(n * 2) / 2 : null;
+};
+// "4 h", "1.5 h", "30 min"
+export const hoursLabel = (h) => (h < 1 ? `${Math.round(h * 60)} min` : `${h} h`);
+
+// post: { kind, items, caption, first_comment, first_comment_reply?, first_comment_reply_after_hours?, platform?, title? }; opts: { forApproval, scheduledAt (ISO), now (Date) }
 export function validatePost(post, { forApproval = false, scheduledAt = null, now = new Date() } = {}) {
   const errors = [], warnings = [];
   const items = post.items ?? [];
@@ -153,6 +163,12 @@ export function validatePost(post, { forApproval = false, scheduledAt = null, no
   if (comment.length > LIMITS.firstComment) errors.push(`Erster Kommentar höchstens ${LIMITS.firstComment} Zeichen.`);
   if (countHashtags(comment) > LIMITS.hashtagsMax) errors.push(`Erster Kommentar: höchstens ${LIMITS.hashtagsMax} Hashtags.`);
   if (kind === "story" && (caption.trim() || comment.trim())) warnings.push("Stories zeigen keinen Text und keinen Kommentar – beides wird ignoriert.");
+  const reply = String(post.first_comment_reply ?? "");
+  if (reply.trim() && kind !== "story") {
+    if (!comment.trim()) errors.push("Die Antwort braucht einen ersten Kommentar, unter dem sie stehen kann.");
+    if (reply.length > LIMITS.reply) errors.push(`Antwort höchstens ${LIMITS.reply} Zeichen.`);
+    if (replyHours(post.first_comment_reply_after_hours) === null) errors.push(`Antwort nach ${REPLY_HOURS.min} bis ${REPLY_HOURS.max} Stunden.`);
+  }
 
   if (forApproval) {
     if (!scheduledAt) errors.push("Zum Freigeben einen Zeitpunkt wählen.");

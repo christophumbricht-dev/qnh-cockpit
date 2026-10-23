@@ -105,3 +105,16 @@ test("import: PNG/WebP/HEIC get a clear 'save as JPEG' message; a missing file s
   const missing = new Map([["post.json", new File([JSON.stringify({ ...POST, media: ["1.jpg", "3.jpg"] })], "post.json")], ["1.jpg", new File([new Uint8Array(10)], "1.jpg", { type: "image/jpeg" })]]);
   await assert.rejects(parsePackage(missing, ACCOUNTS), /3\.jpg.*fehlt im Paket/);
 });
+
+test("first_comment_reply: answer below the first comment, default after 4 hours", async () => {
+  const none = await parsePackage(entries(), ACCOUNTS);
+  assert.equal(none.first_comment_reply, "");
+  assert.equal(none.first_comment_reply_after_hours, 4);
+  const p = await parsePackage(entries({ ...POST, first_comment: "Warum 190 und nicht 183?", first_comment_reply: " Weil der Druck nicht linear abnimmt. ", first_comment_reply_after_hours: 3.5 }), ACCOUNTS);
+  assert.equal(p.first_comment_reply, "Weil der Druck nicht linear abnimmt.");
+  assert.equal(p.first_comment_reply_after_hours, 3.5);
+  await assert.rejects(parsePackage(entries({ ...POST, first_comment: "", first_comment_reply: "Antwort" }), ACCOUNTS), /first_comment/);
+  await assert.rejects(parsePackage(entries({ ...POST, first_comment_reply: "Antwort", first_comment_reply_after_hours: 0 }), ACCOUNTS), /0\.5 bis 72/);
+  await assert.rejects(parsePackage(entries({ ...POST, first_comment_reply: "Antwort", first_comment_reply_after_hours: "bald" }), ACCOUNTS), /Stunden/);
+  await assert.rejects(parsePackage(entries({ ...POST, first_comment_reply: "x".repeat(2201) }), ACCOUNTS), /2200/);
+});

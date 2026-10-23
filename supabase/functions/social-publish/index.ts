@@ -5,6 +5,7 @@
 // POST { op: "refresh-tokens" }      refresh Instagram tokens that expire within 20 days (weekly cron)
 // POST { op: "cleanup" }             delete files of posts published > 14 days ago (daily cron)
 // POST { op: "stats" }               Instagram statistics per account and media item (daily cron, or the CLI)
+//                                    + prepared answers below our own first comments that are due (sendDueReplies)
 // POST { op: "comments" }            fetch new comments on our Instagram posts and YouTube videos (cron every 15 min)
 // POST { op: "reply", comment_id, text }                     admin only: answer a comment (Christoph's click)
 // POST { op: "moderate", comment_id, action }                admin only: hide | show | approve | delete (own)
@@ -29,7 +30,7 @@ import { followUpYoutube } from "./youtube.ts";
 import { collectStats } from "./stats.ts";
 import { runOutreach, translateGerman } from "./outreach.ts";
 import { elevenlabsCredits } from "./elevenlabs.ts";
-import { fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
+import { fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, sendDueReplies, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -93,6 +94,14 @@ Deno.serve(async (req) => {
       const postId = !fromCron && typeof body.post_id === "string" ? body.post_id : undefined;
       const results = await publishDue(deps, postId);
       if (!postId) results.push(...(await followUpYoutube({ store, fetch, now: deps.now, google, deadline: deps.deadline })));
+      if (!postId) {
+        // the answers Christoph approved with the post (never replies to other people); a problem here must not hide the results above
+        try {
+          results.push(...(await sendDueReplies({ ...cdeps, deadline: deps.deadline })));
+        } catch (err) {
+          console.error("social-publish replies", err);
+        }
+      }
       return json({ results });
     }
     if (op === "refresh-tokens") return json({ results: await refreshTokens(deps) });

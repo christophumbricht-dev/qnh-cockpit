@@ -99,3 +99,17 @@ test("YouTube: title required (≤ 100), description in bytes, ≤ 15 hashtags, 
   assert.match(validatePost({ ...base, items: [mp4(1080, 1920, 240)] }).warnings.join(), /kein Short/);
   assert.match(validatePost({ ...base, title: "Part <1>" }).warnings.join(), /< und >/);
 });
+
+import { hoursLabel, replyHours } from "../src/social/validate.js";
+test("answer below the first comment: needs the comment, 0.5–72 hours, ignored on stories", () => {
+  const base = { kind: "image", items: [jpg(1080, 1350)], caption: "QNH", first_comment: "Warum 190?" };
+  assert.deepEqual(validatePost({ ...base, first_comment_reply: "Darum.", first_comment_reply_after_hours: 4 }).errors, []);
+  assert.match(validatePost({ ...base, first_comment: "", first_comment_reply: "Darum." }).errors.join(), /ersten Kommentar/);
+  assert.match(validatePost({ ...base, first_comment_reply: "Darum.", first_comment_reply_after_hours: 100 }).errors.join(), /0\.5 bis 72/);
+  assert.deepEqual(validatePost({ ...base, kind: "story", items: [jpg(1080, 1920)], first_comment: "", first_comment_reply: "x" }).errors, []);
+  assert.equal(replyHours(undefined), 4);
+  assert.equal(replyHours("2.5"), 2.5);
+  assert.equal(replyHours(0.2), null);
+  assert.equal(hoursLabel(0.5), "30 min");
+  assert.equal(hoursLabel(4), "4 h");
+});

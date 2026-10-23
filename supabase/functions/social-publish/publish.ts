@@ -45,6 +45,10 @@ export type Post = {
   location_dropped?: boolean; // set while publishing when Instagram refused the location
   ai_generated?: boolean; // Instagram «KI-Info» – cannot be changed after publishing
   ai_dropped?: boolean; // set while publishing when Instagram refused the AI label on a story
+  // prepared answer below our own first comment, sent hours after publishing (comments.ts, sendDueReplies)
+  first_comment_reply?: string;
+  first_comment_reply_after_hours?: number | string; // numeric column: PostgREST may send it as text
+  first_comment_reply_status?: "sending" | "sent" | "failed" | null;
 };
 export type Account = { id: string; app_id?: string; platform: "instagram" | "facebook" | "youtube"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
 

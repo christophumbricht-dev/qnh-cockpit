@@ -2,7 +2,7 @@
 // Nothing is ever approved automatically – only the "Freigeben" button (and the database checks that too).
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
-import { KINDS, LIMITS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, parseTagList, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, parseTagList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
 import { readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
@@ -142,7 +142,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const words = S.social.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return true;
     const a = account(p.account_id);
-    const hay = [p.caption, p.title, p.first_comment, p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && PLATFORM[a.platform],
+    const hay = [p.caption, p.title, p.first_comment, p.first_comment_reply, p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && PLATFORM[a.platform],
       p.location?.name, STATUS[p.status], KINDS[p.kind], p.ai_generated && "KI", p.source === "package" && "Paket",
       ...(p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)),
       p.scheduled_at && formatZurich(p.scheduled_at), p.published_at && formatZurich(p.published_at)]
@@ -461,12 +461,34 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           ${(() => { const who = [...new Set((p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)))]; return who.length ? `<span class="muted">markiert: ${esc(who.join(", "))}</span>` : ""; })()}</div>
         ${p.title ? `<p class="text"><b>${esc(p.title)}</b></p>` : ""}
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
+        ${replyHtml(p)}
         ${twinHtml(twinOf(p))}
         ${todoBox(p.todo, PLATFORM[a?.platform] ?? "Instagram", p.id)}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
         <div class="actions">${actions.join("")}</div>
       </div>
     </article>`;
+  }
+
+  // ---------- answer below our own first comment (sent by the server hours after publishing) ----------
+  const hasReply = (p) => p.kind !== "story" && String(p.first_comment_reply ?? "").trim() !== "";
+  // when it goes out: hours after publishing (or after the planned time while not yet published)
+  function replyDue(p) {
+    const h = replyHours(p.first_comment_reply_after_hours) ?? REPLY_HOURS.default;
+    const base = p.published_at ?? p.scheduled_at;
+    return base ? new Date(new Date(base).getTime() + h * 3600e3).toISOString() : null;
+  }
+  // status line for list and editor: planned · sending · sent · not sent
+  function replyHtml(p) {
+    if (!hasReply(p)) return "";
+    const h = replyHours(p.first_comment_reply_after_hours) ?? REPLY_HOURS.default;
+    const text = `«${esc(firstLines(p.first_comment_reply, 1))}»`;
+    const s = p.first_comment_reply_status;
+    if (s === "sent") return `<p class="small soc-reply ok">↳ Antwort auf den ersten Kommentar gesendet ${esc(formatZurich(p.first_comment_reply_sent_at))}: ${text}</p>`;
+    if (s === "failed") return `<p class="small soc-reply error">↳ ${esc(p.first_comment_reply_error || "Antwort nicht gesendet.")}</p>`;
+    if (s === "sending") return `<p class="small soc-reply muted">↳ Antwort wird gesendet … ${text}</p>`;
+    const due = replyDue(p);
+    return `<p class="small soc-reply muted">↳ Antwort auf den ersten Kommentar ${hoursLabel(h)} nach dem Veröffentlichen${due ? ` (ca. ${esc(formatZurich(due))})` : ""}: ${text}</p>`;
   }
 
   // ---------- editor ----------
@@ -512,6 +534,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       title: post?.title ?? "",
       caption: post?.caption ?? "",
       first_comment: post?.first_comment ?? "",
+      first_comment_reply: post?.first_comment_reply ?? "",
+      first_comment_reply_after_hours: replyHours(post?.first_comment_reply_after_hours) ?? REPLY_HOURS.default,
       todo: duplicate ? "" : post?.todo ?? "",
       location: post?.location ?? null,
       ai: post?.ai_generated === true,
@@ -532,7 +556,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   const readonly = (ed) => !ed.isNew && LOCKED.includes(ed.status);
   const checks = (ed, forApproval = false) =>
-    validatePost({ kind: ed.kind, items: ed.items, caption: ed.caption, first_comment: ed.first_comment, platform: account(ed.account_id)?.platform, title: ed.title },
+    validatePost({ kind: ed.kind, items: ed.items, caption: ed.caption, first_comment: ed.first_comment, first_comment_reply: ed.first_comment_reply,
+      first_comment_reply_after_hours: ed.first_comment_reply_after_hours, platform: account(ed.account_id)?.platform, title: ed.title },
       { forApproval, scheduledAt: zurichToUtc(ed.scheduledLocal) });
 
   function checksHtml(ed) {
@@ -612,7 +637,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           ${ed.kind === "story" ? "" : `<label class="field">${yt ? "Beschreibung" : "Text"} <span class="counter" id="soc-counter">${counterHtml(ed)}</span>
             <textarea name="soc-caption" rows="7" maxlength="${yt ? 5200 : 2400}"${dis}>${esc(ed.caption)}</textarea></label>
           <label class="field">${yt ? "Erster Kommentar (optional – anpinnen geht nur in YouTube von Hand)" : "Erster Kommentar (optional, z. B. Hashtags)"}
-            <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>`}
+            <textarea name="soc-comment" rows="2" maxlength="2400"${dis}>${esc(ed.first_comment)}</textarea></label>
+          ${data.replySupported() ? replyField(ed, dis) : ""}`}
           ${data.aiSupported() && !yt ? `<label class="field ai-field"><span class="ai-row"><input type="checkbox" name="soc-ai"${ed.ai ? " checked" : ""}${dis}><span><b>KI-Info</b> – mit KI erstellt (z. B. KI-Stimme, KI-Musik, KI-Bild)</span></span>
             <span class="muted small">Instagram zeigt dann «KI-Info» unter deinem Namen. Nach dem Veröffentlichen nicht mehr änderbar.</span></label>` : ""}
           ${data.locationSupported() && ed.kind !== "story" && !yt ? `<label class="field">Standort (optional)
@@ -633,6 +659,21 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         </div>
         <aside class="soc-preview" id="soc-preview">${previewHtml(ed, acc)}</aside>
       </section>`;
+  }
+
+  function replyField(ed, dis) {
+    const post = ed.isNew ? null : posts().find((p) => p.id === ed.id);
+    if (post && post.status === "published") return replyHtml(post);
+    return `<label class="field">Antwort darauf (optional, z. B. die Auflösung der Frage)
+        <textarea name="soc-reply" rows="2" maxlength="${LIMITS.reply + 200}" placeholder="Schreibt das Cockpit selbst als Antwort unter den ersten Kommentar"${dis}>${esc(ed.first_comment_reply)}</textarea></label>
+      <label class="field soc-reply-hours">Antwort senden nach
+        <span><input type="number" name="soc-reply-hours" min="${REPLY_HOURS.min}" max="${REPLY_HOURS.max}" step="0.5" value="${esc(ed.first_comment_reply_after_hours)}"${dis}> Stunden
+        <span class="muted small" id="soc-reply-when">${replyWhen(ed)}</span></span></label>`;
+  }
+  function replyWhen(ed) {
+    const h = replyHours(ed.first_comment_reply_after_hours);
+    const at = zurichToUtc(ed.scheduledLocal);
+    return h && at && ed.first_comment_reply.trim() ? `ca. ${esc(formatZurich(new Date(new Date(at).getTime() + h * 3600e3).toISOString()))}` : "";
   }
 
   function previewHtml(ed, acc) {
@@ -658,7 +699,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       <div class="phone-media${slider ? " slider" : ""}" style="aspect-ratio:${ratio}">${media}</div>
       ${dots}
       ${isYoutube(ed.account_id) ? `<div class="phone-caption"><b>${esc(ed.title || "(Titel fehlt)")}</b><br><span class="muted small">@${esc(handle)} · YouTube Short</span></div>` : ""}
-      ${vertical ? "" : `<div class="phone-caption"><b>${esc(handle)}</b> ${cap}</div>${ed.first_comment.trim() ? `<div class="phone-comment"><b>${esc(handle)}</b> ${esc(ed.first_comment.slice(0, 80))}</div>` : ""}`}
+      ${vertical ? "" : `<div class="phone-caption"><b>${esc(handle)}</b> ${cap}</div>${ed.first_comment.trim() ? `<div class="phone-comment"><b>${esc(handle)}</b> ${esc(ed.first_comment.slice(0, 80))}</div>` : ""}${ed.first_comment.trim() && ed.first_comment_reply?.trim() ? `<div class="phone-comment reply"><b>${esc(handle)}</b> ${esc(ed.first_comment_reply.slice(0, 80))} <span class="small">· nach ${hoursLabel(replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default)}</span></div>` : ""}`}
     </div>
     <p class="small muted">${isYoutube(ed.account_id) ? "Vorschau, ungefähr wie ein YouTube Short auf dem iPhone. Das Titelbild wählt YouTube selbst (ändern geht in der YouTube-App)." : "Vorschau, ungefähr wie auf dem iPhone. Instagram schneidet Feed-Bilder auf 4:5 bis 1.91:1 zu."}</p>`;
   }
@@ -671,6 +712,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     set("soc-title-counter", titleCounter(ed));
     set("soc-checks", checksHtml(ed));
     set("soc-preview", previewHtml(ed, account(ed.account_id)));
+    set("soc-reply-when", replyWhen(ed));
     syncSlider(false);
   }
 
@@ -792,6 +834,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
       scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
       ai_generated: !isYoutube(ed.account_id) && ed.ai === true,
+      first_comment_reply: ed.kind === "story" ? "" : String(ed.first_comment_reply ?? "").trim(),
+      first_comment_reply_after_hours: replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default,
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row, ed.updated_at);
     ed.updated_at = saved?.updated_at ?? ed.updated_at;
@@ -805,7 +849,14 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const acc = account(ed.account_id);
     const lines = firstLines(ed.caption) || (ed.kind === "story" ? "(Story)" : "(kein Text)");
     const yt = acc?.platform === "youtube";
-    return `${title}\n\nKonto: ${accountLabel(acc)}\nArt: ${yt ? "YouTube-Video" : KINDS[ed.kind]}\nZeit: ${formatZurich(zurichToUtc(ed.scheduledLocal))}\n\n${yt ? `«${ed.title}»\n` : ""}${lines}${!yt && ed.ai ? "\n\n🤖 Mit KI-Info – später nicht mehr änderbar." : ""}`;
+    return `${title}\n\nKonto: ${accountLabel(acc)}\nArt: ${yt ? "YouTube-Video" : KINDS[ed.kind]}\nZeit: ${formatZurich(zurichToUtc(ed.scheduledLocal))}\n\n${yt ? `«${ed.title}»\n` : ""}${lines}${replyConfirm(ed)}${!yt && ed.ai ? "\n\n🤖 Mit KI-Info – später nicht mehr änderbar." : ""}`;
+  }
+
+  // the approval covers the prepared answer too – say so in the confirmation
+  function replyConfirm(ed) {
+    if (!hasReply(ed) || !String(ed.first_comment ?? "").trim()) return "";
+    const h = replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default;
+    return `\n\nErster Kommentar: «${firstLines(ed.first_comment, 1)}»\n↳ Antwort nach ${hoursLabel(h)}, automatisch: «${firstLines(ed.first_comment_reply, 2)}»`;
   }
 
   async function busy(ed, fn) {
@@ -824,7 +875,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const ed = S.social.editor;
     if (ed && ed.id === id) return ed;
     const p = posts().find((x) => x.id === id);
-    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
+    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
   };
 
   async function publishNow(id) {
@@ -914,7 +965,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         const p = posts().find((x) => x.id === id);
         if (!p) return true;
         const when = new Date(Date.now() + 2 * 60e3).toISOString();
-        const { errors } = validatePost({ kind: p.kind, items: p.media ?? [], caption: p.caption, first_comment: p.first_comment, title: p.title }, { forApproval: true, scheduledAt: when });
+        const { errors } = validatePost({ kind: p.kind, items: p.media ?? [], caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply,
+          first_comment_reply_after_hours: p.first_comment_reply_after_hours, title: p.title }, { forApproval: true, scheduledAt: when });
         if (!p.media?.length) { toast("Kein Bild/Video im Beitrag – zuerst «Bearbeiten» und hochladen."); return true; }
         if (errors.length) { toast(errors[0]); return true; }
         if (!confirm("Nochmals versuchen? Der Beitrag wird in den nächsten Minuten veröffentlicht.")) return true;
@@ -1012,6 +1064,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (name === "soc-caption") ed.caption = e.target.value;
     else if (name === "soc-title") ed.title = e.target.value;
     else if (name === "soc-comment") ed.first_comment = e.target.value;
+    else if (name === "soc-reply") ed.first_comment_reply = e.target.value;
+    else if (name === "soc-reply-hours") ed.first_comment_reply_after_hours = e.target.value;
     else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
     else if (name === "soc-time") ed.scheduledLocal = e.target.value;
     else if (name.startsWith("soc-alt-")) ed.items[Number(name.slice(8))].alt = e.target.value;
@@ -1112,7 +1166,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, todo: pkg.todo, ai: pkg.ai === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, todo: pkg.todo, ai: pkg.ai === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };

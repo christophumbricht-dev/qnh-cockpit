@@ -20,7 +20,7 @@ import { stats } from "./social-stats.mjs";
 import { comments } from "./social-comments.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
 import { PackageError, parsePackage } from "../src/social/package.js";
-import { KINDS, formatZurich, validatePost, zurichToUtc } from "../src/social/validate.js";
+import { KINDS, formatZurich, hoursLabel, validatePost, zurichToUtc } from "../src/social/validate.js";
 
 const DIR = join(ROOT, "pakete");
 const MARKERS = join(DIR, ".imported.json");
@@ -87,6 +87,7 @@ async function save(sb, p, id, isNew) {
     ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
     ...(p.hasLocation ? { location: p.pkg.kind === "story" ? null : p.place } : {}),
     ...(p.hasAi ? { ai_generated: p.pkg.ai === true } : {}),
+    ...(p.hasReply ? { first_comment_reply: p.pkg.kind === "story" ? "" : p.pkg.first_comment_reply, first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours } : {}),
   };
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
@@ -100,7 +101,8 @@ const tomorrow18 = () => zurichToUtc(`${new Intl.DateTimeFormat("en-CA", { timeZ
 
 function checks(p, when) {
   const { errors, warnings } = validatePost(
-    { kind: p.pkg.kind, items: p.items, caption: p.caption, first_comment: p.pkg.first_comment, platform: p.pkg.account.platform, title: p.pkg.title },
+    { kind: p.pkg.kind, items: p.items, caption: p.caption, first_comment: p.pkg.first_comment, first_comment_reply: p.pkg.first_comment_reply,
+      first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours, platform: p.pkg.account.platform, title: p.pkg.title },
     { forApproval: true, scheduledAt: when },
   );
   return [...errors.map((e) => `    ✗ ${e}`), ...warnings.map((w) => `    ! ${w}`)];
@@ -149,12 +151,16 @@ async function main() {
   const aiMissing = !hasAi && pkgs.some((p) => p.pkg.ai);
   // column "title" exists after migration 20261020110000_social_youtube.sql
   const hasTitle = posts.length ? "title" in posts[0] : true;
+  // columns first_comment_reply… exist after migration 20261023100000_social_comment_reply.sql
+  const hasReply = posts.length ? "first_comment_reply" in posts[0] : true;
+  const replyMissing = !hasReply && pkgs.some((p) => p.pkg.first_comment_reply);
   const places = placeRows ?? [];
   for (const r of rows) {
     r.hasTodo = hasTodo;
     r.hasLocation = hasLocation;
     r.hasAi = hasAi;
     r.hasTitle = hasTitle;
+    r.hasReply = hasReply;
     const loc = r.pkg.location;
     if (loc?.id) r.place = { id: loc.id, name: loc.name || places.find((p) => p.page_id === loc.id)?.name || loc.id };
     else if (loc?.name) {
@@ -251,6 +257,7 @@ async function main() {
     console.log(`\n${r.done ? "✓" : "·"} ${r.folder}  [${label[r.action]}${st ? ` · ${STATUS[st] ?? st}` : ""}]`);
     console.log(`    ${formatZurich(when) || "ohne Zeit"} · ${KINDS[r.pkg.kind]} · ${handle(r.account_id)} · ${r.items.length} Datei${r.items.length === 1 ? "" : "en"}`);
     if (firstLine(r.caption)) console.log(`    «${firstLine(r.caption)}»`);
+    if (r.pkg.first_comment_reply && r.pkg.kind !== "story") console.log(`    ↳ Antwort auf den ersten Kommentar nach ${hoursLabel(r.pkg.first_comment_reply_after_hours)}: «${firstLine(r.pkg.first_comment_reply)}»`);
     if (r.note) console.log(`    → ${r.note}`);
     if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
     if (r.placeDone) console.log(`    → Standort ergänzt: 📍 ${r.place.name}`);
@@ -267,6 +274,7 @@ async function main() {
   const count = (act) => rows.filter((r) => r.action === act).length;
   console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
     `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
+  if (replyMissing) console.log("Hinweis: «first_comment_reply» (Antwort auf den ersten Kommentar) wird erst übernommen, wenn die Migration 20261023100000_social_comment_reply.sql eingespielt ist.");
   if (aiMissing) console.log("Hinweis: «ai»: true (KI-Info) wird erst übernommen, wenn die Migration 20261022100000_social_ai_label.sql eingespielt ist.");
   if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
   if (cmd === "status" && (todo.length || notes.length || placeFills.length)) console.log("Importieren mit: npm run social -- import");

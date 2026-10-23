@@ -38,6 +38,8 @@ Nach dem Posten: @exploring_the_skies markieren"
 | `kind` | ja | `image` (ein Bild), `carousel` (2–10 Bilder/Videos), `reel` (ein Video), `story` (ein Bild oder Video) |
 | `caption` | nein | Text, höchstens 2200 Zeichen, höchstens 30 Hashtags (ab 15 gibt es eine Warnung). Zeilenumbruch als `\n`. Bei Stories ignoriert. |
 | `first_comment` | nein | Erster Kommentar nach dem Veröffentlichen (z. B. die Hashtags). Bei Stories ignoriert. |
+| `first_comment_reply` | nein | Antwort auf den eigenen ersten Kommentar, z. B. die Auflösung einer Quizfrage. Das Cockpit schreibt sie **automatisch** als Antwort unter den ersten Kommentar, `first_comment_reply_after_hours` Stunden nach dem Veröffentlichen. Braucht einen `first_comment`, höchstens 2200 Zeichen, nicht bei Stories. Wird mit dem Beitrag freigegeben und danach nicht mehr geändert. |
+| `first_comment_reply_after_hours` | nein | Nach wie vielen Stunden die Antwort kommt: 0.5 bis 72, Standard **4**. |
 | `alt` | nein | Alternativtext für Screenreader: ein Text für alle Bilder oder eine Liste in der Reihenfolge von `media`. Nur Bilder. |
 | `suggested_time` | nein | Vorschlag für den Zeitpunkt. `2026-10-30T18:00` = **Schweizer Zeit**; mit Zeitzone (`2026-10-30T18:00:00+01:00`) wird diese genommen. Ohne Angabe: morgen 18:00. |
 | `media` | ja | Dateinamen im Paket, in der gewünschten Reihenfolge. |
@@ -78,6 +80,20 @@ Das Cockpit prüft alles beim Import und zeigt Fehler im Editor an. Ein Paket mi
 - `cover` wird bei YouTube nicht verwendet (das Titelbild eines Shorts wählt man in der YouTube-App).
 - Den ersten Kommentar schreibt das Cockpit nach dem Hochladen; **anpinnen** geht nur von Hand in YouTube.
 - Für Instagram und YouTube je ein eigenes Paket (eigener Ordner), z. B. `…-nebel-1` und `…-nebel-1-yt`.
+
+### Quizfrage mit Auflösung
+
+```json
+{
+  "first_comment": "Quick quiz 🤔 Why 190 hPa and not 1013 minus 830, so 183? Answer below in a few hours.",
+  "first_comment_reply": "In standard air the missing 1,707 m weigh about 190 hPa: 1013 at sea level, 824 at 1,707 m.",
+  "first_comment_reply_after_hours": 4
+}
+```
+- Die Frage steht als erster Kommentar unter dem Beitrag, die Auflösung kommt nach 4 Stunden als Antwort darunter (Instagram und YouTube).
+- Im Cockpit siehst du beides in der Freigabe-Runde, auch den ungefähren Zeitpunkt. Mit «Freigeben» gibst du die Antwort mit frei.
+- In der Liste steht danach «Antwort gesendet» oder, falls es nicht ging, der Grund. Dann liegt der Text unter «Kommentare» als Entwurf bereit und du schickst ihn mit einem Klick selbst.
+- Gesendet wird höchstens einmal und nur unter unseren eigenen ersten Kommentar. Antworten auf Kommentare von anderen schreibst immer du.
 
 ## Vorlage für den Claude-Chat
 

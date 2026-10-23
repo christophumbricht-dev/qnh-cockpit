@@ -2,7 +2,7 @@
 // A package always becomes a DRAFT – approving stays a separate, manual step.
 // Format: docs/social-paket.md
 import { unzipSync } from "fflate";
-import { KINDS, TAG_DEFAULT, cleanUsername, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, REPLY_HOURS, TAG_DEFAULT, cleanUsername, replyHours, zurichToUtc } from "./validate.js";
 
 const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", mp4: "video/mp4", mov: "video/quicktime" };
 const MAX_TOTAL = 200 * 1024 * 1024;
@@ -99,6 +99,16 @@ export async function parsePackage(entries, accounts) {
   const title = String(post.title ?? "").trim();
   if (title.length > 100) throw new PackageError(`post.json: «title» ist ${title.length} Zeichen lang, höchstens 100 (YouTube).`);
 
+  // answer below our own first comment, sent automatically some hours after publishing (e.g. a quiz answer)
+  const reply = String(post.first_comment_reply ?? "").trim();
+  const replyAfter = replyHours(post.first_comment_reply_after_hours);
+  if (reply) {
+    if (!String(post.first_comment ?? "").trim()) throw new PackageError("post.json: «first_comment_reply» braucht einen «first_comment», unter dem die Antwort stehen kann.");
+    if (post.kind === "story") throw new PackageError("post.json: Stories haben keinen Kommentar – «first_comment_reply» geht hier nicht.");
+    if (reply.length > LIMITS.reply) throw new PackageError(`post.json: «first_comment_reply» ist ${reply.length} Zeichen lang, höchstens ${LIMITS.reply}.`);
+  }
+  if (replyAfter === null) throw new PackageError(`post.json: «first_comment_reply_after_hours» muss eine Zahl von ${REPLY_HOURS.min} bis ${REPLY_HOURS.max} sein (Stunden).`);
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
@@ -106,6 +116,8 @@ export async function parsePackage(entries, accounts) {
     title,
     caption: String(post.caption ?? ""),
     first_comment: String(post.first_comment ?? ""),
+    first_comment_reply: reply,
+    first_comment_reply_after_hours: replyAfter,
     alt,
     suggested_time: suggested,
     todo,

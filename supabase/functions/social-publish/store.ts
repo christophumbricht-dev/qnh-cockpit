@@ -2,7 +2,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Account, Post, Store } from "./publish.ts";
 import type { MediaRow, StatsStore } from "./stats.ts";
-import type { CommentsStore, StoredComment } from "./comments.ts";
+import type { CommentsStore, ReplyStore, StoredComment } from "./comments.ts";
 import type { FollowUpStore } from "./youtube.ts";
 import type { Item, OutreachSettings, OutreachStore, Watch } from "./outreach.ts";
 
@@ -17,7 +17,7 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 
 const ITEM_COLS = "id, watch_id, source, media_id, username, permalink, caption, media_type, image_url, posted_at, like_count, comments_count, status, found_at";
 
-export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & OutreachStore {
+export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & OutreachStore & ReplyStore {
   return {
     async claim(postId) {
       return must(await db.rpc("social_claim", { p_post_id: postId ?? null, p_limit: 5 }), "claim") as Post[];
@@ -106,6 +106,21 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
     },
     async markDeleted(ids, at) {
       for (let i = 0; i < ids.length; i += 200) must(await db.from("social_comments").update({ deleted_at: at }).in("id", ids.slice(i, i + 200)), "delete comments");
+    },
+    // ---------- prepared answer below our own first comment ----------
+    async dueReplies(since) {
+      const r = await db.from("social_posts").select("*").eq("status", "published").neq("first_comment_reply", "")
+        .is("first_comment_reply_status", null).gte("published_at", since.toISOString()).order("published_at").limit(20);
+      if (r.error && /does not exist|could not find/i.test(r.error.message)) return []; // migration not run yet
+      return must(r, "due replies") as Post[];
+    },
+    async claimFirstCommentReply(postId) {
+      const rows = must(await db.from("social_posts").update({ first_comment_reply_status: "sending" }).eq("id", postId)
+        .eq("status", "published").is("first_comment_reply_status", null).select("id"), "claim answer") as Array<{ id: string }>;
+      return rows.length === 1;
+    },
+    async commentByRemote(accountId, remoteId) {
+      return must(await db.from("social_comments").select(COMMENT_COLS).eq("account_id", accountId).eq("remote_id", remoteId).maybeSingle(), "comment") as StoredComment | null;
     },
     async upsertAccount(row) {
       return must(await db.from("social_accounts").upsert({ ...row, active: true }, { onConflict: "app_id,platform" }).select(ACCOUNT_COLS).single(), "account") as Account;

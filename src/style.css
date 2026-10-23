@@ -343,6 +343,9 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .phone-dots button.on { background: #0095f6; }
 .phone-caption, .phone-comment { padding: 4px 12px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .phone-comment { color: #555; padding-top: 0; }
+.phone-comment.reply { padding-left: 36px; }
+.soc-reply { margin: 2px 0; overflow-wrap: anywhere; }
+.soc-reply-hours input { width: 5.5em; margin-right: 4px; }
 
 /* ---- phone layout: bottom bar like an app ---- */
 @media (max-width: 860px) {

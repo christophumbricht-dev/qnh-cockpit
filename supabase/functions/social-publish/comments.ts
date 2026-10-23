@@ -2,16 +2,19 @@
 //
 //   op "comments"          fetch new comments of all active accounts (cron every 15 min, or «Jetzt abholen»)
 //   op "reply"             post Christoph's reply (always his click in the cockpit, never automatic)
+//   sendDueReplies         (publish cron) the one exception: the answer Christoph approved together with a post,
+//                          posted hours later below that post's OWN first comment (e.g. the solution of a quiz)
 //   op "moderate"          hide / show / approve (YouTube «zurückgehalten») / delete (own comments only)
 //   op "youtube-auth"      Google sign-in URL for «YouTube verbinden»
 //   op "youtube-connect"   code → refresh token (to Vault, never shown) + account row for the channel
 //
-// No liking, following or commenting on other accounts – only answers below our own posts.
+// No liking, following or commenting on other accounts – only answers below our own posts. Comments of other
+// people are only ever answered by Christoph's click; nothing here answers them automatically.
 // Logic independent of Supabase and the network (store + fetch injected), tested in comments.test.ts.
 
 import { graph, GraphError, IG_HOST, type FetchFn } from "./graph.ts";
 import { accessToken, authUrl, exchangeCode, GoogleError, googleGerman, youtube, YT_SCOPES, type GoogleConfig, type YouTube } from "./google.ts";
-import { type Account, FinalError, germanError } from "./publish.ts";
+import { type Account, FinalError, germanError, type Post } from "./publish.ts";
 
 export type CommentRow = {
   account_id: string;
@@ -350,6 +353,83 @@ export async function replyTo(deps: CommentDeps, commentId: string, text: string
     return { id: c.id, status: "replied", reply_id: replyId, note: "Gesendet. Das Cockpit zeigt die Antwort nach dem nächsten Abholen." };
   }
   return { id: c.id, status: "replied", reply_id: replyId };
+}
+
+// ---------- prepared answer below our own first comment ----------
+// The only automatic reply: a text Christoph approved together with the post (frozen with it), sent once some
+// hours after publishing, below the first comment our server wrote for that post (remote_comment_id). It goes
+// through replyTo like his click, so the inbox shows it and a deleted or hidden first comment stops it.
+// Never below comments of other people.
+
+export const REPLY_WINDOW_MS = 7 * 864e5; // posts published longer ago are not picked up any more
+export const NO_COMMENT_GRACE_MS = 6 * 3600_000; // YouTube may write the first comment up to 2 h late
+
+export interface ReplyStore {
+  dueReplies(since: Date): Promise<Post[]>; // published since then, answer prepared, status still empty
+  claimFirstCommentReply(postId: string): Promise<boolean>; // status empty → "sending"; false = already taken
+  commentByRemote(accountId: string, remoteId: string): Promise<StoredComment | null>;
+  update(postId: string, patch: Record<string, unknown>): Promise<void>;
+}
+export type ReplyDeps = CommentDeps & { store: CommentsStore & ReplyStore; deadline?: number };
+
+export async function sendDueReplies(deps: ReplyDeps): Promise<Array<{ id: string; status: string }>> {
+  const out: Array<{ id: string; status: string }> = [];
+  const now = deps.now().getTime();
+  for (const post of await deps.store.dueReplies(new Date(now - REPLY_WINDOW_MS))) {
+    if (deps.deadline && deps.now().getTime() > deps.deadline) break;
+    const text = String(post.first_comment_reply ?? "").trim();
+    const hours = Number(post.first_comment_reply_after_hours ?? 4);
+    const published = Date.parse(post.published_at ?? "");
+    if (post.status !== "published" || post.kind === "story" || !text || post.first_comment_reply_status || !Number.isFinite(published) || !(hours > 0)) continue;
+    const due = published + hours * 3600_000;
+    if (now < due) continue;
+    const fail = async (why: string) => {
+      await deps.store.update(post.id, { first_comment_reply_status: "failed", first_comment_reply_error: why.slice(0, 500) });
+      out.push({ id: post.id, status: "reply-failed" });
+    };
+    if (!post.remote_comment_id || !post.remote_media_id) {
+      // the first comment never went online: nothing of ours to answer below
+      if (now > due + NO_COMMENT_GRACE_MS && (await deps.store.claimFirstCommentReply(post.id))) await fail("Der erste Kommentar fehlt, darum wurde die Antwort nicht gesendet.");
+      continue;
+    }
+    // claimed before anything is sent: a second run never sends it again, whatever happens afterwards
+    if (!(await deps.store.claimFirstCommentReply(post.id))) continue;
+    let comment: StoredComment | null = null;
+    let replyId: string;
+    try {
+      const acc = await deps.store.account(post.account_id);
+      comment = await deps.store.commentByRemote(acc.id, post.remote_comment_id);
+      if (!comment) {
+        // the inbox has not fetched it yet – we wrote it ourselves when publishing, so it is ours
+        const nowIso = deps.now().toISOString();
+        await deps.store.insertComments([{
+          account_id: acc.id, remote_id: post.remote_comment_id, parent_remote_id: null, media_id: post.remote_media_id,
+          media_title: firstLine(post.title || post.caption), media_permalink: acc.platform === "youtube" ? ytWatchUrl(post.remote_media_id) : safeLink(post.permalink, IG_LINK),
+          author: acc.handle, author_url: null, body: post.first_comment.slice(0, 10000), posted_at: post.published_at ?? nowIso, like_count: 0,
+          own: true, held: false, status: "done", fetched_at: nowIso, deleted_at: null,
+        }]);
+        comment = await deps.store.commentByRemote(acc.id, post.remote_comment_id);
+      }
+      if (!comment) throw new FinalError("Der erste Kommentar ist im Cockpit nicht zu finden.");
+      if (!comment.own || comment.parent_remote_id) throw new FinalError("Der erste Kommentar ist nicht unser eigener – keine automatische Antwort.");
+      replyId = (await replyTo(deps, comment.id, text)).reply_id;
+    } catch (err) {
+      const why = err instanceof FinalError ? err.message : commentError(err);
+      // ready to send by hand: the answer waits as a draft below the first comment in «Kommentare»
+      const usable = comment && !comment.deleted_at && comment.own;
+      if (usable) await deps.store.updateComment(comment!.id, { draft: text }).catch(() => {});
+      await fail(`Antwort nicht gesendet: ${why}${usable ? " Sie liegt unter «Kommentare» als Entwurf bereit." : ""}`);
+      continue;
+    }
+    // online now: a bookkeeping problem leaves "sending" (never sent again), not "failed" (would invite a second send)
+    try {
+      await deps.store.update(post.id, { first_comment_reply_status: "sent", first_comment_reply_id: replyId, first_comment_reply_sent_at: deps.now().toISOString(), first_comment_reply_error: null });
+    } catch (err) {
+      console.error("first comment reply bookkeeping", post.id, err);
+    }
+    out.push({ id: post.id, status: "replied" });
+  }
+  return out;
 }
 
 export type ModerateAction = "hide" | "show" | "approve" | "delete";
