@@ -1,6 +1,6 @@
 # QNH Cockpit – was es kann
 
-Stand: 21. Oktober 2026 · Adresse: <https://cockpit.setqnh.ch> (am iPhone: Safari → Teilen → «Zum Home-Bildschirm») · Demo ohne Anmeldung: `?demo`
+Stand: 23. Oktober 2026 · Adresse: <https://cockpit.setqnh.ch> (am iPhone: Safari → Teilen → «Zum Home-Bildschirm») · Demo ohne Anmeldung: `?demo`
 
 Das Cockpit ist die interne Schaltzentrale der QNH GmbH: Aufgaben, Apps, Social Media und Finanzen an einem Ort, am Laptop und am iPhone. Es ist eine reine Webseite (GitHub Pages); die Daten liegen in Supabase («QNH Core» und die Projekte der Apps). Nur Admin-Konten sehen etwas.
 
@@ -17,6 +17,7 @@ Dazu:
 - **«Als Nächstes»** mit dem wichtigsten Roadmap-Punkt (Erledigt / Morgen / Fokus-Runde).
 - **«Diese Woche auf Sendung»** mit den geplanten Beiträgen.
 - **Ausklappbare Checklisten:** Einträge mit Handgriffen («Nach dem Posten: …») öffnen sich per Klick. Abhaken geht direkt dort; sind alle Punkte erledigt, verschwindet der Eintrag.
+- **Mini-iPhone:** Beim Aufklappen einer Social-Aufgabe zeigt ein kleines iPhone rechts daneben, um welchen Beitrag es geht (Bild bzw. Titelbild, Konto, Textanfang).
 
 ## 2. Aufgaben (Roadmap)
 - **Board** pro Bereich (QNH, Downwind, SecondSeat …) mit den Spalten Ideen · Als Nächstes · In Arbeit · Erledigt. Karten lassen sich ziehen oder mit ‹ › verschieben.
@@ -39,8 +40,13 @@ Dazu:
   - iPhone-Vorschau, durch Karussell-Bilder wischen, Videos mit Ton abspielen.
   - Erster Kommentar (z. B. Hashtags), Personen markieren (z. B. @exploring_the_skies), Standort aus der eigenen Ortsliste.
   - Prüfungen: Format, Textlänge, Hashtags, gleiche Bildgrösse im Karussell.
+  - PNG-, WebP- und HEIC-Bilder werden beim Hochladen automatisch in JPEG umgewandelt (Instagram nimmt nur JPEG).
+  - **KI-Info:** Schalter «mit KI erstellt» (z. B. KI-Stimme). Instagram zeigt dann «KI-Info» unter dem Namen; nach dem Veröffentlichen nicht mehr änderbar. Im Paket: `"ai": true`.
+  - Wurde ein Beitrag inzwischen anderswo geändert (z. B. durch einen Paket-Import), speichert der Editor nicht darüber, sondern meldet es.
 - **Freigabe-Runde:** alle Entwürfe der Reihe nach prüfen → «Freigeben» oder «Später freigeben».
-- **Ansichten:** Liste (chronologisch) und Kalender (Beiträge per Ziehen verschieben). Filter pro Kanal über die Logo-Chips.
+- **Ansichten:** Liste (chronologisch) und Kalender (Beiträge per Ziehen verschieben).
+- **Suchen und filtern:** Suchfeld (Text, Konto, Ort, #Hashtag, @markiert, Datum), Filter nach App (Logo-Chips), nach Plattform (Alle · Instagram · YouTube – gilt auch für die Freigabe-Runde) und nach Status (Zu prüfen, Entwürfe, Freigegeben, Veröffentlicht, Fehlgeschlagen, Offene Aufgaben, KI-Info).
+- **Fehler:** verständliche Meldung mit Code; vor dem Senden wird geprüft, ob alle Dateien da sind. Knopf **«Erneut versuchen»** bei fehlgeschlagenen Beiträgen.
 - **Doppelt-Schutz:** Ein Entwurf, der schon auf Instagram oder YouTube ist, wird rot markiert; vor dem Freigeben fragt das Cockpit nach.
 - **«Selbst in Instagram erledigen»:** Handgriffe, die keine Schnittstelle kann (Sticker, Musik, Anpinnen, Story teilen). Das Cockpit zeigt sie als **Checkliste zum Abhaken**, mit «So geht's»-Anleitungen, Story-Bildern zum Herunterladen und «kopieren»-Knopf für Links.
 
@@ -53,15 +59,22 @@ Dazu:
 **Kommentare:** Kommentare unter deinen eigenen Instagram-Beiträgen und YouTube-Videos kommen alle 15 Minuten ins Cockpit. Dort kannst du antworten, ausblenden oder als erledigt ablegen. Gesendet wird nur per Klick.
 
 **«Bei anderen»**
-- Zweimal täglich schaut das Cockpit bei beobachteten Accounts und Hashtags vorbei, und Claude schlägt Kommentare vor.
-- Du kopierst und postest **selbst**. Das Cockpit liked, folgt und kommentiert nie.
+- Zweimal täglich schaut das Cockpit bei beobachteten Accounts und Hashtags vorbei, und Claude schlägt Kommentare vor – **in der Sprache des Beitrags**, freundlich, mit zwei Varianten.
+- Claude lernt aus deinen zuletzt geposteten Kommentaren (inkl. deiner Änderungen).
+- Knopf **«Kopieren & öffnen»** pro Variante (kopiert den Text und öffnet den Beitrag, am Handy in der Instagram-App), danach **«Gepostet ✓»**. «Auf Deutsch» übersetzt fremdsprachige Vorschläge.
+- Du postest **selbst**. Das Cockpit liked, folgt und kommentiert nie.
 - Kosten nach Verbrauch (Anthropic) mit Monatsbudget.
 
 **Statistik**
-- Täglich um ca. 06:23 werden die Zahlen geholt, getrennt pro Kanal.
+- Täglich um ca. 06:23 werden die Zahlen geholt, getrennt pro Kanal (Instagram und YouTube je eine Karte), oder sofort mit «Jetzt aktualisieren».
 - **Instagram:** Follower, Reichweite, Views, Interaktionen, Link-Taps, Follower-Verlauf; pro Beitrag Views, Reichweite, Likes, Kommentare, Speicherungen, Geteilt, neue Follower.
 - **YouTube:** Abonnenten, Aufrufe gesamt, Videos; pro Short Aufrufe, Likes, Kommentare.
 - Für Claude-Auswertungen: `npm.cmd run social -- stats [--json]`.
+
+**Vertonung (ausserhalb des Cockpits)**
+- Reels bekommen eine KI-Stimme (ElevenLabs): Werkzeug `tools/voice` im Leeside-Lab-Ordner (`npm.cmd run voice -- all <Ordner>`), Anleitung `docs/vertonung-anleitung.md` dort.
+- Das Video wird so geschnitten, dass jede Szene so lange dauert, bis der Satz gesprochen ist; die Musik läuft gleichmässig leise darunter.
+- Vertonte Reels kommen automatisch mit KI-Info ins Paket.
 
 ## 5. Finanzen
 - **Fixkosten und Abos** mit Erneuerungs-Erinnerungen («Behalten» / rechtzeitig kündigen).
@@ -88,6 +101,7 @@ Schnellzugriff auf alle Werkzeuge: kDrive, Infomaniak, GitHub, Supabase, App Sto
 - **Store & Builds:** wartet auf die Schlüssel (App Store Connect, Codemagic).
 - **Geplant:**
   - TikTok für Leeside Lab
+  - Reels direkt aus den Originalprojekten neu rendern (statt nur neu schneiden)
   - Cockpit als iPhone-App (nach der Gründung)
   - Eigener E-Mail-Versand über Infomaniak
 
