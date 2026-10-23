@@ -1001,3 +1001,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .soc-when .field { margin: 0; }
 .soc-when input[type="datetime-local"] { font-size: 16px; font-weight: 600; }
 #soc-when-hint { margin-top: 6px; }
+
+/* new place form in the editor */
+.soc-newplace { padding: 12px 14px; margin: -4px 0 12px; display: grid; gap: 8px; }
+.soc-newplace .field { margin: 0; }
+.soc-newplace .row-wrap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.soc-newplace code { font-size: 12px; }
+.ok-text { color: var(--ok, #1f8a4c); }

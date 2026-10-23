@@ -659,7 +659,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
               ${[...places().map((p) => [p.page_id, p.name]), ...(ed.location && !places().some((p) => p.page_id === ed.location.id) ? [[ed.location.id, ed.location.name || ed.location.id]] : [])]
                 .map(([v, l]) => `<option value="${esc(v)}"${ed.location?.id === v ? " selected" : ""}>${esc(l)}</option>`).join("")}
               <option value="__new">+ Neuen Ort hinzufügen …</option>
-            </select></label>` : ""}
+            </select></label>${ed.newPlace ? newPlaceHtml(ed.newPlace) : ""}` : ""}
           <label class="field">Veröffentlichen am (Schweizer Zeit)
             <input type="datetime-local" name="soc-time" value="${esc(ed.scheduledLocal)}"${dis}></label>
           ${data.todoSupported() ? `<label class="field soc-todo-field"><span><b>Selbst in ${esc(where)} erledigen</b> <span class="muted small">– nur für dich, wird nicht veröffentlicht</span></span>
@@ -678,6 +678,39 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <div id="soc-preview">${previewHtml(ed, acc)}</div>
         </aside>
       </section>`;
+  }
+
+  // ---------- new place: find the ID with one click, paste the link, the cockpit reads the ID ----------
+  // Instagram wants the ID of the place's Facebook page. The API cannot search places (needs extra Meta approval),
+  // so the cockpit opens the search and reads the ID out of whatever link is pasted.
+  function placeIdFrom(raw) {
+    const s = String(raw ?? "").trim();
+    return s.match(/instagram\.com\/explore\/locations\/(\d{5,25})/)?.[1]
+      ?? s.match(/[?&]id=(\d{5,25})/)?.[1]
+      ?? s.match(/facebook\.com\/(?:pages\/[^/]+\/|people\/[^/]+\/)?(\d{5,25})(?:[/?#]|$)/)?.[1]
+      ?? s.match(/^(\d{5,25})$/)?.[1] ?? null;
+  }
+  function placeHint(np) {
+    const id = placeIdFrom(np.link);
+    if (!np.link.trim()) return `<span class="muted">Noch kein Link.</span>`;
+    if (id) return `<span class="ok-text">✓ ID erkannt: <b>${esc(id)}</b></span>`;
+    if (/facebook\.com\//.test(np.link)) return `<span class="error">Dieser Facebook-Link enthält keine Zahl. Auf der Seite «Info» → «Seitentransparenz» steht die Seiten-ID – die hier einfügen.</span>`;
+    return `<span class="error">Keine ID gefunden. Einen Instagram-Standort-Link (…/explore/locations/123…/) oder die Zahl einfügen.</span>`;
+  }
+  function newPlaceHtml(np) {
+    return `<div class="card soc-newplace">
+      <b>Neuer Ort</b>
+      <label class="field">Name (so erscheint er in deiner Liste)
+        <input type="text" name="soc-place-name" value="${esc(np.name)}" placeholder="z. B. Flugplatz Birrfeld" autocomplete="off"></label>
+      <div class="row-wrap"><span class="muted small">ID suchen:</span>
+        <button class="btn ghost" data-action="soc-place-search" data-value="google">🔎 Instagram-Standorte (Google)</button>
+        <button class="btn ghost" data-action="soc-place-search" data-value="facebook">🔎 Facebook-Seiten</button></div>
+      <p class="muted small">In den Treffern einen Link wie <code>instagram.com/explore/locations/<b>1234567</b>/…</code> kopieren – oder in der Instagram-App bei einem Beitrag auf den Ort tippen → Teilen → Link kopieren.</p>
+      <label class="field">Link oder ID einfügen
+        <input type="text" name="soc-place-link" value="${esc(np.link)}" placeholder="https://www.instagram.com/explore/locations/…" autocomplete="off"></label>
+      <div id="soc-place-hint" class="small">${placeHint(np)}</div>
+      <div class="actions"><button class="btn" data-action="soc-place-save">Ort speichern</button><button class="btn ghost" data-action="soc-place-cancel">Abbrechen</button></div>
+    </div>`;
   }
 
   // «Mi 28.10., 18:00 · in 5 Tagen» above the phone; warns when the time is already past
@@ -1035,6 +1068,33 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       case "soc-remove": ed.items.splice(Number(el.dataset.value), 1); ed.preview = 0; ed.dirty = true; render(); return true;
       case "soc-remove-cover": ed.cover = null; ed.dirty = true; render(); return true;
       case "soc-preview": slideTo(Number(el.dataset.value)); return true;
+      case "soc-place-search": {
+        const np = ed?.newPlace; if (!np) return true;
+        const q = np.name.trim();
+        if (!q) { toast("Zuerst den Namen des Ortes eingeben."); return true; }
+        const url = el.dataset.value === "facebook"
+          ? `https://www.facebook.com/search/pages/?q=${encodeURIComponent(q)}`
+          : `https://www.google.com/search?q=${encodeURIComponent(`site:instagram.com/explore/locations "${q}"`)}`;
+        window.open(url, "_blank", "noopener");
+        return true;
+      }
+      case "soc-place-cancel": if (ed) { ed.newPlace = null; render(true); } return true;
+      case "soc-place-save": {
+        const np = ed?.newPlace; if (!np) return true;
+        const placeName = np.name.trim(), pageId = placeIdFrom(np.link);
+        if (!placeName) { toast("Bitte einen Namen eingeben."); return true; }
+        if (!pageId) { toast("Keine gültige ID im Link gefunden."); return true; }
+        try {
+          await data.addLocation(pageId, placeName);
+          ed.location = { id: pageId, name: placeName };
+          ed.newPlace = null;
+          ed.dirty = true;
+          await load(true);
+          toast(`Ort «${placeName}» gespeichert`);
+        } catch (err) { toast(errorText(err)); }
+        render(true);
+        return true;
+      }
       case "soc-slide": slideTo(ed.preview + Number(el.dataset.value)); return true;
       case "soc-save": {
         const { errors } = checks(ed);
@@ -1102,6 +1162,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const name = e.target.name ?? "";
     if (name === "soc-search") { S.social.q = e.target.value; render(); return true; }
     if (!ed || !name.startsWith("soc-")) return false;
+    if (name === "soc-place-name" || name === "soc-place-link") {
+      ed.newPlace[name === "soc-place-name" ? "name" : "link"] = e.target.value;
+      const h = document.getElementById("soc-place-hint");
+      if (h) h.innerHTML = placeHint(ed.newPlace);
+      return true;
+    }
     if (name === "soc-caption") ed.caption = e.target.value;
     else if (name === "soc-title") ed.title = e.target.value;
     else if (name === "soc-comment") ed.first_comment = e.target.value;
@@ -1141,18 +1207,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (name === "soc-location" && ed) {
       const v = e.target.value;
       if (v !== "__new") { const p = places().find((x) => x.page_id === v); ed.location = v ? { id: v, name: p?.name ?? ed.location?.name ?? v } : null; ed.dirty = true; return true; }
-      const placeName = prompt("Name des Ortes (so erscheint er in deiner Liste), z. B. «Flugplatz Birrfeld»:")?.trim();
-      const raw = placeName ? prompt("Facebook-Seiten-ID des Ortes (nur Ziffern) – oder den Link zur Facebook-Seite, wenn er «?id=…» enthält:")?.trim() : "";
-      const pageId = (raw ?? "").match(/(?:[?&]id=)?(\d{5,25})/)?.[1];
-      if (!placeName || !pageId) { if (placeName) toast("Keine gültige ID gefunden – siehe Anleitung «Standort» in docs/social-setup.md."); render(true); return true; }
-      try {
-        await data.addLocation(pageId, placeName);
-        ed.location = { id: pageId, name: placeName };
-        ed.dirty = true;
-        await load(true);
-        toast(`Ort «${placeName}» gespeichert`);
-      } catch (err) { toast(errorText(err)); }
-      render();
+      ed.newPlace = { name: "", link: "" };
+      render(true);
+      setTimeout(() => document.querySelector('[name="soc-place-name"]')?.focus(), 0);
       return true;
     }
     return false;

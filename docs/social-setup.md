@@ -127,10 +127,11 @@ npx supabase secrets set SOCIAL_CRON_SECRET=DAS_ZUFALLSWORT --project-ref PROJEK
 ---
 
 ## Standort (optional, pro Beitrag)
-Instagram verlangt als Standort die **ID einer Facebook-Seite eines echten Ortes** (z. B. die Seite des Flugplatzes). Gilt für Bild, Karussell und Reel – **nicht für Stories**. Suchen kann das Cockpit nicht (das erlaubt Instagram mit unserer Anbindung nicht), darum gibt es eine Ortsliste:
-1. Im Browser auf **facebook.com** den Ort suchen (z. B. «Flugplatz Birrfeld») und seine Seite öffnen.
-2. Auf der Seite **Info** (bzw. «Über») → **Seitentransparenz** → dort steht die **Seiten-ID** (nur Ziffern). Steht in der Adresszeile `…profile.php?id=123…`, ist das die ID.
-3. Im Cockpit im Beitrag → **Standort** → **+ Neuen Ort hinzufügen …** → Name und ID eingeben. Ab dann ist der Ort in der Liste.
+Instagram verlangt als Standort die **ID einer Facebook-Seite eines echten Ortes** (z. B. die Seite des Flugplatzes). Gilt für Bild, Karussell und Reel – **nicht für Stories**. Selbst suchen darf das Cockpit nicht (dafür bräuchte es eine zusätzliche Meta-Freigabe), es hilft aber beim Finden:
+1. Im Beitrag → **Standort** → **+ Neuen Ort hinzufügen …** → Namen eingeben (z. B. «Flugplatz Birrfeld»).
+2. **🔎 Instagram-Standorte (Google)** öffnet eine Suche; in den Treffern einen Link wie `instagram.com/explore/locations/1234567/…` kopieren. Am Handy geht auch: in Instagram bei einem Beitrag auf den Ort tippen → Teilen → Link kopieren.
+   Alternativ **🔎 Facebook-Seiten**: Seite öffnen → **Info** → **Seitentransparenz** → Seiten-ID.
+3. Link (oder die Zahl) ins Feld **Link oder ID** einfügen – das Cockpit zeigt «✓ ID erkannt» → **Ort speichern**. Ab dann ist der Ort in der Liste.
 Nimmt Instagram einen Ort nicht an, wird der Beitrag trotzdem veröffentlicht – ohne Standort, mit Hinweis im Cockpit.
 
 ## Kommentare beantworten (Social → «Kommentare»)
