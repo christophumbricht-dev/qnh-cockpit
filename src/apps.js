@@ -58,6 +58,7 @@ export const QNH = {
 // Brands that only have a social media channel (no app data in the cockpit yet)
 export const BRANDS = [
   { id: "leesidelab", name: "Leeside Lab", tagline: "Aviation weather & PPL theory in 3D", color: "#12243D", logo: "/logos/leesidelab.svg" },
+  { id: "wolkenhof", name: "Flughafen Wolkenhof", tagline: "Kindersendung über Flugzeuge (YouTube, für Kinder)", color: "#E8A317", logo: "/logos/wolkenhof.svg" },
 ];
 
 export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id) ?? BRANDS.find((b) => b.id === id));

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><title>Flughafen Wolkenhof</title>
+<rect width="200" height="200" fill="#CFE8FF"/>
+<g fill="#FFFFFF"><ellipse cx="58" cy="150" rx="38" ry="18"/><ellipse cx="84" cy="138" rx="26" ry="22"/><ellipse cx="150" cy="158" rx="40" ry="16"/></g>
+<g stroke="#2F2545" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+<path d="M52 92 L40 58 L58 58 L72 88 Z" fill="#FFC93C"/>
+<path d="M150 98 C150 74 128 66 100 66 C76 66 58 76 46 90 L44 102 C62 112 82 122 104 122 C132 122 150 116 150 98 Z" fill="#FFC93C"/>
+<ellipse cx="96" cy="58" rx="54" ry="9" fill="#FFD866"/>
+<ellipse cx="118" cy="92" rx="22" ry="16" fill="#BFE6FF"/>
+<circle cx="156" cy="98" r="9" fill="#E8473B"/>
+</g>
+<g fill="#FFFFFF" stroke="#2F2545" stroke-width="3"><ellipse cx="111" cy="92" rx="7" ry="9"/><ellipse cx="127" cy="92" rx="7" ry="9"/></g>
+<g fill="#1B1430"><circle cx="113" cy="93" r="4"/><circle cx="129" cy="93" r="4"/></g>
+<path d="M60 104 C90 112 120 112 150 106" stroke="#E8473B" stroke-width="6" fill="none"/>
+</svg>

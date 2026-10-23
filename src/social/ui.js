@@ -725,8 +725,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         </div>
         <aside class="soc-preview">
           <div class="card soc-when">
-            <label class="field"><span class="soc-when-head">${platformBadge(acc)}</span><b>Veröffentlichung</b> <span class="muted small">Schweizer Zeit</span>
+            <div class="soc-when-row"><label class="field"><span class="soc-when-head">${platformBadge(acc)}</span><b>Veröffentlichung</b> <span class="muted small">Schweizer Zeit</span>
               <input type="datetime-local" name="soc-time-top" value="${esc(ed.scheduledLocal)}"${dis}></label>
+              ${ro ? "" : `<button class="btn soc-approve-big" data-action="soc-approve"${dis}>Freigeben</button>`}</div>
             <div id="soc-when-hint" class="small">${whenHint(ed)}</div>
             ${S.social.review && !ed.isNew ? `<button class="btn ghost soc-later" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Später freigeben ›</button>` : ""}
           </div>
