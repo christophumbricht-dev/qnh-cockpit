@@ -669,8 +669,27 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
           ${aiHint}<div class="actions">${actions.join("")}</div>
         </div>
-        <aside class="soc-preview" id="soc-preview">${previewHtml(ed, acc)}</aside>
+        <aside class="soc-preview">
+          <div class="card soc-when">
+            <label class="field"><b>Veröffentlichung</b> <span class="muted small">Schweizer Zeit</span>
+              <input type="datetime-local" name="soc-time-top" value="${esc(ed.scheduledLocal)}"${dis}></label>
+            <div id="soc-when-hint" class="small">${whenHint(ed)}</div>
+          </div>
+          <div id="soc-preview">${previewHtml(ed, acc)}</div>
+        </aside>
       </section>`;
+  }
+
+  // «Mi 28.10., 18:00 · in 5 Tagen» above the phone; warns when the time is already past
+  function whenHint(ed) {
+    if (!ed.scheduledLocal) return `<span class="muted">Noch kein Zeitpunkt</span>`;
+    const at = new Date(zurichToUtc(ed.scheduledLocal));
+    if (Number.isNaN(at.getTime())) return "";
+    const day = (d) => new Date(utcToZurichLocal(d.toISOString()).slice(0, 10) + "T00:00:00Z").getTime();
+    const days = Math.round((day(at) - day(new Date())) / 864e5);
+    const rel = at < new Date() ? `<span class="error">liegt in der Vergangenheit</span>`
+      : days === 0 ? "heute" : days === 1 ? "morgen" : `in ${days} Tagen`;
+    return `<span class="muted">${esc(formatZurich(at.toISOString()))}</span> · ${rel}`;
   }
 
   function replyField(ed, dis) {
@@ -729,6 +748,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     set("soc-checks", checksHtml(ed));
     set("soc-preview", previewHtml(ed, account(ed.account_id)));
     set("soc-reply-when", replyWhen(ed));
+    set("soc-when-hint", whenHint(ed));
     syncSlider(false);
   }
 
@@ -1090,7 +1110,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     else if (name === "soc-quiz-answer") ed.quiz_answer = e.target.value;
     else if (name === "soc-quiz-replies") ed.quiz_correct_replies = e.target.value;
     else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
-    else if (name === "soc-time") ed.scheduledLocal = e.target.value;
+    else if (name === "soc-time" || name === "soc-time-top") {
+      ed.scheduledLocal = e.target.value;
+      // keep the two time fields (form and the card above the phone) in step without re-rendering
+      const other = document.querySelector(`[name="${name === "soc-time" ? "soc-time-top" : "soc-time"}"]`);
+      if (other) other.value = e.target.value;
+    }
     else if (name.startsWith("soc-alt-")) ed.items[Number(name.slice(8))].alt = e.target.value;
     else if (name.startsWith("soc-tags-")) { const it = ed.items[Number(name.slice(9))]; it.user_tags = parseTagList(e.target.value, it.user_tags); }
     else return false;

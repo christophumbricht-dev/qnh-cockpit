@@ -995,3 +995,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .seg.seg-small .seg-btn { padding: 7px 12px; font-size: 13px; }
 
 .fin-api + .fin-api { margin-top: 12px; }
+
+/* time card above the phone preview (editor and review round) */
+.soc-when { padding: 12px 14px; margin-bottom: 12px; }
+.soc-when .field { margin: 0; }
+.soc-when input[type="datetime-local"] { font-size: 16px; font-weight: 600; }
+#soc-when-hint { margin-top: 6px; }
