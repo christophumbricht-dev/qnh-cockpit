@@ -92,6 +92,7 @@ async function save(sb, p, id, isNew) {
     ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
     ...(p.hasLocation ? { location: p.pkg.kind === "story" ? null : p.place } : {}),
     ...(p.hasAi ? { ai_generated: p.pkg.ai === true } : {}),
+    ...(p.hasKids ? { made_for_kids: p.pkg.made_for_kids === true } : {}),
     ...(p.hasTopic && p.pkg.topic ? { topic: p.pkg.topic } : {}),
     ...(p.hasReply ? { first_comment_reply: p.pkg.kind === "story" ? "" : p.pkg.first_comment_reply, first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours,
       quiz_answer: p.pkg.quiz_answer, quiz_correct_replies: p.pkg.quiz_correct_replies } : {}),
@@ -185,6 +186,9 @@ async function main() {
   const hasAi = posts.length ? "ai_generated" in posts[0] : true;
   // column topic exists after migration 20261023120000_social_topic.sql
   const hasTopic = posts.length ? "topic" in posts[0] : true;
+  // column made_for_kids exists after migration 20261024100000_social_made_for_kids.sql
+  const hasKids = posts.length ? "made_for_kids" in posts[0] : true;
+  if (!hasKids && pkgs.some((p) => p.pkg.made_for_kids)) throw new Error("Pakete mit «made_for_kids» erst importieren, wenn die Migration 20261024100000_social_made_for_kids.sql eingespielt ist.");
   const aiMissing = !hasAi && pkgs.some((p) => p.pkg.ai);
   // column "title" exists after migration 20261020110000_social_youtube.sql
   const hasTitle = posts.length ? "title" in posts[0] : true;
@@ -197,6 +201,7 @@ async function main() {
     r.hasLocation = hasLocation;
     r.hasAi = hasAi;
     r.hasTopic = hasTopic;
+    r.hasKids = hasKids;
     r.hasTitle = hasTitle;
     r.hasReply = hasReply;
     const loc = r.pkg.location;

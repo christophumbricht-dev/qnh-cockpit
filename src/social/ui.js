@@ -278,6 +278,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- statistics ----------
   const STAT_COLS = [["views", "Views"], ["reach", "Reichweite"], ["likes", "Likes"], ["comments", "Kommentare"], ["saved", "Gespeichert"], ["shares", "Geteilt"], ["follows", "Neue Follower"]];
+  // YouTube: Wiedergabe und Klickrate aus YouTube Analytics (Prozentwerte mit «%»)
+  const YT_STAT_COLS = [["views", "Views"], ["likes", "Likes"], ["comments", "Kommentare"], ["watch_minutes", "Wiedergabe (Min.)"], ["avg_view_pct", "Ø angesehen"], ["ctr", "Klickrate"]];
+  const PCT_COLS = new Set(["avg_view_pct", "ctr"]);
+  const statCell = (k, v) => (v == null ? "–" : PCT_COLS.has(k) ? `${Math.round(v)} %` : num(Math.round(v)));
   const KIND_LABEL = { FEED: "Bild", CAROUSEL: "Karussell", REELS: "Reel", STORY: "Story", SHORT: "Short" };
   async function loadStats(force = false) {
     const st = S.social;
@@ -320,15 +324,18 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         <div class="stat-tiles">
           ${acc.platform === "youtube" ? `${tile("Abonnenten", last.followers_count ?? "–", delta != null ? `${delta >= 0 ? "+" : ""}${delta} in ${st.statsDays} Tagen` : "")}
             ${tile("Aufrufe gesamt", last.views_total != null ? num(last.views_total) : "–", first.views_total != null && last.views_total != null ? `+${num(last.views_total - first.views_total)} in ${st.statsDays} Tagen` : "")}
-            ${tile("Videos", last.media_count ?? "–")}` : `
+            ${tile("Videos", last.media_count ?? "–")}
+            ${tile("Wiedergabezeit", last.watch_minutes_28d != null ? num(Math.round(last.watch_minutes_28d / 60)) + " h" : "–", "letzte 28 Tage")}
+            ${tile("Ø angesehen", last.avg_view_pct_28d != null ? `${Math.round(last.avg_view_pct_28d)} %` : "–", last.avg_view_duration_28d != null ? `${Math.round(last.avg_view_duration_28d)} s pro Aufruf` : "")}
+            ${tile("Klickrate", last.ctr_28d != null ? `${(Math.round(last.ctr_28d * 10) / 10).toString().replace(".", ",")} %` : "–", last.impressions_28d != null ? `${num(last.impressions_28d)} Impressionen` : "Vorschaubilder, 28 Tage")}` : `
           ${tile("Follower", last.followers_count ?? "–", delta != null ? `${delta >= 0 ? "+" : ""}${delta} in ${st.statsDays} Tagen` : "")}
           ${tile("Reichweite", num(sum("reach")), "erreichte Konten, Summe")}
           ${tile("Views", num(sum("views")))}
           ${tile("Interaktionen", num(sum("total_interactions")), `${num(sum("profile_links_taps"))} Link-Taps`)}`}
         </div>
         ${followerSeries.length > 1 ? `<div class="stats-spark"><span class="muted small">Follower-Verlauf</span>${sparkSvg(followerSeries, "line")}</div>` : `<p class="muted small">Follower-Verlauf erscheint ab dem zweiten Tag. Manche Werte liefert Instagram erst ab 100 Followern.</p>`}
-        ${media.length ? `<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Beitrag</th>${STAT_COLS.map(([k, l]) => `<th><button class="link${st.statsSort === k ? " on" : ""}" data-action="soc-stats-sort" data-value="${k}">${l}${st.statsSort === k ? " ▾" : ""}</button></th>`).join("")}</tr></thead>
-          <tbody>${media.map((m) => `<tr><td><a href="${esc(m.permalink ?? "#")}" target="_blank" rel="noopener">${esc(m.caption.split("\n")[0].slice(0, 60) || "(ohne Text)")}</a><br><span class="muted small">${esc(KIND_LABEL[m.kind] ?? m.kind)} · ${m.posted_at ? esc(formatZurichDate(m.posted_at)) : ""}</span></td>${STAT_COLS.map(([k]) => `<td>${m.metrics[k] == null ? "–" : num(m.metrics[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">Keine Beiträge in diesem Zeitraum.</p>`}
+        ${media.length ? `<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Beitrag</th>${(acc.platform === "youtube" ? YT_STAT_COLS : STAT_COLS).map(([k, l]) => `<th><button class="link${st.statsSort === k ? " on" : ""}" data-action="soc-stats-sort" data-value="${k}">${l}${st.statsSort === k ? " ▾" : ""}</button></th>`).join("")}</tr></thead>
+          <tbody>${media.map((m) => `<tr><td><a href="${esc(m.permalink ?? "#")}" target="_blank" rel="noopener">${esc(m.caption.split("\n")[0].slice(0, 60) || "(ohne Text)")}</a><br><span class="muted small">${esc(KIND_LABEL[m.kind] ?? m.kind)} · ${m.posted_at ? esc(formatZurichDate(m.posted_at)) : ""}</span></td>${(acc.platform === "youtube" ? YT_STAT_COLS : STAT_COLS).map(([k]) => `<td>${statCell(k, m.metrics[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">Keine Beiträge in diesem Zeitraum.</p>`}
       </section>`;
     }).join("");
     return `${head}${blocks}<p class="hint">Zahlen von Instagram und YouTube, einmal täglich abgeholt (Instagram: Verzögerung bis 48 h). Nach einer Spalte sortieren: Spaltentitel antippen.</p>`;
@@ -598,6 +605,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       todo: duplicate ? "" : post?.todo ?? "",
       location: post?.location ?? null,
       ai: post?.ai_generated === true,
+      // YouTube «für Kinder»: neue Beiträge der Marke Wolkenhof sind es von selbst
+      kids: post ? post.made_for_kids === true : kidsDefault(fallback?.id),
       topic: duplicate ? post?.topic ?? "" : post?.topic ?? "",
       topicGuess: post ? guessTopic(post) : null,
       scheduledLocal: post?.scheduled_at ? utcToZurichLocal(post.scheduled_at) : tomorrowAt18(),
@@ -643,6 +652,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const n = String(ed.title ?? "").trim().length;
     return `<span class="${n > YOUTUBE.title || !n ? "error" : "muted"}">${n} / ${YOUTUBE.title} Zeichen</span>`;
   }
+
+  // neue YouTube-Beiträge der Marke Wolkenhof (Kindersendung) sind von selbst «für Kinder»
+  const kidsDefault = (accountId) => { const a = account(accountId); return a?.platform === "youtube" && a?.app_id === "wolkenhof"; };
 
   function editorView(ed) {
     const ro = readonly(ed);
@@ -692,7 +704,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
               <span class="small muted">${ed.kind === "reel" || ed.kind === "story" ? "Hochformat 9:16" : "JPEG, 4:5 / 1:1 / 1.91:1"} · Videos als MP4 (H.264)</span></div>`}
           <ul class="soc-files">${itemsHtml}</ul>
           ${yt ? `<label class="field">Titel <span class="counter" id="soc-title-counter">${titleCounter(ed)}</span>
-            <input name="soc-title" maxlength="${YOUTUBE.title}" value="${esc(ed.title ?? "")}" placeholder="z. B. Föhn: Warum ist es in Altdorf so warm?"${dis}></label>` : ""}
+            <input name="soc-title" maxlength="${YOUTUBE.title}" value="${esc(ed.title ?? "")}" placeholder="z. B. Föhn: Warum ist es in Altdorf so warm?"${dis}></label>
+            ${data.kidsSupported() ? `<label class="field ai-field"><span class="ai-row"><input type="checkbox" name="soc-kids"${ed.kids ? " checked" : ""}${dis}><span><b>Für Kinder</b> (COPPA) – YouTube schaltet Kommentare und personalisierte Werbung ab</span></span></label>` : ""}` : ""}
           ${ed.kind === "reel" && !yt ? `<div class="field">Titelbild (optional, JPEG)
             ${ed.cover ? `<div class="soc-file">${thumb({ ...ed.cover, url: ed.cover.url ?? data.mediaUrl(ed.cover.path ?? ed.cover.copyFrom) }, "thumb small")}${ro ? "" : `<button class="link" data-action="soc-remove-cover">Entfernen</button>`}</div>`
               : ro ? `<span class="muted small">keines</span>` : `<button class="btn ghost" data-action="soc-pick-cover">Titelbild wählen</button>`}</div>` : ""}
@@ -967,6 +980,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
       scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", topic: String(ed.topic ?? "").trim() || null, location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
       ai_generated: !isYoutube(ed.account_id) && ed.ai === true,
+      made_for_kids: isYoutube(ed.account_id) && ed.kids === true,
       first_comment_reply: ed.kind === "story" ? "" : String(ed.first_comment_reply ?? "").trim(),
       first_comment_reply_after_hours: replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default,
       quiz_answer: ed.kind === "story" ? [] : quizList(ed.quiz_answer),
@@ -1270,12 +1284,14 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const wasYt = isYoutube(ed.account_id);
       ed.account_id = e.target.value;
       ed.dirty = true;
+      if (ed.isNew) ed.kids = kidsDefault(ed.account_id);
       // YouTube takes one video; switching platform changes the form → full render
       if (isYoutube(ed.account_id)) { ed.kind = "reel"; ed.items = ed.items.filter((i) => /^video\//.test(i.type)).slice(0, 1); }
       if (wasYt !== isYoutube(ed.account_id)) render(); else refreshBits();
       return true;
     }
     if (name === "soc-ai" && ed) { ed.ai = e.target.checked; ed.dirty = true; render(); return true; }
+    if (name === "soc-kids" && ed) { ed.kids = e.target.checked; ed.dirty = true; render(); return true; }
     if (name === "soc-location" && ed) {
       const v = e.target.value;
       if (v !== "__new") { const p = places().find((x) => x.page_id === v); ed.location = v ? { id: v, name: p?.name ?? ed.location?.name ?? v } : null; ed.dirty = true; return true; }
@@ -1343,7 +1359,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, quiz_answer: pkg.quiz_answer.join(", "), quiz_correct_replies: pkg.quiz_correct_replies.join("\n"), todo: IMPORT.todo ? pkg.todo : "", ai: pkg.ai === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, quiz_answer: pkg.quiz_answer.join(", "), quiz_correct_replies: pkg.quiz_correct_replies.join("\n"), todo: IMPORT.todo ? pkg.todo : "", ai: pkg.ai === true, kids: pkg.made_for_kids === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };

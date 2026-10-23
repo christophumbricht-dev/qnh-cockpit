@@ -34,6 +34,7 @@ Nach dem Posten: @exploring_the_skies markieren"
 | Feld | Pflicht | Bedeutung |
 |---|---|---|
 | `account` | ja | `app/plattform`, z. B. `downwind/instagram`, `secondseat/instagram`, `leesidelab/youtube`. Muss im Cockpit als Konto verbunden sein. |
+| `made_for_kids` | nein | Nur YouTube: `true` = Video «für Kinder» (COPPA). YouTube schaltet dann Kommentare und personalisierte Werbung ab, darum ohne `first_comment`, Antwort und Quiz. Standard `false`. Für die Kindersendung «Flughafen Wolkenhof». |
 | `title` | bei YouTube | Videotitel, höchstens 100 Zeichen. Bei YouTube ist `caption` die Beschreibung (höchstens 5000 Bytes; ab 15 Hashtags eine Warnung, bei mehr als 60 ignoriert YouTube alle). |
 | `kind` | ja | `image` (ein Bild), `carousel` (2–10 Bilder/Videos), `reel` (ein Video), `story` (ein Bild oder Video) |
 | `caption` | nein | Text, höchstens 2200 Zeichen, höchstens 30 Hashtags (ab 15 gibt es eine Warnung). Zeilenumbruch als `\n`. Bei Stories ignoriert. |

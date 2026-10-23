@@ -158,6 +158,8 @@ export function validatePost(post, { forApproval = false, scheduledAt = null, no
     const bytes = utf8Bytes(caption);
     if (bytes > YOUTUBE.descriptionBytes) errors.push(`Beschreibung ist zu lang (${bytes} Bytes, höchstens ${YOUTUBE.descriptionBytes}).`);
     if (/[<>]/.test(title + caption)) warnings.push("YouTube nimmt < und > nicht an – sie werden weggelassen.");
+    if ((post.made_for_kids ?? post.kids) === true && (String(post.first_comment ?? "").trim() || String(post.first_comment_reply ?? "").trim()))
+      errors.push("Videos für Kinder haben auf YouTube keine Kommentare. Ersten Kommentar und Antwort leer lassen.");
     const ytTags = tags + countHashtags(title);
     if (ytTags > YOUTUBE.hashtagsMax) errors.push(`${ytTags} Hashtags – bei mehr als ${YOUTUBE.hashtagsMax} ignoriert YouTube alle.`);
     else if (ytTags > YOUTUBE.hashtagsWarn) warnings.push(`${ytTags} Hashtags – mehr als ${YOUTUBE.hashtagsWarn} wirken schnell wie Spam.`);

@@ -121,3 +121,11 @@ test("quiz: needs the question, keywords and at least one prepared answer", () =
   assert.match(validatePost({ ...base, quiz_correct_replies: "Spot on" }).errors.join(), /Stichwörter/);
   assert.match(validatePost({ ...base, first_comment: "", quiz_answer: "ISA", quiz_correct_replies: "Yes" }).errors.join(), /Frage/);
 });
+
+test("YouTube «für Kinder»: no first comment and no answer, because YouTube switches comments off", () => {
+  const base = { platform: "youtube", kind: "reel", items: [mp4(1080, 1920, 40)], caption: "Lumi und der Wind", first_comment: "", title: "Gegen den Wind", made_for_kids: true };
+  assert.deepEqual(validatePost(base).errors, []);
+  assert.match(validatePost({ ...base, first_comment: "Was meint ihr?" }).errors.join(), /keine Kommentare/);
+  assert.match(validatePost({ ...base, kids: true, made_for_kids: undefined, first_comment: "x" }).errors.join(), /keine Kommentare/); // editor field
+  assert.deepEqual(validatePost({ ...base, made_for_kids: false, first_comment: "Was meint ihr?" }).errors, []);
+});

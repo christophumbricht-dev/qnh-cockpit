@@ -234,3 +234,8 @@ Deno.test("youtube: helpers", () => {
   const long = videoResource(post({ caption: "ä".repeat(3000) }));
   assertEquals(new TextEncoder().encode(long.snippet.description).length <= 5000, true);
 });
+
+Deno.test("youtube: «für Kinder» wird als selfDeclaredMadeForKids hochgeladen", () => {
+  assertEquals(videoResource(post()).status.selfDeclaredMadeForKids, false);
+  assertEquals(videoResource(post({ made_for_kids: true })).status.selfDeclaredMadeForKids, true);
+});

@@ -35,7 +35,7 @@ export function videoResource(post: Post) {
       description: cutBytes(clean(post.caption), DESCRIPTION_MAX_BYTES),
       categoryId: CATEGORY_EDUCATION,
     },
-    status: { privacyStatus: "public", selfDeclaredMadeForKids: false, embeddable: true, license: "youtube" },
+    status: { privacyStatus: "public", selfDeclaredMadeForKids: post.made_for_kids === true, embeddable: true, license: "youtube" },
   };
 }
 
@@ -218,7 +218,9 @@ async function finish(deps: Deps, yt: YouTube, post: Post, videoId: string, priv
   if (privacy && privacy !== "public") notes.push(`YouTube hat das Video als «${privacy}» gespeichert – in YouTube Studio prüfen.`);
   const long = Number(post.media[0]?.duration) > 180; // longer than 3 minutes: a normal video, not a Short
   const patch: Record<string, unknown> = { status: "published", published_at: deps.now().toISOString(), remote_media_id: videoId, permalink: long ? ytWatch(videoId) : shortsUrl(videoId) };
-  if (post.first_comment.trim() && !post.remote_comment_id) {
+  // videos «for kids» have comments switched off by YouTube: no first comment there
+  if (post.first_comment.trim() && !post.remote_comment_id && post.made_for_kids === true) notes.push("Video für Kinder: YouTube erlaubt keine Kommentare, der erste Kommentar entfällt.");
+  else if (post.first_comment.trim() && !post.remote_comment_id) {
     try {
       patch.remote_comment_id = await firstComment(yt, videoId, post.first_comment);
     } catch {

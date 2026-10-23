@@ -1,6 +1,6 @@
 // Deno tests for the daily statistics with a mocked Instagram API: npm run test:functions
 import { assertEquals } from "jsr:@std/assert@1";
-import { collectStats, parseInsights, type MediaRow, type StatsStore } from "./stats.ts";
+import { analyticsMetrics, collectStats, parseInsights, reportRows, type MediaRow, type StatsStore } from "./stats.ts";
 
 const NOW = new Date("2026-10-20T04:23:00Z");
 
@@ -99,4 +99,13 @@ Deno.test("YouTube: channel totals and per-video views/likes/comments", async ()
   assertEquals(media[0].kind, "SHORT");
   assertEquals(media[0].permalink, "https://youtube.com/shorts/abc_DEF-123");
   assertEquals(media[0].metrics, { views: 540, likes: 21, comments: 4 });
+});
+
+Deno.test("youtube analytics: report rows become our metric names", () => {
+  const r = { columnHeaders: [{ name: "video" }, { name: "estimatedMinutesWatched" }, { name: "averageViewPercentage" }, { name: "videoThumbnailImpressionsClickRate" }], rows: [["abc", 120, 63.456, 4.8]] };
+  const [row] = reportRows(r);
+  assertEquals(row.video, "abc");
+  assertEquals(analyticsMetrics(row), { watch_minutes: 120, avg_view_pct: 63.46, ctr: 4.8 });
+  assertEquals(analyticsMetrics({ views: 10, subscribersGained: 2 }, "_28d"), { views_28d: 10, subscribers_gained_28d: 2 });
+  assertEquals(reportRows({}), []);
 });

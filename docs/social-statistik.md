@@ -20,3 +20,13 @@ JSON pro Konto: `followers`, `followers_change`, `totals` (reach, views, interac
 - Story-Zahlen gibt es nur, solange die Story online ist (24 h), und erst ab 5 Betrachtern.
 - Instagram benennt Kennzahlen gelegentlich um. Nicht mehr verfügbare werden ausgelassen statt Fehler zu melden (`supabase/functions/social-publish/stats.ts`, Listen `MEDIA_METRICS` / `ACCOUNT_METRICS`).
 - Voraussetzung: Berechtigung `instagram_business_manage_insights` im Token (docs/social-setup.md, Schritt 3) und Migration `20261019120000_social_stats.sql`.
+
+## YouTube: Wiedergabezeit, Ø angesehen, Klickrate (YouTube Analytics)
+
+Seit 24.10.2026 holt die Statistik pro YouTube-Kanal auch Zahlen aus der YouTube Analytics API: Wiedergabezeit (Stunden, letzte 28 Tage), Ø angesehen (Prozent eines Videos), Ø Sekunden pro Aufruf, neue Abonnenten, und wenn YouTube sie liefert, Impressionen und Klickrate der Vorschaubilder. Pro Video: Wiedergabe (Minuten), Ø angesehen, Klickrate seit dem Hochladen. YouTube Analytics hinkt etwa zwei Tage nach.
+
+Dafür braucht es einmalig:
+1. In Google Cloud (Projekt mit GOOGLE_CLIENT_ID) die «YouTube Analytics API» einschalten.
+2. Im Cockpit pro YouTube-Kanal «YouTube verbinden» neu ausführen und alle Häkchen setzen (neue Berechtigung yt-analytics.readonly).
+
+Fehlt eines davon, laufen die übrigen Zahlen weiter; der Lauf meldet dann einen Hinweis (`note`).

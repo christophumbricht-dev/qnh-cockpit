@@ -131,6 +131,12 @@ export async function parsePackage(entries, accounts) {
     if (long) throw new PackageError(`post.json: «quiz_correct_replies»: «${long.slice(0, 30)}…» ist länger als ${LIMITS.quizReply} Zeichen.`);
   }
 
+  // YouTube «für Kinder» (COPPA): YouTube schaltet dort die Kommentare ab
+  if (post.made_for_kids != null && typeof post.made_for_kids !== "boolean") throw new PackageError("post.json: «made_for_kids» ist true oder false.");
+  const madeForKids = post.made_for_kids === true;
+  if (madeForKids && !/\/youtube$/.test(String(post.account ?? ""))) throw new PackageError("post.json: «made_for_kids» gibt es nur bei YouTube-Konten.");
+  if (madeForKids && (String(post.first_comment ?? "").trim() || reply || quizAnswer.length)) throw new PackageError("post.json: Videos für Kinder haben auf YouTube keine Kommentare. «first_comment», Antwort und Quiz weglassen.");
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
@@ -148,6 +154,7 @@ export async function parsePackage(entries, accounts) {
     tags,
     location,
     ai: post.ai === true, // «KI-Info» on Instagram (AI voice, AI music, AI image)
+    made_for_kids: madeForKids, // YouTube «für Kinder»
     topic: String(post.topic ?? "").trim().slice(0, 80), // Social → Themen (only sorts the cockpit)
     files,
     cover,

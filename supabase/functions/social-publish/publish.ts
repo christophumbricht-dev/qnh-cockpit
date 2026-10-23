@@ -27,6 +27,7 @@ export type Post = {
   account_id: string;
   kind: "image" | "carousel" | "reel" | "story";
   title?: string; // YouTube: video title (caption = description)
+  made_for_kids?: boolean; // YouTube: «made for kids» (COPPA) – no comments, no personalised ads
   caption: string;
   first_comment: string;
   media: MediaItem[];

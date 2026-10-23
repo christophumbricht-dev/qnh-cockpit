@@ -139,3 +139,14 @@ test("import switches: no to-do notes and no quiz stories for now", async () => 
   assert.equal(isQuizStory("2026-11-12-quiz-rating-q", "reel"), false);
   assert.equal(isQuizStory("2026-11-04-leeside-qnh-2", "story"), false);
 });
+
+test("YouTube package «made_for_kids»: only on YouTube, true/false, no comments", async () => {
+  const accounts = [...ACCOUNTS, { id: "acc-wh", app_id: "wolkenhof", platform: "youtube", handle: "wolkenhof" }];
+  const yt = { account: "wolkenhof/youtube", kind: "reel", title: "Gegen den Wind", caption: "Lumi lernt, warum Flugzeuge gegen den Wind starten.", media: ["v.mp4"], made_for_kids: true };
+  const files = (post) => new Map([["post.json", new File([JSON.stringify(post)], "post.json")], ["v.mp4", new File([new Uint8Array(10)], "v.mp4", { type: "video/mp4" })]]);
+  assert.equal((await parsePackage(files(yt), accounts)).made_for_kids, true);
+  assert.equal((await parsePackage(files({ ...yt, made_for_kids: undefined }), accounts)).made_for_kids, false);
+  await assert.rejects(parsePackage(files({ ...yt, made_for_kids: "ja" }), accounts), /true oder false/);
+  await assert.rejects(parsePackage(files({ ...yt, first_comment: "Hallo" }), accounts), /keine Kommentare/);
+  await assert.rejects(parsePackage(entries({ ...POST, made_for_kids: true }), ACCOUNTS), /nur bei YouTube/);
+});
