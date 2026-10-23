@@ -6,7 +6,8 @@
 // POST { op: "cleanup" }             delete files of posts published > 14 days ago (daily cron)
 // POST { op: "stats" }               Instagram statistics per account and media item (daily cron, or the CLI)
 //                                    + prepared answers below our own first comments that are due (sendDueReplies)
-// POST { op: "comments" }            fetch new comments on our Instagram posts and YouTube videos (cron every 15 min)
+// POST { op: "comments" }            fetch new comments on our Instagram posts and YouTube videos (cron every 15 min),
+//                                    then answer correct quiz solutions with Christoph's prepared texts (answerQuizzes)
 // POST { op: "reply", comment_id, text }                     admin only: answer a comment (Christoph's click)
 // POST { op: "moderate", comment_id, action }                admin only: hide | show | approve | delete (own)
 // POST { op: "youtube-auth", app_id, redirect_uri, state }   admin only: Google sign-in URL («YouTube verbinden»)
@@ -30,7 +31,7 @@ import { followUpYoutube } from "./youtube.ts";
 import { collectStats } from "./stats.ts";
 import { runOutreach, translateGerman } from "./outreach.ts";
 import { elevenlabsCredits } from "./elevenlabs.ts";
-import { fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, sendDueReplies, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
+import { answerQuizzes, fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, sendDueReplies, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -107,7 +108,16 @@ Deno.serve(async (req) => {
     if (op === "refresh-tokens") return json({ results: await refreshTokens(deps) });
     if (op === "cleanup") return json({ results: await cleanup(deps) });
     if (op === "stats") return json({ results: await collectStats({ store, fetch, now: deps.now, google }) });
-    if (op === "comments") return json({ results: await fetchComments(cdeps) });
+    if (op === "comments") {
+      const results = await fetchComments(cdeps);
+      let quiz: unknown[] = [];
+      try {
+        quiz = await answerQuizzes({ ...cdeps, deadline: deps.deadline });
+      } catch (err) {
+        console.error("social-publish quiz", err);
+      }
+      return json({ results, quiz });
+    }
     if (op === "reply") return json(await replyTo(cdeps, str(body.comment_id), str(body.text)));
     if (op === "moderate") return json(await moderate(cdeps, str(body.comment_id), str(body.action) as ModerateAction));
     if (op === "youtube-auth") return json(youtubeAuth(google, allowed, str(body.app_id), str(body.redirect_uri), str(body.state)));

@@ -2,8 +2,8 @@
 // Nothing is ever approved automatically – only the "Freigeben" button (and the database checks that too).
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
-import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, parseTagList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
-import { readPackage } from "./package.js";
+import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
+import { IMPORT, readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
@@ -142,7 +142,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const words = S.social.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return true;
     const a = account(p.account_id);
-    const hay = [p.caption, p.title, p.first_comment, p.first_comment_reply, p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && PLATFORM[a.platform],
+    const hay = [p.caption, p.title, p.first_comment, p.first_comment_reply, ...(p.quiz_answer ?? []), p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && PLATFORM[a.platform],
       p.location?.name, STATUS[p.status], KINDS[p.kind], p.ai_generated && "KI", p.source === "package" && "Paket",
       ...(p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)),
       p.scheduled_at && formatZurich(p.scheduled_at), p.published_at && formatZurich(p.published_at)]
@@ -462,6 +462,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         ${p.title ? `<p class="text"><b>${esc(p.title)}</b></p>` : ""}
         <p class="text">${esc(firstLines(p.caption, 2) || (p.kind === "story" ? "(Story ohne Text)" : "(kein Text)"))}</p>
         ${replyHtml(p)}
+        ${quizHtml(p)}
         ${twinHtml(twinOf(p))}
         ${todoBox(p.todo, PLATFORM[a?.platform] ?? "Instagram", p.id)}
         ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
@@ -489,6 +490,14 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (s === "sending") return `<p class="small soc-reply muted">↳ Antwort wird gesendet … ${text}</p>`;
     const due = replyDue(p);
     return `<p class="small soc-reply muted">↳ Antwort auf den ersten Kommentar ${hoursLabel(h)} nach dem Veröffentlichen${due ? ` (ca. ${esc(formatZurich(due))})` : ""}: ${text}</p>`;
+  }
+
+  // quiz: a correct answer from somebody gets one of the prepared texts automatically (server, comments run)
+  const quizOf = (p) => ({ keys: quizList(p.quiz_answer), texts: quizList(p.quiz_correct_replies, /\n/) });
+  function quizHtml(p) {
+    const { keys, texts } = quizOf(p);
+    if (p.kind === "story" || !keys.length) return "";
+    return `<p class="small soc-reply muted">? Quiz: richtig bei «${esc(keys.join("», «"))}» → automatisch «${esc(texts.join("» oder «"))}» (einmal pro Person, 72 h lang)</p>`;
   }
 
   // ---------- editor ----------
@@ -536,6 +545,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       first_comment: post?.first_comment ?? "",
       first_comment_reply: post?.first_comment_reply ?? "",
       first_comment_reply_after_hours: replyHours(post?.first_comment_reply_after_hours) ?? REPLY_HOURS.default,
+      quiz_answer: quizList(post?.quiz_answer).join(", "),
+      quiz_correct_replies: quizList(post?.quiz_correct_replies, /\n/).join("\n"),
       todo: duplicate ? "" : post?.todo ?? "",
       location: post?.location ?? null,
       ai: post?.ai_generated === true,
@@ -557,7 +568,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   const readonly = (ed) => !ed.isNew && LOCKED.includes(ed.status);
   const checks = (ed, forApproval = false) =>
     validatePost({ kind: ed.kind, items: ed.items, caption: ed.caption, first_comment: ed.first_comment, first_comment_reply: ed.first_comment_reply,
-      first_comment_reply_after_hours: ed.first_comment_reply_after_hours, platform: account(ed.account_id)?.platform, title: ed.title },
+      first_comment_reply_after_hours: ed.first_comment_reply_after_hours, quiz_answer: ed.quiz_answer, quiz_correct_replies: ed.quiz_correct_replies,
+      platform: account(ed.account_id)?.platform, title: ed.title },
       { forApproval, scheduledAt: zurichToUtc(ed.scheduledLocal) });
 
   function checksHtml(ed) {
@@ -663,12 +675,16 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   function replyField(ed, dis) {
     const post = ed.isNew ? null : posts().find((p) => p.id === ed.id);
-    if (post && post.status === "published") return replyHtml(post);
+    if (post && post.status === "published") return replyHtml(post) + quizHtml(post);
     return `<label class="field">Antwort darauf (optional, z. B. die Auflösung der Frage)
         <textarea name="soc-reply" rows="2" maxlength="${LIMITS.reply + 200}" placeholder="Schreibt das Cockpit selbst als Antwort unter den ersten Kommentar"${dis}>${esc(ed.first_comment_reply)}</textarea></label>
       <label class="field soc-reply-hours">Antwort senden nach
         <span><input type="number" name="soc-reply-hours" min="${REPLY_HOURS.min}" max="${REPLY_HOURS.max}" step="0.5" value="${esc(ed.first_comment_reply_after_hours)}"${dis}> Stunden
-        <span class="muted small" id="soc-reply-when">${replyWhen(ed)}</span></span></label>`;
+        <span class="muted small" id="soc-reply-when">${replyWhen(ed)}</span></span></label>
+      <label class="field">Quiz: richtige Lösung (optional, Stichwörter mit Komma)
+        <input name="soc-quiz-answer" maxlength="1000" value="${esc(ed.quiz_answer)}" placeholder="z. B. standard air, ISA, standard atmosphere"${dis}></label>
+      <label class="field">Automatische Antwort bei richtiger Lösung <span class="muted small">eine pro Zeile, das Cockpit wählt zufällig</span>
+        <textarea name="soc-quiz-replies" rows="3" maxlength="2000" placeholder="Spot on 👏&#10;Exactly, standard air 👌"${dis}>${esc(ed.quiz_correct_replies)}</textarea></label>`;
   }
   function replyWhen(ed) {
     const h = replyHours(ed.first_comment_reply_after_hours);
@@ -836,6 +852,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       ai_generated: !isYoutube(ed.account_id) && ed.ai === true,
       first_comment_reply: ed.kind === "story" ? "" : String(ed.first_comment_reply ?? "").trim(),
       first_comment_reply_after_hours: replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default,
+      quiz_answer: ed.kind === "story" ? [] : quizList(ed.quiz_answer),
+      quiz_correct_replies: ed.kind === "story" ? [] : quizList(ed.quiz_correct_replies, /\n/),
     };
     const saved = ed.isNew ? await data.insertPost(ed.id, row) : await data.updatePost(ed.id, row, ed.updated_at);
     ed.updated_at = saved?.updated_at ?? ed.updated_at;
@@ -854,9 +872,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // the approval covers the prepared answer too – say so in the confirmation
   function replyConfirm(ed) {
-    if (!hasReply(ed) || !String(ed.first_comment ?? "").trim()) return "";
+    if (ed.kind === "story" || !String(ed.first_comment ?? "").trim()) return "";
+    const { keys, texts } = quizOf(ed);
     const h = replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default;
-    return `\n\nErster Kommentar: «${firstLines(ed.first_comment, 1)}»\n↳ Antwort nach ${hoursLabel(h)}, automatisch: «${firstLines(ed.first_comment_reply, 2)}»`;
+    const reply = hasReply(ed) ? `\n↳ Antwort nach ${hoursLabel(h)}, automatisch: «${firstLines(ed.first_comment_reply, 2)}»` : "";
+    const quiz = keys.length ? `\nQuiz: richtig bei «${keys.join("», «")}» → automatisch «${texts.join("» oder «")}»` : "";
+    return reply || quiz ? `\n\nErster Kommentar: «${firstLines(ed.first_comment, 1)}»${reply}${quiz}` : "";
   }
 
   async function busy(ed, fn) {
@@ -875,7 +896,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const ed = S.social.editor;
     if (ed && ed.id === id) return ed;
     const p = posts().find((x) => x.id === id);
-    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
+    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
   };
 
   async function publishNow(id) {
@@ -966,7 +987,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         if (!p) return true;
         const when = new Date(Date.now() + 2 * 60e3).toISOString();
         const { errors } = validatePost({ kind: p.kind, items: p.media ?? [], caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply,
-          first_comment_reply_after_hours: p.first_comment_reply_after_hours, title: p.title }, { forApproval: true, scheduledAt: when });
+          first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, title: p.title }, { forApproval: true, scheduledAt: when });
         if (!p.media?.length) { toast("Kein Bild/Video im Beitrag – zuerst «Bearbeiten» und hochladen."); return true; }
         if (errors.length) { toast(errors[0]); return true; }
         if (!confirm("Nochmals versuchen? Der Beitrag wird in den nächsten Minuten veröffentlicht.")) return true;
@@ -1066,6 +1087,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     else if (name === "soc-comment") ed.first_comment = e.target.value;
     else if (name === "soc-reply") ed.first_comment_reply = e.target.value;
     else if (name === "soc-reply-hours") ed.first_comment_reply_after_hours = e.target.value;
+    else if (name === "soc-quiz-answer") ed.quiz_answer = e.target.value;
+    else if (name === "soc-quiz-replies") ed.quiz_correct_replies = e.target.value;
     else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
     else if (name === "soc-time") ed.scheduledLocal = e.target.value;
     else if (name.startsWith("soc-alt-")) ed.items[Number(name.slice(8))].alt = e.target.value;
@@ -1166,7 +1189,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const pkg = await readPackage(fileList, accounts());
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, todo: pkg.todo, ai: pkg.ai === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, quiz_answer: pkg.quiz_answer.join(", "), quiz_correct_replies: pkg.quiz_correct_replies.join("\n"), todo: IMPORT.todo ? pkg.todo : "", ai: pkg.ai === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };

@@ -5,6 +5,9 @@ export const LIMITS = {
   caption: 2200,
   firstComment: 2200,
   reply: 2200, // answer below our own first comment (sent hours later)
+  quizKeywords: 20, // words that make a quiz answer correct
+  quizReplies: 5, // prepared answers to a correct quiz answer
+  quizReply: 300,
   alt: 1000,
   hashtagsWarn: 15,
   hashtagsMax: 30,
@@ -116,7 +119,11 @@ export const replyHours = (v) => {
 // "4 h", "1.5 h", "30 min"
 export const hoursLabel = (h) => (h < 1 ? `${Math.round(h * 60)} min` : `${h} h`);
 
-// post: { kind, items, caption, first_comment, first_comment_reply?, first_comment_reply_after_hours?, platform?, title? }; opts: { forApproval, scheduledAt (ISO), now (Date) }
+// quiz: "standard air, ISA" or ["standard air", "ISA"] → clean list; the same for the prepared answers (one per line)
+export const quizList = (v, sep = /[,;\n]/) =>
+  (Array.isArray(v) ? v : String(v ?? "").split(sep)).map((x) => String(x ?? "").trim()).filter(Boolean);
+
+// post: { kind, items, caption, first_comment, first_comment_reply?, first_comment_reply_after_hours?, quiz_answer?, quiz_correct_replies?, platform?, title? }; opts: { forApproval, scheduledAt (ISO), now (Date) }
 export function validatePost(post, { forApproval = false, scheduledAt = null, now = new Date() } = {}) {
   const errors = [], warnings = [];
   const items = post.items ?? [];
@@ -168,6 +175,16 @@ export function validatePost(post, { forApproval = false, scheduledAt = null, no
     if (!comment.trim()) errors.push("Die Antwort braucht einen ersten Kommentar, unter dem sie stehen kann.");
     if (reply.length > LIMITS.reply) errors.push(`Antwort höchstens ${LIMITS.reply} Zeichen.`);
     if (replyHours(post.first_comment_reply_after_hours) === null) errors.push(`Antwort nach ${REPLY_HOURS.min} bis ${REPLY_HOURS.max} Stunden.`);
+  }
+  const keys = quizList(post.quiz_answer), answers = quizList(post.quiz_correct_replies, /\n/);
+  if ((keys.length || answers.length) && kind !== "story") {
+    if (!comment.trim()) errors.push("Ein Quiz braucht die Frage im ersten Kommentar.");
+    if (!keys.length) errors.push("Quiz: Stichwörter für die richtige Lösung fehlen.");
+    if (!answers.length) errors.push("Quiz: mindestens eine vorbereitete Antwort für richtige Lösungen.");
+    if (keys.length > LIMITS.quizKeywords) errors.push(`Quiz: höchstens ${LIMITS.quizKeywords} Stichwörter.`);
+    if (answers.length > LIMITS.quizReplies) errors.push(`Quiz: höchstens ${LIMITS.quizReplies} vorbereitete Antworten.`);
+    if (answers.some((a) => a.length > LIMITS.quizReply)) errors.push(`Quiz: jede Antwort höchstens ${LIMITS.quizReply} Zeichen.`);
+    if (keys.some((k) => k.length < 2)) errors.push("Quiz: Stichwörter mit mindestens 2 Zeichen.");
   }
 
   if (forApproval) {

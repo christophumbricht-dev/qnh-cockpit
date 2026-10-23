@@ -153,8 +153,8 @@ export async function copyFile(fromPath, postId, type, i) {
   return path;
 }
 
-const FIELDS = ["account_id", "kind", "title", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location", "ai_generated", "first_comment_reply", "first_comment_reply_after_hours"];
-// "first_comment_reply…" (answer below our own first comment) exist after migration 20261023100000_social_comment_reply.sql
+const FIELDS = ["account_id", "kind", "title", "caption", "first_comment", "media", "cover_path", "scheduled_at", "source", "todo", "location", "ai_generated", "first_comment_reply", "first_comment_reply_after_hours", "quiz_answer", "quiz_correct_replies"];
+// "first_comment_reply…" (answer below our own first comment) and "quiz_…" exist after migration 20261023100000_social_comment_reply.sql
 let hasReply = DEMO;
 export const replySupported = () => hasReply;
 // "ai_generated" exists after migration 20261022100000_social_ai_label.sql
@@ -169,7 +169,7 @@ let hasTitle = DEMO;
 export const titleSupported = () => hasTitle;
 export const locationSupported = () => hasLocation;
 export const todoSupported = () => hasTodo;
-const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation) && (k !== "title" || hasTitle) && (k !== "ai_generated" || hasAi) && (!k.startsWith("first_comment_reply") || hasReply)).map((k) => [k, post[k]]));
+const pick = (post) => Object.fromEntries(FIELDS.filter((k) => k in post && (k !== "todo" || hasTodo) && (k !== "location" || hasLocation) && (k !== "title" || hasTitle) && (k !== "ai_generated" || hasAi) && ((!k.startsWith("first_comment_reply") && !k.startsWith("quiz_")) || hasReply)).map((k) => [k, post[k]]));
 
 export async function insertPost(id, post) {
   if (DEMO) return demo.insert({ id, ...pick(post) });

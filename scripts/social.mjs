@@ -8,6 +8,7 @@
 //   npm run social -- comments [fetch] [--all] [--app leesidelab]   comments on our posts/videos (Social → «Kommentare»)
 //   npm run social -- comments draft <id> "…"                         reply suggestion – Christoph sends it himself
 //   npm run social -- import --replace    also take over changed packages of approved/edited posts (asks Christoph first!)
+//   npm run social -- todo-clear [--dry]  empty the to-do notes of drafts/planned/failed posts (backup in pakete/)
 //
 // Uses Christoph's admin session from `npm run roadmap -- login`. Remembers what was imported in
 // pakete/.imported.json (local, gitignored like the packages). Format: docs/social-paket.md
@@ -19,7 +20,7 @@ import { EDITABLE, jpegSize, packageHash, plan } from "./social-lib.mjs";
 import { stats } from "./social-stats.mjs";
 import { comments } from "./social-comments.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
-import { PackageError, parsePackage } from "../src/social/package.js";
+import { IMPORT, PackageError, isQuizStory, parsePackage } from "../src/social/package.js";
 import { KINDS, formatZurich, hoursLabel, validatePost, zurichToUtc } from "../src/social/validate.js";
 
 const DIR = join(ROOT, "pakete");
@@ -47,6 +48,7 @@ async function readFolder(folder, accounts) {
     entries.set(name, new File([bytes], name));
   }
   const pkg = await parsePackage(entries, accounts);
+  if (!IMPORT.todo) pkg.todo = ""; // no hand work after posting for now (IMPORT in src/social/package.js)
   const used = ["post.json", ...pkg.files.map((f) => f.name), ...(pkg.cover ? [pkg.cover.name] : [])];
   const item = (f) => {
     const bytes = raw.get(f.name);
@@ -87,7 +89,8 @@ async function save(sb, p, id, isNew) {
     ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
     ...(p.hasLocation ? { location: p.pkg.kind === "story" ? null : p.place } : {}),
     ...(p.hasAi ? { ai_generated: p.pkg.ai === true } : {}),
-    ...(p.hasReply ? { first_comment_reply: p.pkg.kind === "story" ? "" : p.pkg.first_comment_reply, first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours } : {}),
+    ...(p.hasReply ? { first_comment_reply: p.pkg.kind === "story" ? "" : p.pkg.first_comment_reply, first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours,
+      quiz_answer: p.pkg.quiz_answer, quiz_correct_replies: p.pkg.quiz_correct_replies } : {}),
   };
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
@@ -102,7 +105,8 @@ const tomorrow18 = () => zurichToUtc(`${new Intl.DateTimeFormat("en-CA", { timeZ
 function checks(p, when) {
   const { errors, warnings } = validatePost(
     { kind: p.pkg.kind, items: p.items, caption: p.caption, first_comment: p.pkg.first_comment, first_comment_reply: p.pkg.first_comment_reply,
-      first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours, platform: p.pkg.account.platform, title: p.pkg.title },
+      first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours, quiz_answer: p.pkg.quiz_answer, quiz_correct_replies: p.pkg.quiz_correct_replies,
+      platform: p.pkg.account.platform, title: p.pkg.title },
     { forApproval: true, scheduledAt: when },
   );
   return [...errors.map((e) => `    ✗ ${e}`), ...warnings.map((w) => `    ! ${w}`)];
@@ -110,9 +114,33 @@ function checks(p, when) {
 
 const firstLine = (t) => String(t ?? "").split("\n").find(Boolean)?.slice(0, 70) ?? "";
 
+// Christoph wants no hand work after posting (23.10.2026): empty the notes of posts that are not out yet.
+// Published posts keep theirs. The old notes go to pakete/.todo-backup-<time>.json (local, gitignored).
+async function todoClear(sb, a) {
+  const { data: rows, error } = await sb.from("social_posts").select("id, status, todo, scheduled_at, caption, title, updated_at").in("status", ["draft", "approved", "failed"]).neq("todo", "");
+  if (error) fail(error.message);
+  if (!rows.length) return console.log("Keine offenen Notizen an Entwürfen oder geplanten Beiträgen.");
+  for (const r of rows) console.log(`· ${formatZurich(r.scheduled_at) || "ohne Zeit"} · ${STATUS[r.status]} · ${firstLine(r.title || r.caption) || "(ohne Text)"}\n    ✋ ${firstLine(r.todo)}`);
+  if (a.dry) return console.log(`\n${rows.length} Notizen würden geleert (--dry: nichts geändert).`);
+  const backup = join(DIR, `.todo-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  writeFileSync(backup, JSON.stringify(rows.map(({ id, status, todo }) => ({ id, status, todo })), null, 2));
+  const markers = readMarkers();
+  let done = 0;
+  for (const r of rows) {
+    const { data, error: e } = await sb.from("social_posts").update({ todo: "" }).eq("id", r.id).select("updated_at").single();
+    if (e) { console.log(`  ✗ ${r.id}: ${e.message}`); continue; }
+    done++;
+    // still the package's version: keep it that way, so later package updates are not taken for Christoph's edits
+    for (const m of Object.values(markers)) if (m?.id === r.id && m.updated_at === r.updated_at) m.updated_at = data.updated_at;
+  }
+  writeFileSync(MARKERS, JSON.stringify(markers, null, 2));
+  console.log(`\n${done} von ${rows.length} Notizen geleert. Sicherung: ${backup}`);
+}
+
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  if (!["status", "import", "stats", "comments"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"]");
+  if (!["status", "import", "stats", "comments", "todo-clear"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | todo-clear [--dry]");
+  if (cmd === "todo-clear") return todoClear(await signedIn(), args(process.argv.slice(3), ["dry"]));
   if (cmd === "stats") return stats(await signedIn(), args(process.argv.slice(3), ["json", "refresh"]));
   if (cmd === "comments") return comments(await signedIn(), args(process.argv.slice(3), ["json", "all", "clear"]));
   const a = args(rest, ["replace"]);
@@ -134,9 +162,12 @@ async function main() {
 
   const pkgs = [];
   const broken = [];
+  const paused = []; // quiz/poll stories, switched off (IMPORT.quizStories)
   for (const folder of folders) {
     try {
-      pkgs.push(await readFolder(folder, accounts));
+      const p = await readFolder(folder, accounts);
+      if (!IMPORT.quizStories && isQuizStory(folder, p.pkg.kind)) { paused.push(folder); continue; }
+      pkgs.push(p);
     } catch (err) {
       broken.push({ folder, note: err instanceof PackageError ? err.message : String(err.message ?? err) });
     }
@@ -153,7 +184,7 @@ async function main() {
   const hasTitle = posts.length ? "title" in posts[0] : true;
   // columns first_comment_reply… exist after migration 20261023100000_social_comment_reply.sql
   const hasReply = posts.length ? "first_comment_reply" in posts[0] : true;
-  const replyMissing = !hasReply && pkgs.some((p) => p.pkg.first_comment_reply);
+  const replyMissing = !hasReply && pkgs.some((p) => p.pkg.first_comment_reply || p.pkg.quiz_answer.length);
   const places = placeRows ?? [];
   for (const r of rows) {
     r.hasTodo = hasTodo;
@@ -257,6 +288,7 @@ async function main() {
     console.log(`\n${r.done ? "✓" : "·"} ${r.folder}  [${label[r.action]}${st ? ` · ${STATUS[st] ?? st}` : ""}]`);
     console.log(`    ${formatZurich(when) || "ohne Zeit"} · ${KINDS[r.pkg.kind]} · ${handle(r.account_id)} · ${r.items.length} Datei${r.items.length === 1 ? "" : "en"}`);
     if (firstLine(r.caption)) console.log(`    «${firstLine(r.caption)}»`);
+    if (r.pkg.quiz_answer.length) console.log(`    ? Quiz: richtig bei «${r.pkg.quiz_answer.join("», «")}» → automatisch «${r.pkg.quiz_correct_replies.join("» oder «")}»`);
     if (r.pkg.first_comment_reply && r.pkg.kind !== "story") console.log(`    ↳ Antwort auf den ersten Kommentar nach ${hoursLabel(r.pkg.first_comment_reply_after_hours)}: «${firstLine(r.pkg.first_comment_reply)}»`);
     if (r.note) console.log(`    → ${r.note}`);
     if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
@@ -274,7 +306,8 @@ async function main() {
   const count = (act) => rows.filter((r) => r.action === act).length;
   console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
     `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
-  if (replyMissing) console.log("Hinweis: «first_comment_reply» (Antwort auf den ersten Kommentar) wird erst übernommen, wenn die Migration 20261023100000_social_comment_reply.sql eingespielt ist.");
+  if (paused.length) console.log(`Pausiert (Quiz-/Umfrage-Storys werden zurzeit nicht angelegt): ${paused.join(", ")}`);
+  if (replyMissing) console.log("Hinweis: «first_comment_reply» und das Quiz werden erst übernommen, wenn die Migration 20261023100000_social_comment_reply.sql eingespielt ist.");
   if (aiMissing) console.log("Hinweis: «ai»: true (KI-Info) wird erst übernommen, wenn die Migration 20261022100000_social_ai_label.sql eingespielt ist.");
   if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
   if (cmd === "status" && (todo.length || notes.length || placeFills.length)) console.log("Importieren mit: npm run social -- import");

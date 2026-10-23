@@ -2,14 +2,17 @@
 //
 //   op "comments"          fetch new comments of all active accounts (cron every 15 min, or «Jetzt abholen»)
 //   op "reply"             post Christoph's reply (always his click in the cockpit, never automatic)
-//   sendDueReplies         (publish cron) the one exception: the answer Christoph approved together with a post,
-//                          posted hours later below that post's OWN first comment (e.g. the solution of a quiz)
+//   sendDueReplies         (publish cron) the answer Christoph approved together with a post, posted hours later
+//                          below that post's OWN first comment (e.g. the solution of a quiz)
+//   answerQuizzes          (comments cron) a comment that answers the post's quiz correctly gets one of the
+//                          prepared answers Christoph approved with the post – once per person, within 72 h
 //   op "moderate"          hide / show / approve (YouTube «zurückgehalten») / delete (own comments only)
 //   op "youtube-auth"      Google sign-in URL for «YouTube verbinden»
 //   op "youtube-connect"   code → refresh token (to Vault, never shown) + account row for the channel
 //
 // No liking, following or commenting on other accounts – only answers below our own posts. Comments of other
-// people are only ever answered by Christoph's click; nothing here answers them automatically.
+// people are answered by Christoph's click, with one exception he asked for (23.10.2026): a correct quiz answer
+// gets one of his prepared, approved texts (answerQuizzes). Never free text, never AI, never a wrong or unclear answer.
 // Logic independent of Supabase and the network (store + fetch injected), tested in comments.test.ts.
 
 import { graph, GraphError, IG_HOST, type FetchFn } from "./graph.ts";
@@ -356,7 +359,7 @@ export async function replyTo(deps: CommentDeps, commentId: string, text: string
 }
 
 // ---------- prepared answer below our own first comment ----------
-// The only automatic reply: a text Christoph approved together with the post (frozen with it), sent once some
+// A text Christoph approved together with the post (frozen with it), sent once some
 // hours after publishing, below the first comment our server wrote for that post (remote_comment_id). It goes
 // through replyTo like his click, so the inbox shows it and a deleted or hidden first comment stops it.
 // Never below comments of other people.
@@ -428,6 +431,71 @@ export async function sendDueReplies(deps: ReplyDeps): Promise<Array<{ id: strin
       console.error("first comment reply bookkeeping", post.id, err);
     }
     out.push({ id: post.id, status: "replied" });
+  }
+  return out;
+}
+
+// ---------- quiz: automatic answer to a correct solution ----------
+// Only the prepared texts from the approved post (quiz_correct_replies), picked at random. A comment counts as
+// correct when it contains one of the keywords (quiz_answer) as whole words, ignoring case and accents.
+// Wrong, unclear, hidden, held-back or already answered comments stay open for Christoph in «Kommentare».
+
+export const QUIZ_WINDOW_MS = 72 * 3600_000;
+export const QUIZ_MAX_PER_RUN = 20;
+
+const words = (t: string) =>
+  " " + t.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/(\d)([a-z])/g, "$1 $2").replace(/([a-z])(\d)/g, "$1 $2") // "190hPa" → "190 hpa"
+    .replace(/(\d)[',’](?=\d{3}\b)/g, "$1") // "1'707" / "1,707" → "1707"
+    .replace(/[^a-z0-9]+/g, " ").trim() + " ";
+export function quizMatch(text: string, keywords: string[]): boolean {
+  const hay = words(String(text ?? ""));
+  return keywords.some((k) => { const w = words(String(k ?? "")).trim(); return w.length >= 2 && hay.includes(` ${w} `); });
+}
+
+export interface QuizStore {
+  quizPosts(since: Date): Promise<Post[]>; // published since then, with a quiz
+  claimQuizReply(postId: string, author: string, commentId: string): Promise<string | null>; // id; null = this person already got one
+  updateQuizReply(id: string, patch: Record<string, unknown>): Promise<void>;
+}
+export type QuizDeps = CommentDeps & { store: CommentsStore & QuizStore; random?: () => number; deadline?: number };
+
+export async function answerQuizzes(deps: QuizDeps): Promise<Array<{ id: string; author: string; status: string }>> {
+  const out: Array<{ id: string; author: string; status: string }> = [];
+  const now = deps.now().getTime();
+  const random = deps.random ?? Math.random;
+  for (const post of await deps.store.quizPosts(new Date(now - QUIZ_WINDOW_MS))) {
+    const keys = (post.quiz_answer ?? []).filter((k) => String(k).trim());
+    const texts = (post.quiz_correct_replies ?? []).map((t) => String(t).trim()).filter(Boolean);
+    const published = Date.parse(post.published_at ?? "");
+    if (post.status !== "published" || !keys.length || !texts.length || !post.remote_media_id || !(now - published <= QUIZ_WINDOW_MS)) continue;
+    const acc = await deps.store.account(post.account_id);
+    if (!acc?.active) continue;
+    const seen = new Set<string>();
+    const open = (await deps.store.comments(acc.id))
+      .filter((c) => c.media_id === post.remote_media_id && !c.own && !c.deleted_at && !c.held && c.status === "new" && c.author.trim()
+        && (!c.posted_at || Date.parse(c.posted_at) >= published))
+      .sort((a, b) => Date.parse(a.posted_at ?? "") - Date.parse(b.posted_at ?? ""));
+    for (const c of open) {
+      if (out.length >= QUIZ_MAX_PER_RUN || (deps.deadline && deps.now().getTime() > deps.deadline)) return out;
+      const author = c.author.trim().toLowerCase();
+      if (seen.has(author) || !quizMatch(c.body, keys)) continue; // the oldest correct comment of each person
+      seen.add(author);
+      // the claim (one row per post and person) comes first: never two automatic answers to the same person
+      const claim = await deps.store.claimQuizReply(post.id, author, c.id);
+      if (!claim) continue;
+      const text = texts[Math.min(texts.length - 1, Math.floor(random() * texts.length))];
+      try {
+        const res = await replyTo(deps, c.id, text);
+        await deps.store.updateQuizReply(claim, { status: "sent", reply_text: text, reply_remote_id: res.reply_id }).catch((e) => console.error("quiz bookkeeping", e));
+        out.push({ id: c.id, author, status: "replied" });
+      } catch (err) {
+        // not retried; the comment stays open in «Kommentare» for Christoph
+        const why = err instanceof FinalError ? err.message : commentError(err);
+        await deps.store.updateQuizReply(claim, { status: "failed", reply_text: text, error: why.slice(0, 500) }).catch(() => {});
+        out.push({ id: c.id, author, status: "failed" });
+      }
+    }
   }
   return out;
 }

@@ -2,7 +2,7 @@
 // A package always becomes a DRAFT – approving stays a separate, manual step.
 // Format: docs/social-paket.md
 import { unzipSync } from "fflate";
-import { KINDS, LIMITS, REPLY_HOURS, TAG_DEFAULT, cleanUsername, replyHours, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, REPLY_HOURS, TAG_DEFAULT, cleanUsername, quizList, replyHours, zurichToUtc } from "./validate.js";
 
 const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", mp4: "video/mp4", mov: "video/quicktime" };
 const MAX_TOTAL = 200 * 1024 * 1024;
@@ -10,6 +10,15 @@ const base = (name) => String(name).split(/[\\/]/).pop();
 const typeOf = (name) => TYPES[base(name).split(".").pop().toLowerCase()];
 
 export class PackageError extends Error {}
+
+// What the imports take over from packages. Since 23.10.2026 Christoph wants no hand work after posting
+// («ich will meine Ruhe»): no to-do notes, no quiz/poll story pairs. Set to true to switch back on.
+export const IMPORT = {
+  todo: false, // "todo" from post.json (shown as «Selbst in Instagram erledigen»)
+  quizStories: false, // story pairs like 2026-11-12-quiz-rating-q / -a
+};
+// a quiz or poll story from a package folder (question "-q" / answer "-a")
+export const isQuizStory = (folder, kind) => kind === "story" && /(^|-)quiz(-|$)/i.test(String(folder));
 
 // Browser entry: FileList/array from <input type=file> (one .zip, or the files of a folder).
 export async function readPackage(fileList, accounts) {
@@ -109,6 +118,19 @@ export async function parsePackage(entries, accounts) {
   }
   if (replyAfter === null) throw new PackageError(`post.json: «first_comment_reply_after_hours» muss eine Zahl von ${REPLY_HOURS.min} bis ${REPLY_HOURS.max} sein (Stunden).`);
 
+  // quiz: a correct answer from somebody (keywords) gets one of these prepared replies automatically
+  const quizAnswer = quizList(post.quiz_answer);
+  const quizReplies = quizList(post.quiz_correct_replies, /\n/);
+  if (quizAnswer.length || quizReplies.length) {
+    if (!quizAnswer.length || !quizReplies.length) throw new PackageError("post.json: ein Quiz braucht «quiz_answer» (Stichwörter) und «quiz_correct_replies» (vorbereitete Antworten).");
+    if (!String(post.first_comment ?? "").trim()) throw new PackageError("post.json: ein Quiz braucht die Frage im «first_comment».");
+    if (post.kind === "story") throw new PackageError("post.json: Stories haben keine Kommentare, also kein Quiz.");
+    if (quizAnswer.length > LIMITS.quizKeywords || quizAnswer.some((k) => k.length < 2)) throw new PackageError(`post.json: «quiz_answer» braucht 1 bis ${LIMITS.quizKeywords} Stichwörter mit mindestens 2 Zeichen.`);
+    if (quizReplies.length > LIMITS.quizReplies) throw new PackageError(`post.json: höchstens ${LIMITS.quizReplies} «quiz_correct_replies».`);
+    const long = quizReplies.find((r) => r.length > LIMITS.quizReply);
+    if (long) throw new PackageError(`post.json: «quiz_correct_replies»: «${long.slice(0, 30)}…» ist länger als ${LIMITS.quizReply} Zeichen.`);
+  }
+
   const alt = Array.isArray(post.alt) ? post.alt.map(String) : names.map(() => String(post.alt ?? ""));
   return {
     account,
@@ -118,6 +140,8 @@ export async function parsePackage(entries, accounts) {
     first_comment: String(post.first_comment ?? ""),
     first_comment_reply: reply,
     first_comment_reply_after_hours: replyAfter,
+    quiz_answer: quizAnswer,
+    quiz_correct_replies: quizReplies,
     alt,
     suggested_time: suggested,
     todo,

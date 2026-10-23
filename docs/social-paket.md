@@ -40,6 +40,8 @@ Nach dem Posten: @exploring_the_skies markieren"
 | `first_comment` | nein | Erster Kommentar nach dem Veröffentlichen (z. B. die Hashtags). Bei Stories ignoriert. |
 | `first_comment_reply` | nein | Antwort auf den eigenen ersten Kommentar, z. B. die Auflösung einer Quizfrage. Das Cockpit schreibt sie **automatisch** als Antwort unter den ersten Kommentar, `first_comment_reply_after_hours` Stunden nach dem Veröffentlichen. Braucht einen `first_comment`, höchstens 2200 Zeichen, nicht bei Stories. Wird mit dem Beitrag freigegeben und danach nicht mehr geändert. |
 | `first_comment_reply_after_hours` | nein | Nach wie vielen Stunden die Antwort kommt: 0.5 bis 72, Standard **4**. |
+| `quiz_answer` | nein | Quiz: Stichwörter oder Zahlen, an denen das Cockpit eine richtige Lösung erkennt, z. B. `["standard air", "ISA", "standard atmosphere"]` (oder als Text mit Komma). Ganze Wörter, Gross/klein und Akzente egal. Braucht die Frage im `first_comment`. |
+| `quiz_correct_replies` | nein | 1 bis 5 kurze, vorbereitete Antworten (je höchstens 300 Zeichen), z. B. `["Spot on 👏", "Exactly, standard air 👌"]`. Wer richtig antwortet, bekommt eine davon automatisch, zufällig gewählt: einmal pro Person und Beitrag, nur in den ersten 72 Stunden. Falsche oder unklare Antworten bleiben für dich unter «Kommentare». |
 | `alt` | nein | Alternativtext für Screenreader: ein Text für alle Bilder oder eine Liste in der Reihenfolge von `media`. Nur Bilder. |
 | `suggested_time` | nein | Vorschlag für den Zeitpunkt. `2026-10-30T18:00` = **Schweizer Zeit**; mit Zeitzone (`2026-10-30T18:00:00+01:00`) wird diese genommen. Ohne Angabe: morgen 18:00. |
 | `media` | ja | Dateinamen im Paket, in der gewünschten Reihenfolge. |
@@ -93,7 +95,13 @@ Das Cockpit prüft alles beim Import und zeigt Fehler im Editor an. Ein Paket mi
 - Die Frage steht als erster Kommentar unter dem Beitrag, die Auflösung kommt nach 4 Stunden als Antwort darunter (Instagram und YouTube).
 - Im Cockpit siehst du beides in der Freigabe-Runde, auch den ungefähren Zeitpunkt. Mit «Freigeben» gibst du die Antwort mit frei.
 - In der Liste steht danach «Antwort gesendet» oder, falls es nicht ging, der Grund. Dann liegt der Text unter «Kommentare» als Entwurf bereit und du schickst ihn mit einem Klick selbst.
-- Gesendet wird höchstens einmal und nur unter unseren eigenen ersten Kommentar. Antworten auf Kommentare von anderen schreibst immer du.
+- Gesendet wird höchstens einmal und nur unter unseren eigenen ersten Kommentar.
+- Mit `quiz_answer` und `quiz_correct_replies` bekommt zusätzlich, wer die Frage richtig beantwortet, eine deiner vorbereiteten Antworten. Nie frei formuliert, nie auf ausgeblendete oder zurückgehaltene Kommentare. Alle anderen Antworten schreibst du selbst.
+
+### Zurzeit ausgeschaltet (seit 23.10.2026)
+- `todo` wird beim Import ignoriert: keine Aufgaben nach dem Posten mehr.
+- Quiz- und Umfrage-Storys (Ordner mit `quiz` im Namen, Art `story`, z. B. `…-quiz-q` / `…-quiz-a`) werden nicht angelegt.
+- Wieder einschalten: `IMPORT` in `src/social/package.js`.
 
 ## Vorlage für den Claude-Chat
 

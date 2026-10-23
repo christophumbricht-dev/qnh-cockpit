@@ -118,3 +118,24 @@ test("first_comment_reply: answer below the first comment, default after 4 hours
   await assert.rejects(parsePackage(entries({ ...POST, first_comment_reply: "Antwort", first_comment_reply_after_hours: "bald" }), ACCOUNTS), /Stunden/);
   await assert.rejects(parsePackage(entries({ ...POST, first_comment_reply: "x".repeat(2201) }), ACCOUNTS), /2200/);
 });
+
+test("quiz: keywords and prepared answers from the package; incomplete quizzes are refused", async () => {
+  const q = { ...POST, first_comment: "Why 190 hPa?", quiz_answer: "standard air, ISA", quiz_correct_replies: ["Spot on 👏", " Exactly 👌 "] };
+  const p = await parsePackage(entries(q), ACCOUNTS);
+  assert.deepEqual(p.quiz_answer, ["standard air", "ISA"]);
+  assert.deepEqual(p.quiz_correct_replies, ["Spot on 👏", "Exactly 👌"]);
+  assert.deepEqual((await parsePackage(entries(), ACCOUNTS)).quiz_answer, []);
+  await assert.rejects(parsePackage(entries({ ...q, quiz_correct_replies: [] }), ACCOUNTS), /quiz_correct_replies/);
+  await assert.rejects(parsePackage(entries({ ...q, first_comment: "" }), ACCOUNTS), /first_comment/);
+  await assert.rejects(parsePackage(entries({ ...q, quiz_answer: ["x"] }), ACCOUNTS), /2 Zeichen/);
+  await assert.rejects(parsePackage(entries({ ...q, quiz_correct_replies: ["y".repeat(301)] }), ACCOUNTS), /300/);
+});
+
+test("import switches: no to-do notes and no quiz stories for now", async () => {
+  const { IMPORT, isQuizStory } = await import("../src/social/package.js");
+  assert.deepEqual(IMPORT, { todo: false, quizStories: false });
+  assert.equal(isQuizStory("2026-11-12-quiz-rating-q", "story"), true);
+  assert.equal(isQuizStory("2026-10-21-leeside-nebel-quiz-a", "story"), true);
+  assert.equal(isQuizStory("2026-11-12-quiz-rating-q", "reel"), false);
+  assert.equal(isQuizStory("2026-11-04-leeside-qnh-2", "story"), false);
+});

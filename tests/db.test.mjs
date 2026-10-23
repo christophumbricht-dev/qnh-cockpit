@@ -424,7 +424,22 @@ test("first comment reply: frozen once approved, needs a first comment, status o
   await assert.rejects(as(ADMIN, `update social_posts set first_comment_reply='anders' where id='${id}'`), /zurückziehen/);
   await assert.rejects(as(ADMIN, `update social_posts set first_comment_reply_after_hours=8 where id='${id}'`), /zurückziehen/);
   await as("service", `update social_posts set first_comment_reply_status='sending' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set quiz_answer='{isa}' where id='${id}'`), /zurückziehen/);
   // a new post cannot bring its own server fields
   const id2 = await newPost("first_comment_reply_status='sent'");
   assert.equal((await as(ADMIN, `select first_comment_reply_status from social_posts where id='${id2}'`)).rows[0].first_comment_reply_status, null);
+});
+
+test("quiz: keywords and prepared answers go together, frozen once approved; auto answers once per person, server only", async () => {
+  const id = await newPost("first_comment='Why 190 hPa?'");
+  await as(ADMIN, `update social_posts set quiz_answer='{standard air,isa}' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`), /Quiz/);
+  await as(ADMIN, `update social_posts set quiz_correct_replies='{"Spot on 👏","Exactly, standard air 👌"}' where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set quiz_correct_replies='{"Nope"}' where id='${id}'`), /zurückziehen/);
+  await assert.rejects(as(ADMIN, `insert into social_quiz_replies (post_id, author) values ('${id}', 'anna')`));
+  await as("service", `insert into social_quiz_replies (post_id, author) values ('${id}', 'anna')`);
+  await assert.rejects(as("service", `insert into social_quiz_replies (post_id, author) values ('${id}', 'anna')`), /duplicate|unique/);
+  assert.equal((await as(ADMIN, `select count(*)::int as n from social_quiz_replies`)).rows[0].n, 1);
+  assert.equal((await as(null, `select count(*)::int as n from social_quiz_replies`).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n, 0);
 });

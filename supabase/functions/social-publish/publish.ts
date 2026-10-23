@@ -49,6 +49,9 @@ export type Post = {
   first_comment_reply?: string;
   first_comment_reply_after_hours?: number | string; // numeric column: PostgREST may send it as text
   first_comment_reply_status?: "sending" | "sent" | "failed" | null;
+  // quiz: keywords of a correct answer + Christoph's prepared answers to it (comments.ts, answerQuizzes)
+  quiz_answer?: string[];
+  quiz_correct_replies?: string[];
 };
 export type Account = { id: string; app_id?: string; platform: "instagram" | "facebook" | "youtube"; remote_id: string; handle: string; active: boolean; token_expires_at: string | null };
 

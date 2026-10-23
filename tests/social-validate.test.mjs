@@ -113,3 +113,11 @@ test("answer below the first comment: needs the comment, 0.5–72 hours, ignored
   assert.equal(hoursLabel(0.5), "30 min");
   assert.equal(hoursLabel(4), "4 h");
 });
+
+test("quiz: needs the question, keywords and at least one prepared answer", () => {
+  const base = { kind: "reel", items: [mp4(1080, 1920, 20)], caption: "QNH", first_comment: "Why 190?" };
+  assert.deepEqual(validatePost({ ...base, quiz_answer: "standard air, ISA", quiz_correct_replies: "Spot on\nExactly" }).errors, []);
+  assert.match(validatePost({ ...base, quiz_answer: "ISA" }).errors.join(), /vorbereitete Antwort/);
+  assert.match(validatePost({ ...base, quiz_correct_replies: "Spot on" }).errors.join(), /Stichwörter/);
+  assert.match(validatePost({ ...base, first_comment: "", quiz_answer: "ISA", quiz_correct_replies: "Yes" }).errors.join(), /Frage/);
+});

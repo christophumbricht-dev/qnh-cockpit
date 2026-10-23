@@ -2,7 +2,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Account, Post, Store } from "./publish.ts";
 import type { MediaRow, StatsStore } from "./stats.ts";
-import type { CommentsStore, ReplyStore, StoredComment } from "./comments.ts";
+import type { CommentsStore, QuizStore, ReplyStore, StoredComment } from "./comments.ts";
 import type { FollowUpStore } from "./youtube.ts";
 import type { Item, OutreachSettings, OutreachStore, Watch } from "./outreach.ts";
 
@@ -17,7 +17,7 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 
 const ITEM_COLS = "id, watch_id, source, media_id, username, permalink, caption, media_type, image_url, posted_at, like_count, comments_count, status, found_at";
 
-export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & OutreachStore & ReplyStore {
+export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & OutreachStore & ReplyStore & QuizStore {
   return {
     async claim(postId) {
       return must(await db.rpc("social_claim", { p_post_id: postId ?? null, p_limit: 5 }), "claim") as Post[];
@@ -121,6 +121,21 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
     },
     async commentByRemote(accountId, remoteId) {
       return must(await db.from("social_comments").select(COMMENT_COLS).eq("account_id", accountId).eq("remote_id", remoteId).maybeSingle(), "comment") as StoredComment | null;
+    },
+    // ---------- quiz: automatic answers to correct solutions ----------
+    async quizPosts(since) {
+      const r = await db.from("social_posts").select("*").eq("status", "published").neq("quiz_answer", "{}")
+        .gte("published_at", since.toISOString()).order("published_at").limit(30);
+      if (r.error && /does not exist|could not find/i.test(r.error.message)) return []; // migration not run yet
+      return must(r, "quiz posts") as Post[];
+    },
+    async claimQuizReply(postId, author, commentId) {
+      const r = await db.from("social_quiz_replies").insert({ post_id: postId, author, comment_id: commentId }).select("id").maybeSingle();
+      if (r.error?.code === "23505") return null; // this person already got an answer on this post
+      return (must(r, "quiz claim") as { id: string } | null)?.id ?? null;
+    },
+    async updateQuizReply(id, patch) {
+      must(await db.from("social_quiz_replies").update(patch).eq("id", id), "quiz answer");
     },
     async upsertAccount(row) {
       return must(await db.from("social_accounts").upsert({ ...row, active: true }, { onConflict: "app_id,platform" }).select(ACCOUNT_COLS).single(), "account") as Account;
