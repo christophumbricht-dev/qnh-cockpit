@@ -50,5 +50,14 @@ Unten auf der Seite: **Zeitraum** wählen (dieses Jahr, letztes Jahr, alles), da
 ## API-Verbrauch (Kommentar-Vorschläge)
 Unter **Kosten & Abos** zeigt der Block **«API-Verbrauch»**, was die Kommentar-Vorschläge von Social → «Bei anderen» bei Anthropic kosten: diesen Monat (Schweizer Zeit) im Verhältnis zum Monatsbudget, die letzten Monate und das laufende Jahr. Gerechnet wird pro Vorschlag aus den Tokens mit den Preisen von Anthropic (USD). Das ist der **Verbrauch** – bezahlt wird über Guthaben, das du bei Anthropic per Kreditkarte auflädst. Diese Aufladungen erfasst du wie jede Quittung als Beleg (Kategorie «Software»). Ein/Aus und Budget stellst du in «Bei anderen» ein (`docs/social-outreach.md`).
 
+## ElevenLabs-Guthaben (Stimme für Reels)
+Unter **API-Verbrauch** zeigt die Karte «Stimme für Reels», wie viele ElevenLabs-Credits diesen Monat noch übrig sind und wann sie neu kommen. Das Cockpit fragt ElevenLabs dafür live – mit einem **eigenen, nur lesenden Schlüssel** (der Stimm-Schlüssel auf dem PC bleibt dort).
+
+Einrichten (einmal, 5 Minuten):
+1. elevenlabs.io/app/developers/api-keys → **Create API Key** → Name `cockpit-lesen`.
+2. «Restrict Key» einschalten → nur **User → Read**, alles andere «No Access» → **Create** → Schlüssel kopieren.
+3. Supabase → Projekt **QNH Core** → **Edge Functions** → **Secrets** → **Add new secret**: Name `ELEVENLABS_READ_KEY`, Wert einfügen → **Save**.
+4. Cockpit neu laden → Finanzen. (Die Funktion `social-publish` muss mit dem Stand vom 23.10.2026 deployt sein.)
+
 ## Später (noch nicht eingebaut)
 Belege per Foto (Spesen), Einnahmen aus dem App Store, Anbindung an die Buchhaltung (z. B. Bexio), pain.001-Datei für den Sammelauftrag im E-Banking.

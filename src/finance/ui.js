@@ -240,10 +240,27 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     return `${list}${tpl ? `<div class="chips fin-templates"><span class="muted small">Vorlagen:</span>${tpl}</div>` : ""}`;
   }
 
+  // ElevenLabs credits (voice for the reels): used / left this month, live from ElevenLabs
+  function voiceCard() {
+    const v = st().value?.voice;
+    if (!v) return "";
+    if (!v.configured) return `<div class="card fin-api"><div class="fin-api-head"><span><b>Stimme für Reels</b><span class="muted small"> · ElevenLabs</span></span></div>
+      <p class="muted small">Noch nicht verbunden. Anleitung: docs/finanzen.md, Abschnitt «ElevenLabs-Guthaben».</p></div>`;
+    if (v.error) return `<div class="card fin-api"><div class="fin-api-head"><span><b>Stimme für Reels</b><span class="muted small"> · ElevenLabs</span></span></div><p class="error small">${esc(v.error)}</p></div>`;
+    const left = Math.max(0, v.limit - v.used), pct = v.limit ? Math.round((v.used / v.limit) * 100) : 0;
+    const fmt = (n) => n.toLocaleString("de-CH");
+    const reset = v.reset_at ? new Intl.DateTimeFormat("de-CH", { day: "numeric", month: "long", timeZone: "Europe/Zurich" }).format(new Date(v.reset_at)) : null;
+    return `<div class="card fin-api"><div class="fin-api-head"><span><b>Stimme für Reels</b><span class="muted small"> · ElevenLabs${v.tier ? `, ${esc(v.tier.charAt(0).toUpperCase() + v.tier.slice(1))}` : ""}</span></span></div>
+      <div class="fin-api-now"><span class="muted small">noch übrig</span><b class="mono-num">${fmt(left)}</b><span class="muted small">von ${fmt(v.limit)} Credits · ${fmt(v.used)} verbraucht${reset ? ` · neu am ${esc(reset)}` : ""}</span></div>
+      <div class="goal-track"><span class="out-budget-fill${pct >= 90 ? " hot" : ""}" style="width:${pct}%"></span></div>
+      <p class="muted small">1 Credit ≈ 1 Zeichen Text. Eine Reel-Serie (3 Teile) braucht etwa 600.</p></div>`;
+  }
+
   // usage-based API costs: the comment suggestions of Social → «Bei anderen» (computed from the tokens of each one)
   function apiBlock() {
     const api = st().value?.api;
-    if (!api || (st().scope !== "all" && st().scope !== "leesidelab")) return "";
+    if (st().scope !== "all" && st().scope !== "leesidelab") return "";
+    if (!api) { const vc = voiceCard(); return vc ? `<section class="block"><h2 class="section-title">API-Verbrauch</h2>${vc}</section>` : ""; }
     const c = costSummary(api.months, api.budget);
     const pct = Math.round(c.share * 100);
     const model = MODELS.find(([m]) => m === api.model)?.[1].replace(/ \(.*\)$/, "") ?? api.model;
@@ -256,7 +273,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       <p class="fc-total"><span>Dieses Jahr</span><b class="mono-num">${esc(usd(c.year))}</b></p>
       <p class="muted small">Verbrauch nach Token, gerechnet mit den Preisen von Anthropic. Die Aufladungen bei Anthropic (Kreditkarte) erfasst du wie gewohnt als Beleg. Ein/Aus und Budget: Social → «Bei anderen».</p>
       <a class="link" href="#social/bei-anderen">Zu den Vorschlägen</a>
-    </div></section>`;
+    </div>${voiceCard()}</section>`;
   }
 
   // monthly fixed costs per app/brand (each currency its own bar)

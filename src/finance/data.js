@@ -20,7 +20,7 @@ const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) 
 // privateOk: the columns for receipts Christoph paid himself exist (migration 20261021120000_finance_private.sql);
 // those stay loaded until they are paid back, however old.
 export async function loadFinance() {
-  if (DEMO) return demo.load();
+  if (DEMO) return { ...(await demo.load()), voice: await loadElevenlabs() };
   const [costs, probe] = await Promise.all([
     sb().from("fin_costs").select("*").order("name"),
     sb().from("fin_bills").select("paid_by").limit(1),
@@ -31,7 +31,8 @@ export async function loadFinance() {
   const bills = await sb().from("fin_bills").select("*")
     .or(`status.eq.open,updated_at.gte.${since}${privateOk ? ",and(paid_by.eq.privat,reimbursed_at.is.null)" : ""}`)
     .order("due_date", { ascending: true, nullsFirst: false }).limit(1000);
-  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk, api: await loadApiCosts() };
+  const [api, voice] = await Promise.all([loadApiCosts(), loadElevenlabs()]);
+  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk, api, voice };
 }
 
 // What the comment suggestions («Bei anderen», Anthropic API) cost per month – computed by social-publish from the
@@ -44,6 +45,18 @@ export async function loadApiCosts() {
   ]);
   if (months.error || settings.error || !settings.data) return null;
   return { months: months.data, budget: settings.data.monthly_budget_usd, enabled: settings.data.enabled, model: settings.data.model };
+}
+
+// ElevenLabs credits (voice for reels) – asked live from social-publish; { configured: false } until the secret is set
+export async function loadElevenlabs() {
+  if (DEMO) return { configured: true, tier: "starter", used: 3685, limit: 30000, reset_at: new Date(Date.now() + 12 * 864e5).toISOString() };
+  try {
+    const { data, error } = await sb().functions.invoke("social-publish", { body: { op: "elevenlabs" } });
+    if (error) return { configured: true, error: "Konnte ElevenLabs nicht abfragen (Funktion social-publish neu deployen?)." };
+    return data;
+  } catch {
+    return { configured: true, error: "Konnte ElevenLabs nicht abfragen." };
+  }
 }
 
 export async function saveCost(row) {

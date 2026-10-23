@@ -990,3 +990,5 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .soc-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .soc-search-row input[type="search"] { flex: 1 1 260px; }
 .seg.seg-small .seg-btn { padding: 7px 12px; font-size: 13px; }
+
+.fin-api + .fin-api { margin-top: 12px; }
