@@ -1001,7 +1001,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .soc-when .field { margin: 0; }
 /* big «Freigeben» next to the time, so approving needs no scrolling down to the form's buttons */
 .soc-when-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-.soc-when-row .field { flex: 1 1 180px; min-width: 0; }
+/* iPhone sizes the date box by its text: keep it inside its column, so the gap to the button is the same for every post */
+.soc-when-row .field { flex: 1 1 180px; min-width: 0; grid-template-columns: minmax(0, 1fr); }
 .soc-approve-big { font-size: 18px; font-weight: 700; padding: 12px 24px; min-height: 48px; flex: 1 0 auto; }
 .soc-when input[type="datetime-local"] { font-size: 16px; font-weight: 600; text-align: center; min-width: 0; max-width: 100%; display: block; -webkit-appearance: none; appearance: none; }
 /* iPhone Safari aligns the date inside its own box: centre it there too */
