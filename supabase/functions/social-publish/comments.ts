@@ -16,7 +16,7 @@
 // Logic independent of Supabase and the network (store + fetch injected), tested in comments.test.ts.
 
 import { graph, GraphError, IG_HOST, type FetchFn } from "./graph.ts";
-import { accessToken, authUrl, exchangeCode, GoogleError, googleGerman, youtube, YT_SCOPES, type GoogleConfig, type YouTube } from "./google.ts";
+import { accessToken, authUrl, exchangeCode, GoogleError, googleGerman, youtube, YT_REQUIRED_SCOPES, type GoogleConfig, type YouTube } from "./google.ts";
 import { type Account, FinalError, germanError, type Post } from "./publish.ts";
 
 export type CommentRow = {
@@ -558,7 +558,7 @@ export async function youtubeConnect(deps: CommentDeps, allowed: string[], appId
   try {
     const t = await exchangeCode(deps.fetch, cfg, code, redirectUri);
     const granted = t.scope.split(/\s+/);
-    if (!YT_SCOPES.every((s) => granted.includes(s))) {
+    if (!YT_REQUIRED_SCOPES.every((s) => granted.includes(s))) {
       throw new FinalError("Bei Google wurden nicht alle Häkchen gesetzt. Bitte neu verbinden und beide YouTube-Berechtigungen erlauben (Videos hochladen, Kommentare verwalten).");
     }
     if (!t.refreshToken) throw new FinalError("Google hat keinen dauerhaften Zugang geliefert. Bitte neu verbinden.");

@@ -9,8 +9,10 @@ export const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 export const YT_API = "https://www.googleapis.com/youtube/v3";
 export const YT_UPLOAD = "https://www.googleapis.com/upload/youtube/v3";
 // upload videos + read/write comments on our own channel (force-ssl also covers channels.list mine=true)
-// + YouTube Analytics (watch time, average view percentage, click rate) for the statistics
-export const YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/yt-analytics.readonly"];
+export const YT_REQUIRED_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"];
+// + YouTube Analytics (watch time, average view percentage, click rate) for the statistics: asked for, but optional –
+// without it the channel still connects, the statistics then show a note instead of those numbers
+export const YT_SCOPES = [...YT_REQUIRED_SCOPES, "https://www.googleapis.com/auth/yt-analytics.readonly"];
 
 export type GoogleConfig = { clientId: string; clientSecret: string };
 

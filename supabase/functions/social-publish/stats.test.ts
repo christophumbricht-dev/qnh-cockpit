@@ -88,6 +88,12 @@ Deno.test("YouTube: channel totals and per-video views/likes/comments", async ()
     const body = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
     if (url.host === "oauth2.googleapis.com") return body({ access_token: "ACCESS" });
     assertEquals(new Headers(init?.headers).get("Authorization"), "Bearer ACCESS");
+    if (url.host === "youtubeanalytics.googleapis.com") {
+      // click rate refused (not every channel has it) – the rest must still arrive
+      if (url.searchParams.get("metrics")!.includes("ClickRate")) return new Response(JSON.stringify({ error: { message: "Unknown metric" } }), { status: 400 });
+      if (url.searchParams.get("dimensions") === "video") return body({ columnHeaders: [{ name: "video" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }], rows: [["abc_DEF-123", 30, 245, 61.2]] });
+      return body({ columnHeaders: [{ name: "views" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }, { name: "subscribersGained" }], rows: [[400, 90, 20, 55.5, 3]] });
+    }
     if (url.pathname.endsWith("/channels")) return body({ items: [{ statistics: { subscriberCount: "12", viewCount: "8100", videoCount: "3" }, contentDetails: { relatedPlaylists: { uploads: "UU123" } } }] });
     if (url.pathname.endsWith("/playlistItems")) return body({ items: [{ contentDetails: { videoId: "abc_DEF-123" } }] });
     if (url.pathname.endsWith("/videos")) return body({ items: [{ id: "abc_DEF-123", snippet: { title: "Föhn, part 1 #Shorts", publishedAt: "2026-10-21T13:17:00Z" }, statistics: { viewCount: "540", likeCount: "21", commentCount: "4" } }] });
@@ -95,10 +101,10 @@ Deno.test("YouTube: channel totals and per-video views/likes/comments", async ()
   }) as typeof fetch;
   const res = await collectStats({ store, fetch: fn, now: () => NOW, google: { clientId: "C", clientSecret: "S" } });
   assertEquals(res, [{ account: "leesidelab", status: "ok", media: 1, followers: 12 }]);
-  assertEquals(days[0].metrics, { followers_count: 12, views_total: 8100, media_count: 3 });
+  assertEquals(days[0].metrics, { followers_count: 12, views_total: 8100, media_count: 3, views_28d: 400, watch_minutes_28d: 90, avg_view_duration_28d: 20, avg_view_pct_28d: 55.5, subscribers_gained_28d: 3 });
   assertEquals(media[0].kind, "SHORT");
   assertEquals(media[0].permalink, "https://youtube.com/shorts/abc_DEF-123");
-  assertEquals(media[0].metrics, { views: 540, likes: 21, comments: 4 });
+  assertEquals(media[0].metrics, { views: 540, likes: 21, comments: 4, watch_minutes: 30, avg_view_duration: 245, avg_view_pct: 61.2 });
 });
 
 Deno.test("youtube analytics: report rows become our metric names", () => {
