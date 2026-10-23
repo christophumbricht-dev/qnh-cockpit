@@ -501,7 +501,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return `<article class="item soc-item">
       ${p.media_deleted_at ? `<span class="thumb empty"></span>` : listThumb(p)}
       <div>
-        <div class="meta"><b>${esc(accountLabel(a))}</b><span>${a?.platform === "youtube" ? "Video (Short)" : KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
+        <div class="meta">${platformIcon(a?.platform)}<b>${esc(accountLabel(a))}</b><span>${a?.platform === "youtube" ? "Video (Short)" : KINDS[p.kind] ?? p.kind}${p.media?.length > 1 ? ` · ${p.media.length} Dateien` : ""}</span>
           <span>${when ? esc(formatZurich(when)) : "kein Zeitpunkt"}</span><span class="pill ${p.status}">${STATUS[p.status] ?? p.status}</span>
           ${p.source === "package" ? `<span class="muted">aus Paket</span>` : ""}
           ${p.location?.name ? `<span class="muted">📍 ${esc(p.location.name)}</span>` : ""}
@@ -663,7 +663,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const actions = [];
     if (!ro) {
       actions.push(`<button class="btn ghost" data-action="soc-save"${dis}>Speichern (Entwurf)</button>`);
-      actions.push(`<button class="btn" data-action="soc-approve"${dis}>Freigeben …</button>`);
+      actions.push(`<button class="btn" data-action="soc-approve"${dis}>${platformIcon(acc?.platform)} Freigeben für ${esc(PLATFORM[acc?.platform] ?? "Instagram")} …</button>`);
     }
     const aiHint = ed.ai && !isYoutube(ed.account_id) ? `<p class="note small ai-hint">🤖 Wird mit <b>KI-Info</b> veröffentlicht – später nicht mehr änderbar.</p>` : "";
     if (!ed.isNew && ed.status === "approved") actions.push(`<button class="btn ghost" data-action="soc-withdraw" data-id="${ed.id}"${ed.busy ? " disabled" : ""}>Zurückziehen</button>`);
@@ -674,7 +674,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const rv = S.social.review;
     const rvBar = rv && !ed.isNew ? (() => {
       const queue = reviewQueue().filter((p) => !rv.skipped.has(p.id));
-      return `<div class="review-bar"><b>Freigabe-Runde</b><span class="muted">${rv.done} freigegeben · noch ${queue.length} Entw${queue.length === 1 ? "urf" : "ürfe"}</span>
+      return `<div class="review-bar"><b>Freigabe-Runde</b>${platformBadge(acc)}<span class="muted">${rv.done} freigegeben · noch ${queue.length} Entw${queue.length === 1 ? "urf" : "ürfe"}</span>
         <span class="row-right"><button class="btn ghost" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Später freigeben ›</button></span></div>`;
     })() : "";
     return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : "← Zurück zur Liste"}</button>
@@ -725,7 +725,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         </div>
         <aside class="soc-preview">
           <div class="card soc-when">
-            <label class="field"><b>Veröffentlichung</b> <span class="muted small">Schweizer Zeit</span>
+            <label class="field"><span class="soc-when-head">${platformBadge(acc)}</span><b>Veröffentlichung</b> <span class="muted small">Schweizer Zeit</span>
               <input type="datetime-local" name="soc-time-top" value="${esc(ed.scheduledLocal)}"${dis}></label>
             <div id="soc-when-hint" class="small">${whenHint(ed)}</div>
           </div>
@@ -766,6 +766,14 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       <div class="actions"><button class="btn" data-action="soc-place-save">Ort speichern</button><button class="btn ghost" data-action="soc-place-cancel">Abbrechen</button></div>
     </div>`;
   }
+
+  // Instagram / YouTube mark, so it is clear at a glance where a post goes
+  const PLATFORM_SVG = {
+    instagram: `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><defs><linearGradient id="igg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f9a825"/><stop offset=".5" stop-color="#e1306c"/><stop offset="1" stop-color="#833ab4"/></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#igg)"/><circle cx="12" cy="12" r="4.4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.3" fill="#fff"/></svg>`,
+    youtube: `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#ff0033"/><path d="M10 8.6v6.8l5.8-3.4z" fill="#fff"/></svg>`,
+  };
+  const platformIcon = (platform) => PLATFORM_SVG[platform] ? `<span class="plat-icon" title="${esc(PLATFORM[platform] ?? platform)}">${PLATFORM_SVG[platform]}</span>` : "";
+  const platformBadge = (acc) => acc ? `<span class="plat-badge plat-${esc(acc.platform)}">${platformIcon(acc.platform)}<b>${esc(PLATFORM[acc.platform] ?? acc.platform)}</b><span class="muted">${esc(acc.platform === "youtube" ? acc.handle || "" : "@" + acc.handle)}</span></span>` : "";
 
   // «Mi 28.10., 18:00 · in 5 Tagen» above the phone; warns when the time is already past
   function whenHint(ed) {
