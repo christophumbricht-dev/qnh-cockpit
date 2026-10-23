@@ -2,6 +2,7 @@
 // Nothing is ever approved automatically – only the "Freigeben" button (and the database checks that too).
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
+import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
 import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
 import { IMPORT, readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
@@ -26,7 +27,7 @@ const STATUS_FILTERS = [
 ];
 
 export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [] }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform() };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null };
   let unsubscribe = null;
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
@@ -117,6 +118,18 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
+    if (st.byTopic) {
+      return `<div class="soc-top">
+        <h2 class="soc-topics-title">Themen</h2>
+        <div class="row-right">
+          ${reviewQueue().length ? `<button class="btn" data-action="soc-review">Freigabe-Runde (${reviewQueue().length})</button>` : ""}
+          <button class="btn desk-only" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
+        </div></div>
+      ${apps.length > 1 ? `<div class="chips soc-apps">${chips}</div>` : ""}
+      ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
+      ${searchBar(shown)}
+      ${topicView(shown)}`;
+    }
     return `<div class="soc-top">
         <div class="seg" role="group" aria-label="Ansicht">${modes}</div>
         <div class="row-right">
@@ -167,7 +180,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function searchBar(shown) {
     const st = S.social;
     const pf = platformChips();
-    const chips = st.mode !== "list" ? "" : STATUS_FILTERS.map(([v, label, , tip]) => {
+    const chips = st.mode !== "list" && !st.byTopic ? "" : STATUS_FILTERS.map(([v, label, , tip]) => {
       const n = v === "all" ? shown.length : shown.filter(statusTest(v)).length;
       if (n === 0 && v !== "all" && st.status !== v) return ""; // hide empty filters, except the active one
       return `<button class="chip${st.status === v ? " on" : ""}" data-action="soc-status" data-value="${v}" aria-pressed="${st.status === v}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)} <span class="muted">${n}</span></button>`;
@@ -180,6 +193,41 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         ${chips ? `<div class="chips soc-status" role="group" aria-label="Nach Status filtern">${chips}</div>` : ""}
       </div>`;
   }
+  // ---------- Themen: the same posts and cards, grouped by topic (approving here approves the very same post) ----------
+  const PLURAL = { Bild: "Bilder", Karussell: "Karussells", Reel: "Reels", Story: "Storys" };
+  function topicSummary(rows) {
+    const kinds = new Map();
+    for (const p of rows) {
+      const k = isYoutube(p.account_id) ? "YouTube-Short" : KINDS[p.kind] ?? p.kind;
+      kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    }
+    const parts = [...kinds].map(([k, n]) => `${n} ${n === 1 ? k : PLURAL[k] ?? (k === "YouTube-Short" ? "YouTube-Shorts" : k)}`);
+    const done = rows.filter((p) => ["approved", "publishing", "published"].includes(p.status)).length;
+    return `${parts.join(" · ")} · ${done} von ${rows.length} freigegeben`;
+  }
+  function topicView(shown) {
+    const st = S.social;
+    const rows = st.status === "all" ? shown : shown.filter(statusTest(st.status));
+    if (!rows.length) return `<p class="muted">${st.q.trim() ? "Nichts gefunden." : "Keine Beiträge."}</p>`;
+    const groups = new Map();
+    for (const p of rows) { const t = topicOf(p); groups.set(t, [...(groups.get(t) ?? []), p]); }
+    // upcoming topics first (by their next planned post), then the ones already done (newest first), «Ohne Thema» last
+    const now = Date.now();
+    const next = (ps) => Math.min(...ps.filter((p) => p.status !== "published" && p.scheduled_at).map((p) => new Date(p.scheduled_at).getTime()).filter((t) => t >= now - 864e5), Infinity);
+    const last = (ps) => Math.max(...ps.map((p) => new Date(p.published_at ?? p.scheduled_at ?? 0).getTime()));
+    const order = [...groups.entries()].sort(([ta, a], [tb, b]) => (ta === NO_TOPIC) - (tb === NO_TOPIC) || next(a) - next(b) || last(b) - last(a));
+    return order.map(([topic, ps]) => {
+      const sorted = [...ps].sort((a, b) => byTime(a, b, "scheduled_at"));
+      const drafts = ps.filter((p) => p.status === "draft").length;
+      return `<section class="topic-group">
+        <div class="topic-head"><h3 class="group">${esc(topic)} <span class="muted">${ps.length}</span></h3>
+          ${drafts ? `<button class="btn ghost" data-action="soc-review-topic" data-value="${esc(topic)}">Freigabe-Runde (${drafts})</button>` : ""}</div>
+        <p class="muted small topic-sum">${esc(topicSummary(ps))}</p>
+        ${sorted.map(postItem).join("")}
+      </section>`;
+    }).join("");
+  }
+
   function listView(shown) {
     const st = S.social;
     const searching = st.q.trim() !== "";
@@ -517,7 +565,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function reviewQueue() {
     const st = S.social;
     return posts()
-      .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p))
+      .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
       .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {
@@ -525,7 +573,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const next = reviewQueue().find((p) => p.id !== currentId && !st.review.skipped.has(p.id));
     if (next) return openEditor(next);
     toast(`Freigabe-Runde fertig: ${st.review.done} freigegeben${st.review.skipped.size ? `, ${st.review.skipped.size} für später` : ""}.`);
-    st.review = null;
+    st.review = null; st.reviewTopic = null;
     st.editor = null;
     render();
   }
@@ -550,6 +598,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       todo: duplicate ? "" : post?.todo ?? "",
       location: post?.location ?? null,
       ai: post?.ai_generated === true,
+      topic: duplicate ? post?.topic ?? "" : post?.topic ?? "",
+      topicGuess: post ? guessTopic(post) : null,
       scheduledLocal: post?.scheduled_at ? utcToZurichLocal(post.scheduled_at) : tomorrowAt18(),
       items,
       cover: post?.cover_path ? (duplicate ? { copyFrom: post.cover_path, type: "image/jpeg" } : { path: post.cover_path, type: "image/jpeg" }) : null,
@@ -666,6 +716,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
             ${todoLines(ed.todo).length ? todoBox(ed.todo, "", ed.isNew ? null : ed.id).replace(/<b>[^<]*<\/b>/, "") : ""}
             <textarea name="soc-todo" rows="3" maxlength="2000" placeholder="z. B. Am Vortag Story mit Umfrage-Sticker · @exploring_the_skies markieren · Standort setzen"${ed.busy ? " disabled" : ""}>${esc(ed.todo ?? "")}</textarea>
             ${ro ? `<button class="btn ghost" data-action="soc-save-todo"${ed.busy ? " disabled" : ""}>Notiz speichern</button>` : ""}</label>` : ""}
+          ${data.topicSupported() ? `<label class="field">Thema <span class="muted small">– nur zum Sortieren unter «Themen», wird nicht veröffentlicht</span>
+            <input type="text" name="soc-topic" list="soc-topic-list" maxlength="80" value="${esc(ed.topic ?? "")}" placeholder="${esc(ed.topicGuess ? `${ed.topicGuess} (erkannt)` : "z. B. Föhn, Vereisung")}" autocomplete="off"${ed.busy ? " disabled" : ""}>
+            <datalist id="soc-topic-list">${[...new Set(posts().map((p) => topicOf(p)).filter((t) => t !== NO_TOPIC))].sort().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
+            ${ro ? `<button class="btn ghost" data-action="soc-save-topic"${ed.busy ? " disabled" : ""}>Thema speichern</button>` : ""}</label>` : ""}
           <div id="soc-checks" class="soc-checks">${checksHtml(ed)}</div>
           ${aiHint}<div class="actions">${actions.join("")}</div>
         </div>
@@ -901,7 +955,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const row = {
       account_id: ed.account_id, kind: ed.kind, title: isYoutube(ed.account_id) ? String(ed.title ?? "").trim() : "", caption: ed.kind === "story" ? "" : ed.caption,
       first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
-      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
+      scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", topic: String(ed.topic ?? "").trim() || null, location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
       ai_generated: !isYoutube(ed.account_id) && ed.ai === true,
       first_comment_reply: ed.kind === "story" ? "" : String(ed.first_comment_reply ?? "").trim(),
       first_comment_reply_after_hours: replyHours(ed.first_comment_reply_after_hours) ?? REPLY_HOURS.default,
@@ -988,7 +1042,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     switch (action) {
       case "soc-filter":
         st.filter = el.dataset.value;
-        try { history.replaceState(null, "", st.filter === "all" ? "#social" : `#social/${st.filter}`); } catch { /* sandboxed */ }
+        if (!st.byTopic) try { history.replaceState(null, "", st.filter === "all" ? "#social" : `#social/${st.filter}`); } catch { /* sandboxed */ }
         render();
         return true;
       case "soc-status": st.status = el.dataset.value; render(); return true;
@@ -1018,7 +1072,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       case "soc-duplicate": openEditor(posts().find((p) => p.id === id) ?? (ed && { ...ed, media: ed.items, scheduled_at: zurichToUtc(ed.scheduledLocal), cover_path: ed.cover?.path }), { duplicate: true }); return true;
       case "soc-close":
         if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
-        st.editor = null; st.review = null; render(); load(true); return true;
+        st.editor = null; st.review = null; st.reviewTopic = null; render(); load(true); return true;
       case "soc-copy":
         try { await navigator.clipboard.writeText(el.dataset.value); toast("Link kopiert – im Story-Editor beim Link-Sticker einfügen"); }
         catch { prompt("Link kopieren:", el.dataset.value); }
@@ -1048,13 +1102,20 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         catch (err) { toast(errorText(err)); }
         return true;
       }
+      case "soc-save-topic":
+        await busy(ed, async () => { const row = await data.setTopic(ed.id, ed.topic); if (row?.updated_at) ed.updated_at = row.updated_at; ed.dirty = false; toast("Thema gespeichert"); await load(true); });
+        return true;
       case "soc-save-todo":
         await busy(ed, async () => { const row = await data.setTodo(ed.id, ed.todo ?? ""); if (row?.updated_at) ed.updated_at = row.updated_at; ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
         return true;
+      case "soc-review-topic":
+        st.reviewTopic = el.dataset.value;
+      // falls through: same review round, only this topic
       case "soc-review": {
+        if (action === "soc-review") st.reviewTopic = null;
         st.review = { skipped: new Set(), done: 0 };
         const first = reviewQueue()[0];
-        if (first) openEditor(first); else st.review = null;
+        if (first) openEditor(first); else { st.review = null; st.reviewTopic = null; }
         return true;
       }
       case "soc-review-skip":
@@ -1176,6 +1237,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     else if (name === "soc-quiz-answer") ed.quiz_answer = e.target.value;
     else if (name === "soc-quiz-replies") ed.quiz_correct_replies = e.target.value;
     else if (name === "soc-todo") { ed.todo = e.target.value; ed.dirty = true; return true; }
+    else if (name === "soc-topic") { ed.topic = e.target.value; ed.dirty = true; return true; }
     else if (name === "soc-time" || name === "soc-time-top") {
       ed.scheduledLocal = e.target.value;
       // keep the two time fields (form and the card above the phone) in step without re-rendering

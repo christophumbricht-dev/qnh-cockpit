@@ -123,8 +123,10 @@ function route() {
   const a = first && first !== QNH.id ? appById(first) : null;
   if (first === "social") {
     S.tab = "social";
+    S.social.byTopic = second === "themen"; // Social → Themen: same posts, grouped by topic
     if (second === "kommentare") social.setMode("comments");
     else if (second === "bei-anderen") social.setMode("outreach");
+    else if (second === "themen") { S.social.filter = "all"; social.setMode("list"); }
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }
   else if (first === "apps") S.tab = "apps";
@@ -190,7 +192,7 @@ function shell() {
   }).join("");
   const appsBadge = APPS.reduce((n, a) => n + todos(a).length, 0);
   const channels = socialConfigured() ? (S.social?.value?.accounts ?? []).filter((x) => x.active !== false) : [];
-  const channelItems = channels.map((c) => `<a class="nav-sub desk-only${S.tab === "social" && S.social.filter === c.app_id ? " on" : ""}" href="#social/${esc(c.app_id)}">${icon(c.platform === "youtube" ? "play" : "camera")}<span class="nav-label">${esc(c.platform === "youtube" ? c.handle || appById(c.app_id)?.name || "YouTube" : `@${c.handle}`)}</span></a>`).join("");
+  const channelItems = channels.map((c) => `<a class="nav-sub desk-only${S.tab === "social" && !S.social.byTopic && S.social.filter === c.app_id ? " on" : ""}" href="#social/${esc(c.app_id)}">${icon(c.platform === "youtube" ? "play" : "camera")}<span class="nav-label">${esc(c.platform === "youtube" ? c.handle || appById(c.app_id)?.name || "YouTube" : `@${c.handle}`)}</span></a>`).join("");
   const finBadge = financeConfigured() ? finance.badge() : 0;
   return `<div class="shell"${S.sheet ? " inert" : ""}>
     <aside class="side" aria-label="Navigation">
@@ -204,7 +206,8 @@ function shell() {
         ${appItems}
         ${navItem("#apps", S.tab === "apps" || isAppPage(), icon("grid"), "Apps", appsBadge, "phone-only")}
         ${qnhReady() && socialConfigured() ? `<p class="side-label">Social</p>
-          ${navItem("#social", S.tab === "social" && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge())}
+          ${navItem("#social", S.tab === "social" && !S.social.byTopic && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge())}
+          ${navItem("#social/themen", S.tab === "social" && !!S.social.byTopic, icon("grid"), "Themen", 0, "desk-only")}
           ${channelItems}` : ""}
         ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "phone-only hot") : ""}
         ${qnhReady() ? navItem("#hangar", S.tab === "hangar", icon("folder"), "Hangar", 0, "desk-only nav-bottom") : ""}

@@ -148,6 +148,7 @@ export async function parsePackage(entries, accounts) {
     tags,
     location,
     ai: post.ai === true, // «KI-Info» on Instagram (AI voice, AI music, AI image)
+    topic: String(post.topic ?? "").trim().slice(0, 80), // Social → Themen (only sorts the cockpit)
     files,
     cover,
   };

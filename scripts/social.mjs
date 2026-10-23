@@ -37,6 +37,9 @@ function readMarkers() {
 }
 
 // pakete/<folder>/post.json + files → parsed package (same rules as the cockpit's «Paket importieren»)
+// post.json without its "topic" line – the topic only sorts the cockpit and is filled in separately (topicFills)
+const withoutTopic = (bytes) => Buffer.from(bytes.toString("utf8").replace(/^[ \t]*"topic":[ \t]*"(?:[^"\\]|\\.)*",?\r?\n/m, ""), "utf8");
+
 async function readFolder(folder, accounts) {
   const dir = join(DIR, folder);
   const raw = new Map();
@@ -60,7 +63,7 @@ async function readFolder(folder, accounts) {
   return {
     folder, pkg,
     account_id: pkg.account.id, caption: pkg.kind === "story" ? "" : pkg.caption, suggested_time: pkg.suggested_time,
-    hash: packageHash(used.map((n) => [n, raw.get(n)])),
+    hash: packageHash(used.map((n) => [n, n === "post.json" ? withoutTopic(raw.get(n)) : raw.get(n)])),
     items: pkg.files.map((f, i) => ({ ...item(f), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] })),
     cover: pkg.cover ? item(pkg.cover) : null,
   };
@@ -89,6 +92,7 @@ async function save(sb, p, id, isNew) {
     ...(p.hasTodo ? { todo: p.pkg.todo } : {}),
     ...(p.hasLocation ? { location: p.pkg.kind === "story" ? null : p.place } : {}),
     ...(p.hasAi ? { ai_generated: p.pkg.ai === true } : {}),
+    ...(p.hasTopic && p.pkg.topic ? { topic: p.pkg.topic } : {}),
     ...(p.hasReply ? { first_comment_reply: p.pkg.kind === "story" ? "" : p.pkg.first_comment_reply, first_comment_reply_after_hours: p.pkg.first_comment_reply_after_hours,
       quiz_answer: p.pkg.quiz_answer, quiz_correct_replies: p.pkg.quiz_correct_replies } : {}),
   };
@@ -179,6 +183,8 @@ async function main() {
   const hasLocation = posts.length ? "location" in posts[0] : true;
   // column ai_generated exists after migration 20261022100000_social_ai_label.sql
   const hasAi = posts.length ? "ai_generated" in posts[0] : true;
+  // column topic exists after migration 20261023120000_social_topic.sql
+  const hasTopic = posts.length ? "topic" in posts[0] : true;
   const aiMissing = !hasAi && pkgs.some((p) => p.pkg.ai);
   // column "title" exists after migration 20261020110000_social_youtube.sql
   const hasTitle = posts.length ? "title" in posts[0] : true;
@@ -190,6 +196,7 @@ async function main() {
     r.hasTodo = hasTodo;
     r.hasLocation = hasLocation;
     r.hasAi = hasAi;
+    r.hasTopic = hasTopic;
     r.hasTitle = hasTitle;
     r.hasReply = hasReply;
     const loc = r.pkg.location;
@@ -222,6 +229,8 @@ async function main() {
   // a place added to the list after the import: fill it into existing drafts that have no location yet
   const placeFills = hasLocation ? rows.filter((r) => r.post && r.place && !r.post.location && r.pkg.kind !== "story"
     && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)) : [];
+  // the package's topic reaches existing posts in every status (it only sorts the cockpit) – where the post has none yet
+  const topicFills = hasTopic ? rows.filter((r) => r.post && r.pkg.topic && !r.post.topic && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
   const notes = hasTodo ? rows.filter((r) => r.post && r.pkg.todo && !r.post.todo && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
 
   if (cmd === "import") {
@@ -251,6 +260,12 @@ async function main() {
       const { data, error } = await sb.from("social_posts").update({ location: r.place }).eq("id", r.post.id).select("updated_at").single();
       if (error) { r.note = `Standort nicht übernommen: ${error.message}`; continue; }
       r.placeDone = true;
+      if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+    }
+    for (const r of topicFills) {
+      const { data, error } = await sb.from("social_posts").update({ topic: r.pkg.topic }).eq("id", r.post.id).select("updated_at").single();
+      if (error) { r.note = `Thema nicht übernommen: ${error.message}`; continue; }
+      r.topicDone = true;
       if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
     }
     for (const r of notes) {
@@ -292,6 +307,7 @@ async function main() {
     if (r.pkg.first_comment_reply && r.pkg.kind !== "story") console.log(`    ↳ Antwort auf den ersten Kommentar nach ${hoursLabel(r.pkg.first_comment_reply_after_hours)}: «${firstLine(r.pkg.first_comment_reply)}»`);
     if (r.note) console.log(`    → ${r.note}`);
     if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
+    if (r.topicDone) console.log(`    → Thema ergänzt: ${r.pkg.topic}`);
     if (r.placeDone) console.log(`    → Standort ergänzt: 📍 ${r.place.name}`);
     if (r.placeMissing) console.log(`    ! Standort «${r.placeMissing}» ist noch nicht in der Ortsliste – im Cockpit «+ Neuen Ort hinzufügen»; der nächste Import (spätestens 07:30) trägt ihn nach`);
     else if (r.place && (r.done || r.action === "new")) console.log(`    📍 ${r.place.name}`);
@@ -299,7 +315,7 @@ async function main() {
     if (["new", "update"].includes(r.action) || (r.done && EDITABLE.has(st))) for (const l of checks(r, when)) console.log(l);
   };
 
-  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || r.placeDone || r.placeMissing || only.size);
+  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || r.topicDone || r.placeDone || r.placeMissing || only.size);
   for (const r of interesting) show(r);
   for (const b of broken) console.log(`\n✗ ${b.folder}  [ungültig]\n    → ${b.note}`);
 
@@ -310,7 +326,8 @@ async function main() {
   if (replyMissing) console.log("Hinweis: «first_comment_reply» und das Quiz werden erst übernommen, wenn die Migration 20261023100000_social_comment_reply.sql eingespielt ist.");
   if (aiMissing) console.log("Hinweis: «ai»: true (KI-Info) wird erst übernommen, wenn die Migration 20261022100000_social_ai_label.sql eingespielt ist.");
   if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
-  if (cmd === "status" && (todo.length || notes.length || placeFills.length)) console.log("Importieren mit: npm run social -- import");
+  if (!hasTopic && rows.some((r) => r.pkg.topic)) console.log("Hinweis: «topic» (Social → Themen) wird erst übernommen, wenn die Migration 20261023120000_social_topic.sql eingespielt ist.");
+  if (cmd === "status" && (todo.length || notes.length || placeFills.length || topicFills.length)) console.log("Importieren mit: npm run social -- import");
   if (cmd === "import" && todo.some((r) => r.done)) console.log("Als Entwürfe im Cockpit: https://cockpit.setqnh.ch/#social – freigeben machst nur du.");
 }
 

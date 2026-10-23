@@ -18,6 +18,7 @@ const SQL9 = readFileSync(new URL("../supabase/migrations/20261021120000_finance
 const SQL10 = readFileSync(new URL("../supabase/migrations/20261021140000_social_outreach.sql", import.meta.url), "utf8");
 const SQL_AI = readFileSync(new URL("../supabase/migrations/20261022100000_social_ai_label.sql", import.meta.url), "utf8");
 const SQL_REPLY = readFileSync(new URL("../supabase/migrations/20261023100000_social_comment_reply.sql", import.meta.url), "utf8");
+const SQL_TOPIC = readFileSync(new URL("../supabase/migrations/20261023120000_social_topic.sql", import.meta.url), "utf8");
 const SQL_YT_STATS = readFileSync(new URL("../supabase/migrations/20261021160000_social_stats_youtube.sql", import.meta.url), "utf8");
 const ADMIN = "11111111-1111-1111-1111-111111111111", OTHER = "22222222-2222-2222-2222-222222222222";
 
@@ -65,8 +66,10 @@ await db.exec(SQL10);
 await db.exec(SQL10);
 await db.exec(SQL_AI);
 await db.exec(SQL_AI);
-await db.exec(SQL_REPLY); // last: redefines the guard after all earlier migrations
 await db.exec(SQL_REPLY);
+await db.exec(SQL_REPLY);
+await db.exec(SQL_TOPIC); // last: redefines the guard after all earlier migrations
+await db.exec(SQL_TOPIC);
 await db.exec(`
 insert into qnh_admins (user_id) values ('${ADMIN}');
 insert into social_accounts (id, app_id, platform, remote_id, handle, token_name)
@@ -408,6 +411,19 @@ test("AI label: default off, settable on drafts, frozen once approved", async ()
   await as(ADMIN, `update social_posts set ai_generated=true where id='${id}'`);
   await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
   await assert.rejects(as(ADMIN, `update social_posts set ai_generated=false where id='${id}'`), /zurückziehen/);
+});
+
+test("topic: free on drafts, still editable once approved and published (only sorts the cockpit)", async () => {
+  const id = await newPost();
+  assert.equal((await as(ADMIN, `select topic from social_posts where id='${id}'`)).rows[0].topic, null);
+  await as(ADMIN, `update social_posts set topic='Föhn' where id='${id}'`);
+  await as(ADMIN, `update social_posts set status='approved', scheduled_at=now() + interval '1 day' where id='${id}'`);
+  await as(ADMIN, `update social_posts set topic='Mountain Waves & Rotor' where id='${id}'`);
+  await assert.rejects(as(ADMIN, `update social_posts set topic='x', caption='other' where id='${id}'`), /zurückziehen/);
+  await as("service", `update social_posts set status='published', published_at=now() where id='${id}'`);
+  await as(ADMIN, `update social_posts set topic='Vereisung' where id='${id}'`);
+  assert.equal((await as(ADMIN, `select topic from social_posts where id='${id}'`)).rows[0].topic, "Vereisung");
+  await assert.rejects(as(ADMIN, `update social_posts set topic='' where id='${id}'`));
 });
 
 test("first comment reply: frozen once approved, needs a first comment, status only from the server", async () => {

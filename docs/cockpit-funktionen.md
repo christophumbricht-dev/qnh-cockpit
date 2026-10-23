@@ -44,6 +44,7 @@ Dazu:
   - **KI-Info:** Schalter «mit KI erstellt» (z. B. KI-Stimme). Instagram zeigt dann «KI-Info» unter dem Namen; nach dem Veröffentlichen nicht mehr änderbar. Im Paket: `"ai": true`.
   - Wurde ein Beitrag inzwischen anderswo geändert (z. B. durch einen Paket-Import), speichert der Editor nicht darüber, sondern meldet es.
 - **Freigabe-Runde:** alle Entwürfe der Reihe nach prüfen → «Freigeben» oder «Später freigeben».
+- **Themen** (Seitenleiste unter «Alle Kanäle»): dieselben Beiträge, nach Thema gruppiert (z. B. «Föhn»: 3 Wetter-Reels, Unfall-Story, Technik-Reel, YouTube-Shorts), mit Übersicht «x von y freigegeben» und Freigabe-Runde pro Thema. Freigeben dort gilt überall – es ist derselbe Beitrag. Thema im Editor oder im Paket (`"topic"`); ohne Thema erkennt das Cockpit es aus «…, part 2/3».
 - **Ansichten:** Liste (chronologisch) und Kalender (Beiträge per Ziehen verschieben).
 - **Suchen und filtern:** Suchfeld (Text, Konto, Ort, #Hashtag, @markiert, Datum), Filter nach App (Logo-Chips), nach Plattform (Alle · Instagram · YouTube – gilt auch für die Freigabe-Runde) und nach Status (Zu prüfen, Entwürfe, Freigegeben, Veröffentlicht, Fehlgeschlagen, Offene Aufgaben, KI-Info).
 - **Fehler:** verständliche Meldung mit Code; vor dem Senden wird geprüft, ob alle Dateien da sind. Knopf **«Erneut versuchen»** bei fehlgeschlagenen Beiträgen.

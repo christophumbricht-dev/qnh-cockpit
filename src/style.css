@@ -1008,3 +1008,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .soc-newplace .row-wrap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .soc-newplace code { font-size: 12px; }
 .ok-text { color: var(--ok, #1f8a4c); }
+
+/* Social → Themen */
+.soc-topics-title { margin: 0; font: 600 22px var(--display, inherit); }
+.topic-group { margin: 6px 0 22px; }
+.topic-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topic-head .group { margin-bottom: 0; }
+.topic-sum { margin: 2px 0 10px; }
