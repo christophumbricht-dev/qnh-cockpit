@@ -413,8 +413,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const first = p.media?.[0];
     if (!first) return `<span class="thumb empty"></span>`;
     if (!/^video\//.test(first.type)) return thumb(first);
-    return p.cover_path
-      ? `<span class="video-thumb">${thumb({ path: p.cover_path, type: "image/jpeg", alt: "" })}<span class="play" aria-hidden="true">▶</span></span>`
+    const still = p.cover_path ?? first.still;
+    return still
+      ? `<span class="video-thumb">${thumb({ path: still, type: "image/jpeg", alt: "" })}<span class="play" aria-hidden="true">▶</span></span>`
       : `<span class="thumb video-tile" aria-label="Video">▶</span>`;
   }
 
@@ -422,10 +423,15 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (!item) return `<span class="${cls} empty"></span>`;
     const src = item.url ?? data.mediaUrl(item.path);
     if (!/^video\//.test(item.type)) return `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy" decoding="async">`;
-    // phone preview: playable with sound and controls (cover as poster); elsewhere a still frame with ▶
-    const poster = item.poster ? ` poster="${esc(item.poster)}"` : "";
-    if (cls.includes("phone-img")) return `<video class="${cls}" src="${esc(src)}" controls playsinline loop preload="${item.poster ? "none" : "metadata"}"${poster}></video>`;
-    return `<span class="video-thumb"><video class="${cls}" src="${esc(src)}#t=0.5" muted playsinline preload="metadata"${poster}></video><span class="play" aria-hidden="true">▶</span></span>`;
+    // videos never load just to be shown (Supabase egress, 25.10.2026): the cover or the still frame stands in,
+    // the phone preview loads the video only when it is played
+    const still = item.poster ?? (item.still ? data.mediaUrl(item.still) : null);
+    const poster = still ? ` poster="${esc(still)}"` : "";
+    if (cls.includes("phone-img")) return `<video class="${cls}" src="${esc(src)}" controls playsinline loop preload="none"${poster}></video>`;
+    if (!still && item.file) return `<span class="video-thumb"><video class="${cls}" src="${esc(src)}#t=0.5" muted playsinline preload="metadata"></video><span class="play" aria-hidden="true">▶</span></span>`; // local file, nothing to download
+    return still
+      ? `<span class="video-thumb"><img class="${cls}" src="${esc(still)}" alt="" loading="lazy" decoding="async"><span class="play" aria-hidden="true">▶</span></span>`
+      : `<span class="${cls} video-tile" aria-label="Video">▶</span>`;
   }
 
   // "what Christoph still does by hand in Instagram" – shown unless it says there is nothing to do
@@ -587,7 +593,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   function openEditor(post, { duplicate = false } = {}) {
     const fallback = publishable().find((a) => S.social.filter === "all" || a.app_id === S.social.filter) ?? publishable()[0];
-    const items = (post?.media ?? []).map((m) => (duplicate ? { ...m, copyFrom: m.path, path: null } : { ...m }));
+    const items = (post?.media ?? []).map((m) => (duplicate ? { ...m, copyFrom: m.path, path: null, still: undefined } : { ...m }));
     S.social.editor = {
       id: post && !duplicate ? post.id : crypto.randomUUID(),
       isNew: !post || duplicate,
@@ -962,10 +968,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const media = [];
     for (const [i, it] of ed.items.entries()) {
       let path = it.path;
+      const same = !it.file && !it.copyFrom; // the import's still frame belongs to this very file only
       if (it.file) path = await data.uploadFile(ed.id, it.file, i);
       else if (it.copyFrom) path = await data.copyFile(it.copyFrom, ed.id, it.type, i);
       media.push({ path, type: it.type, alt: it.alt ?? "", width: it.width ?? null, height: it.height ?? null, duration: it.duration ?? null,
-        ...(it.user_tags?.length && !/^video\//.test(it.type) ? { user_tags: it.user_tags } : {}) });
+        ...(it.user_tags?.length && !/^video\//.test(it.type) ? { user_tags: it.user_tags } : {}),
+        ...(same && it.still && /^video\//.test(it.type) ? { still: it.still } : {}) });
       Object.assign(it, { path, file: undefined, copyFrom: undefined });
     }
     let cover_path = null;
@@ -1390,7 +1398,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     let media = `<span class="phone-img empty">kein Bild</span>`;
     if (p.media_deleted_at) media = `<span class="phone-img empty">Datei entfernt</span>`;
     else if (p.cover_path) media = `<img class="phone-img" src="${esc(data.mediaUrl(p.cover_path))}" alt="" loading="lazy" decoding="async">`;
-    else if (first && /^video\//.test(first.type)) media = `<video class="phone-img" src="${esc(data.mediaUrl(first.path))}#t=0.5" muted playsinline preload="metadata"></video>`;
+    else if (first?.still) media = `<img class="phone-img" src="${esc(data.mediaUrl(first.still))}" alt="" loading="lazy" decoding="async">`;
+    else if (first && /^video\//.test(first.type)) media = `<span class="phone-img empty">▶ Video</span>`; // not downloaded just for the list
     else if (first) media = `<img class="phone-img" src="${esc(data.mediaUrl(first.path))}" alt="${esc(first.alt ?? "")}" loading="lazy" decoding="async">`;
     const ratio = vertical ? "9 / 16" : first?.width ? `${first.width} / ${first.height}` : "4 / 5";
     const text = yt ? p.title || p.caption : p.caption;

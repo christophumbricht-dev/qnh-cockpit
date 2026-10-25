@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { EDITABLE, jpegSize, packageHash, plan } from "./social-lib.mjs";
 import { stats } from "./social-stats.mjs";
+import { mb, prepareVideo } from "./social-video.mjs";
 import { comments } from "./social-comments.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
 import { IMPORT, PackageError, isQuizStory, parsePackage } from "../src/social/package.js";
@@ -76,11 +77,24 @@ async function upload(sb, postId, it, i) {
   return path;
 }
 
+// still frame of a package video → Storage path (null without ffmpeg)
+async function uploadStill(sb, postId, jpg, i) {
+  return jpg ? upload(sb, postId, { type: "image/jpeg", bytes: jpg, file: { name: `still ${i}` } }, `${i}-still`) : null;
+}
+
 async function save(sb, p, id, isNew) {
   const media = [];
   for (const [i, it] of p.items.entries()) {
-    media.push({ path: await upload(sb, id, it, i), type: it.type, alt: it.alt, width: it.width ?? null, height: it.height ?? null, duration: null,
-      ...(it.user_tags?.length ? { user_tags: it.user_tags } : {}) });
+    let up = it;
+    let still = null;
+    if (/^video\//.test(it.type)) {
+      const v = prepareVideo(it.bytes);
+      if (v.shrunk) p.shrunk = [...(p.shrunk ?? []), v.shrunk];
+      up = { ...it, bytes: v.bytes };
+      still = await uploadStill(sb, id, v.still, i);
+    }
+    media.push({ path: await upload(sb, id, up, i), type: it.type, alt: it.alt, width: it.width ?? null, height: it.height ?? null, duration: null,
+      ...(it.user_tags?.length ? { user_tags: it.user_tags } : {}), ...(still ? { still } : {}) });
   }
   const youtube = p.pkg.account.platform === "youtube";
   // YouTube cannot take a cover for Shorts through the API – not uploaded
@@ -236,6 +250,9 @@ async function main() {
     && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)) : [];
   // the package's topic reaches existing posts in every status (it only sorts the cockpit) – where the post has none yet
   const topicFills = hasTopic ? rows.filter((r) => r.post && r.pkg.topic && !r.post.topic && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
+  // drafts imported before stills existed: add a still frame from the local package video (the video stays as it is)
+  const stillFills = rows.filter((r) => r.post && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)
+    && !r.post.media_deleted_at && (r.post.media ?? []).some((m, i) => /^video\//.test(m.type) && !m.still && r.items[i]?.bytes));
   const notes = hasTodo ? rows.filter((r) => r.post && r.pkg.todo && !r.post.todo && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
 
   if (cmd === "import") {
@@ -244,7 +261,7 @@ async function main() {
         let saved = r.post;
         if (r.action === "new") saved = await save(sb, r, crypto.randomUUID(), true);
         if (r.action === "update") {
-          const old = r.post.media?.map((m) => m.path) ?? [];
+          const old = r.post.media?.flatMap((m) => [m.path, ...(m.still ? [m.still] : [])]) ?? [];
           if (r.withdraw) {
             const { error } = await sb.from("social_posts").update({ status: "draft" }).eq("id", r.post.id);
             if (error) throw new Error(error.message);
@@ -272,6 +289,23 @@ async function main() {
       if (error) { r.note = `Thema nicht übernommen: ${error.message}`; continue; }
       r.topicDone = true;
       if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+    }
+    for (const r of stillFills) {
+      try {
+        const media = [];
+        for (const [i, m] of r.post.media.entries()) {
+          if (!/^video\//.test(m.type) || m.still || !r.items[i]?.bytes) { media.push(m); continue; }
+          const still = await uploadStill(sb, r.post.id, prepareVideo(r.items[i].bytes).still, i);
+          media.push(still ? { ...m, still } : m);
+        }
+        if (!media.some((m, i) => m.still !== r.post.media[i].still)) continue;
+        const { data, error } = await sb.from("social_posts").update({ media }).eq("id", r.post.id).select("updated_at").single();
+        if (error) { r.note = `Standbild nicht übernommen: ${error.message}`; continue; }
+        r.stillDone = true;
+        if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+      } catch (err) {
+        r.note = `Standbild nicht übernommen: ${err.message}`;
+      }
     }
     for (const r of notes) {
       const { data, error } = await sb.from("social_posts").update({ todo: r.pkg.todo }).eq("id", r.post.id).select("updated_at").single();
@@ -313,6 +347,8 @@ async function main() {
     if (r.note) console.log(`    → ${r.note}`);
     if (r.noteDone) console.log("    → To-do-Notiz ergänzt");
     if (r.topicDone) console.log(`    → Thema ergänzt: ${r.pkg.topic}`);
+    if (r.stillDone) console.log("    → Standbild für die Vorschau ergänzt");
+    for (const s of r.shrunk ?? []) console.log(`    → Video verkleinert: ${mb(s.from)} → ${mb(s.to)}`);
     if (r.placeDone) console.log(`    → Standort ergänzt: 📍 ${r.place.name}`);
     if (r.placeMissing) console.log(`    ! Standort «${r.placeMissing}» ist noch nicht in der Ortsliste – im Cockpit «+ Neuen Ort hinzufügen»; der nächste Import (spätestens 07:30) trägt ihn nach`);
     else if (r.place && (r.done || r.action === "new")) console.log(`    📍 ${r.place.name}`);
@@ -320,19 +356,20 @@ async function main() {
     if (["new", "update"].includes(r.action) || (r.done && EDITABLE.has(st))) for (const l of checks(r, when)) console.log(l);
   };
 
-  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || r.topicDone || r.placeDone || r.placeMissing || only.size);
+  const interesting = rows.filter((r) => r.action !== "same" || r.noteDone || r.topicDone || r.stillDone || r.placeDone || r.placeMissing || only.size);
   for (const r of interesting) show(r);
   for (const b of broken) console.log(`\n✗ ${b.folder}  [ungültig]\n    → ${b.note}`);
 
   const count = (act) => rows.filter((r) => r.action === act).length;
   console.log(`\n${pkgs.length + broken.length} Pakete: ${count("new")} neu, ${count("update")} geändert, ${count("link")} verknüpft, ${count("same")} unverändert` +
     `${count("past") ? `, ${count("past")} verpasst` : ""}${count("conflict") + count("locked") ? `, ${count("conflict") + count("locked")} nicht übernommen` : ""}${broken.length ? `, ${broken.length} ungültig` : ""}.`);
+  if (cmd === "status" && stillFills.length) console.log(`${stillFills.length} Entwürfe bekommen beim Import ein Standbild für die Vorschau.`);
   if (paused.length) console.log(`Pausiert (Quiz-/Umfrage-Storys werden zurzeit nicht angelegt): ${paused.join(", ")}`);
   if (replyMissing) console.log("Hinweis: «first_comment_reply» und das Quiz werden erst übernommen, wenn die Migration 20261023100000_social_comment_reply.sql eingespielt ist.");
   if (aiMissing) console.log("Hinweis: «ai»: true (KI-Info) wird erst übernommen, wenn die Migration 20261022100000_social_ai_label.sql eingespielt ist.");
   if (!hasTodo && rows.some((r) => r.pkg.todo)) console.log("Hinweis: To-do-Notizen werden erst übernommen, wenn die Migration 20261014120000_social_todo.sql eingespielt ist.");
   if (!hasTopic && rows.some((r) => r.pkg.topic)) console.log("Hinweis: «topic» (Social → Themen) wird erst übernommen, wenn die Migration 20261023120000_social_topic.sql eingespielt ist.");
-  if (cmd === "status" && (todo.length || notes.length || placeFills.length || topicFills.length)) console.log("Importieren mit: npm run social -- import");
+  if (cmd === "status" && (todo.length || notes.length || placeFills.length || topicFills.length || stillFills.length)) console.log("Importieren mit: npm run social -- import");
   if (cmd === "import" && todo.some((r) => r.done)) console.log("Als Entwürfe im Cockpit: https://cockpit.setqnh.ch/#social – freigeben machst nur du.");
 }
 
