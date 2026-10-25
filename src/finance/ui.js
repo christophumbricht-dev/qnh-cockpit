@@ -5,6 +5,7 @@ import * as data from "./data.js";
 import { BILL_FILE_ACCEPT, INTERVALS, addDays, amountText, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, owedPrivately, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
 import { QrBillError, formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
 import { MODELS, costSummary, monthName, usd } from "../social/outreach.js";
+import * as M from "./machines.js";
 
 const CURRENCIES = ["CHF", "EUR", "USD"];
 const QR_ICON = `<svg class="ico fin-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></svg>`;
@@ -131,6 +132,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         <div class="fin-col-side">
           <section class="block"><h2 class="section-title">Kosten &amp; Abos</h2>${costList(cs, today)}</section>
           ${apiBlock()}
+          ${machinesBlock()}
           ${scopeBars(cs)}
           <section class="block"><h2 class="section-title">Export für den Treuhänder</h2>${exportBox(today)}</section>
         </div>
@@ -274,6 +276,44 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
       <p class="muted small">Verbrauch nach Token, gerechnet mit den Preisen von Anthropic. Die Aufladungen bei Anthropic (Kreditkarte) erfasst du wie gewohnt als Beleg. Ein/Aus und Budget: Social → «Bei anderen».</p>
       <a class="link" href="#social/bei-anderen">Zu den Vorschlägen</a>
     </div>${voiceCard()}</section>`;
+  }
+
+  // Rechner: how busy the gaming PC and the laptop are, electricity in kWh and CHF (estimate, see machines.js)
+  function machinesBlock() {
+    const mv = st().value?.machines;
+    if (st().scope !== "all" && st().scope !== "qnh") return "";
+    if (!mv) return "";
+    const today = zurichToday();
+    const from7 = new Date(Date.now() - 7 * 864e5).toISOString(), from30 = new Date(Date.now() - 30 * 864e5).toISOString();
+    const price = mv.price ?? null, shown = price ?? M.EXAMPLE_PRICE;
+    let sum30 = 0;
+    const cards = mv.machines.map((m) => {
+      const s7 = M.summarize(m, mv.hours, from7), s30 = M.summarize(m, mv.hours, from30);
+      sum30 += s30.kwh;
+      const last = mv.last[m.id], stt = M.status(last);
+      const ago = stt.since ? new Intl.DateTimeFormat("de-CH", { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" }).format(new Date(stt.since)) : null;
+      const now = stt.online && last
+        ? [last.cpu != null ? `CPU ${Math.round(last.cpu)} %` : "", last.gpu != null ? `GPU ${Math.round(last.gpu)} %${last.gpu_watts != null ? ` (${Math.round(last.gpu_watts)} W)` : ""}` : "",
+          last.on_battery ? "Akku" : "", last.jobs?.length ? `rechnet: ${last.jobs.join(", ")}` : "ruhig"].filter(Boolean).join(" · ")
+        : ago ? `zuletzt gemeldet ${ago}` : "noch keine Messung";
+      const strip = M.lastDays(s30.days, 14, today);
+      const bars = strip.map((d) => `<span class="mach-day" title="${esc(shortDate(d.day))}: ${esc(M.hoursText(d.busy))} gerechnet, ${esc(M.hoursText(d.on))} an"><span style="height:${Math.min(100, (d.busy / 24) * 100).toFixed(0)}%"></span></span>`).join("");
+      const cost = M.chf(s30.kwh, shown);
+      return `<div class="card fin-api mach">
+        <div class="fin-api-head"><span><b>${esc(m.name)}</b></span><span class="pill${stt.online ? " published" : " draft"}">${stt.online ? "läuft" : "aus"}</span></div>
+        <p class="muted small">${esc(now)}</p>
+        <div class="fin-api-now"><span class="muted small">7 Tage ausgelastet</span><b class="mono-num">${Math.round(s7.share * 100)} %</b><span class="muted small">${esc(M.hoursText(s7.busy))} gerechnet von ${esc(M.hoursText(s7.on))} an</span></div>
+        <div class="mach-strip" aria-label="Stunden gerechnet pro Tag, letzte 14 Tage">${bars}</div>
+        <p class="fc-total"><span>Strom 30 Tage</span><b class="mono-num">${esc(M.kwhText(s30.kwh))} · ${esc(M.chfText(cost))}${price == null ? "*" : ""}</b></p>
+      </div>`;
+    }).join("");
+    const month = M.chf(sum30, shown);
+    return `<section class="block"><h2 class="section-title">Rechner</h2><div class="mach-list">${cards}
+      <div class="card fin-api">
+        <p class="fc-total"><span>Beide Rechner, 30 Tage</span><b class="mono-num">${esc(M.kwhText(sum30))} · ${esc(M.chfText(month))}${price == null ? "*" : ""}</b></p>
+        <div class="mach-price"><label class="small">Strompreis <input name="fin-power" inputmode="decimal" value="${price == null ? "" : esc(String(price))}" placeholder="z. B. 0.29" size="6"> CHF pro kWh</label><button class="btn ghost" data-action="fin-power-save" type="button">Speichern</button></div>
+        <p class="muted small">${price == null ? `* Beispielpreis ${M.EXAMPLE_PRICE.toFixed(2)} CHF/kWh, bis du deinen Strompreis einträgst. ` : ""}Verbrauch geschätzt aus der Auslastung (alle 5 Minuten gemessen), die Grafikkarte im Gaming-PC misst ihre Watt selbst. Ausgelastet heisst: Rendern, Vertonen oder viel Rechenarbeit.</p>
+      </div></div></section>`;
   }
 
   // monthly fixed costs per app/brand (each currency its own bar)
@@ -591,6 +631,17 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
           toast(`Behalten ✓ – ${c.name} erinnert erst vor der nächsten Verlängerung wieder`);
         } catch (err) { c.ack_until = before; toast(errorText(err)); }
         return true;
+      }
+      case "fin-power-save": {
+        const raw = document.querySelector('[name="fin-power"]')?.value.trim().replace(",", ".") ?? "";
+        const p = raw === "" ? null : Number(raw);
+        if (p != null && !(p >= 0 && p <= 5)) { toast("Strompreis in CHF pro kWh, zum Beispiel 0.29"); return true; }
+        try {
+          await data.savePowerPrice(p);
+          if (st().value?.machines) st().value.machines.price = p;
+          toast(p == null ? "Strompreis gelöscht" : `Strompreis ${p.toFixed(2)} CHF/kWh gespeichert ✓`);
+        } catch (err) { toast(errorText(err)); }
+        break;
       }
       case "fin-pay": if (st().pay.has(id)) st().pay.delete(id); else st().pay.add(id); break;
       case "fin-copy":

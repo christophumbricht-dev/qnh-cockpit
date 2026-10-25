@@ -783,6 +783,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .fin-api-months { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
 .fin-api-months li { display: flex; justify-content: space-between; gap: 10px; color: var(--ink-2); }
 .fin-api .link { margin: 0; justify-self: start; }
+.mach-list { display: grid; gap: 12px; }
+.mach-strip { display: grid; grid-template-columns: repeat(14, 1fr); gap: 3px; height: 34px; align-items: end; }
+.mach-day { height: 100%; display: flex; align-items: flex-end; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.mach-day span { display: block; width: 100%; min-height: 2px; background: var(--brand); border-radius: 3px 3px 0 0; }
+.mach-price { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mach-price input { width: 6.5em; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .fin-bill { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; align-items: start; }
 .fin-main { min-width: 0; }
 .fin-date { display: grid; place-content: center; text-align: center; width: 56px; height: 56px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }

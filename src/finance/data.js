@@ -31,8 +31,37 @@ export async function loadFinance() {
   const bills = await sb().from("fin_bills").select("*")
     .or(`status.eq.open,updated_at.gte.${since}${privateOk ? ",and(paid_by.eq.privat,reimbursed_at.is.null)" : ""}`)
     .order("due_date", { ascending: true, nullsFirst: false }).limit(1000);
-  const [api, voice] = await Promise.all([loadApiCosts(), loadElevenlabs()]);
-  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk, api, voice };
+  const [api, voice, machines] = await Promise.all([loadApiCosts(), loadElevenlabs(), loadMachines()]);
+  return { costs: must(costs, "costs"), bills: must(bills, "bills"), privateOk, api, voice, machines };
+}
+
+// Rechner: machines, 31 days of hourly rows, the newest sample per machine, the electricity price
+// (migration 20261025100000_machines.sql). null = not set up yet.
+export async function loadMachines() {
+  if (DEMO) return demo.machines();
+  const since = new Date(Date.now() - 31 * 864e5).toISOString();
+  const [machines, price] = await Promise.all([
+    sb().from("machines").select("*").order("sort"),
+    sb().from("power_settings").select("price_chf_kwh").maybeSingle(),
+  ]);
+  if (machines.error || price.error) return null;
+  const hours = [];
+  for (let from = 0; ; from += 1000) {
+    const r = await sb().from("machine_hours").select("*").gte("hour", since).order("hour").range(from, from + 999);
+    if (r.error) return null;
+    hours.push(...r.data);
+    if (r.data.length < 1000) break;
+  }
+  const last = await Promise.all(machines.data.map((m) =>
+    sb().from("machine_samples").select("*").eq("machine", m.id).order("at", { ascending: false }).limit(1).maybeSingle()));
+  const price_chf_kwh = price.data?.price_chf_kwh;
+  return { machines: machines.data, hours, last: Object.fromEntries(machines.data.map((m, i) => [m.id, last[i].data ?? null])),
+    price: price_chf_kwh == null ? null : Number(price_chf_kwh) };
+}
+
+export async function savePowerPrice(price) {
+  if (DEMO) return demo.savePowerPrice(price);
+  must(await sb().from("power_settings").update({ price_chf_kwh: price, updated_at: new Date().toISOString() }).eq("id", true), "price");
 }
 
 // What the comment suggestions («Bei anderen», Anthropic API) cost per month – computed by social-publish from the
