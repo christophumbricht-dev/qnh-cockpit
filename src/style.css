@@ -788,6 +788,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .mach-day { height: 100%; display: flex; align-items: flex-end; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
 .mach-day span { display: block; width: 100%; min-height: 2px; background: var(--brand); border-radius: 3px 3px 0 0; }
 .mach-price { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mach-price .mach-windows { flex-basis: 100%; }
+.mach-price .mach-windows input { width: 100%; max-width: 22em; }
 .mach-price input { width: 6.5em; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .fin-bill { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; align-items: start; }
 .fin-main { min-width: 0; }

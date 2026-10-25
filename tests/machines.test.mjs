@@ -90,3 +90,35 @@ test("uploadDue once the oldest waiting sample is about an hour old", () => {
   assert.equal(uploadDue([{ at: "2026-10-25T07:30:00Z" }], now), false);
   assert.equal(uploadDue([{ at: "2026-10-25T07:00:00Z" }], now), true);
 });
+
+test("ntWindows reads windows with an optional start date and refuses nonsense", async () => {
+  const { ntWindows } = await import("../src/finance/machines.js");
+  assert.deepEqual(ntWindows("22:00-06:00, 12:30-17:00 ab 1.1.2027"), [
+    { from: 1320, to: 360, since: null }, { from: 750, to: 1020, since: "2027-01-01" }]);
+  assert.deepEqual(ntWindows(""), []);
+  assert.throws(() => ntWindows("abends"), /nicht lesbar/);
+  assert.throws(() => ntWindows("25:00-06:00"), /nicht lesbar/);
+});
+
+test("ntShare: Swiss local time, across midnight, half hours, window only from its date", async () => {
+  const { ntShare, ntWindows } = await import("../src/finance/machines.js");
+  const w = ntWindows("22:00-06:00, 12:30-17:00 ab 1.1.2027");
+  assert.equal(ntShare("2026-10-26T22:00:00Z", w), 1);      // 23:00 Swiss (winter time)
+  assert.equal(ntShare("2026-10-26T05:00:00Z", w), 0);      // 06:00 Swiss: high tariff
+  assert.equal(ntShare("2026-10-26T04:00:00Z", w), 1);      // 05:00 Swiss
+  assert.equal(ntShare("2026-10-26T11:00:00Z", w), 0);      // 12:00 Swiss, afternoon window not yet in 2026
+  assert.equal(ntShare("2027-01-04T11:00:00Z", w), 0.5);    // 12:00-13:00 Swiss, low from 12:30
+  assert.equal(ntShare("2027-07-05T14:00:00Z", w), 1);      // 16:00 Swiss summer time
+});
+
+test("cost: each hour at its tariff; null without a price", async () => {
+  const { cost, ntWindows } = await import("../src/finance/machines.js");
+  const hours = [
+    { machine: "gaming", hour: "2026-10-26T22:00:00Z", n: 12, n_battery: 0, n_busy: 0, cpu: 0, gpu: 0, gpu_watts: 55 },   // 0.1 kWh, night
+    { machine: "gaming", hour: "2026-10-26T08:00:00Z", n: 12, n_battery: 0, n_busy: 0, cpu: 0, gpu: 0, gpu_watts: 55 },   // 0.1 kWh, day
+  ];
+  const p = { ht: 0.3, nt: 0.2, windows: ntWindows("22:00-06:00") };
+  assert.ok(Math.abs(cost(gaming, hours, "2026-10-01T00:00:00Z", p) - 0.05) < 1e-9);
+  assert.ok(Math.abs(cost(gaming, hours, "2026-10-01T00:00:00Z", { ht: 0.3, nt: null, windows: [] }) - 0.06) < 1e-9);
+  assert.equal(cost(gaming, hours, "2026-10-01T00:00:00Z", null), null);
+});

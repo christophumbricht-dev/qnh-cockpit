@@ -33,7 +33,7 @@ const bills = [
   { id: "b6", payee: "Treuhand Muster AG", amount: 420, currency: "CHF", due_date: `${lastYear}-12-20`, status: "paid", iban: "CH9300762011623852957", reference: "", message: "Beratung Gründung", invoice_no: "T-88", scope: "qnh", category: "Treuhand", cost_id: null, file_path: null, note: "", source: "cockpit", paid_at: `${lastYear}-12-18T09:00:00Z`, created_at: `${lastYear}-11-30T09:00:00Z`, archived: true },
 ];
 
-export const load = async () => ({ ...(await wait({ costs, bills: bills.filter((b) => !b.archived), privateOk: true })), api: await apiCosts(), machines: await machines() });
+export const load = async () => ({ ...(await wait({ costs, bills: bills.filter((b) => !b.archived), privateOk: true })), api: await apiCosts() });
 // invented API usage of «Bei anderen» (USD per Swiss month)
 const monthBack = (k) => { const d = new Date(); d.setUTCDate(15); d.setUTCMonth(d.getUTCMonth() - k); return d.toISOString().slice(0, 7); };
 export const apiCosts = () => wait({ enabled: true, budget: "10.00", model: "claude-sonnet-5-5", months: [
@@ -61,7 +61,7 @@ export const url = async (path) => files.get(path) ?? "icon.svg";
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
 // invented machine load for «Rechner»: gaming PC renders most nights, laptop is used in the day (not real measurements)
-let demoPrice = null;
+let demoPrice = null;  // a power_settings row once saved
 export function machines() {
   const machines = [
     { id: "gaming", name: "Gaming-PC", idle_w: 45, cpu_w: 65, gpu_w: 145, sort: 1 },
@@ -80,6 +80,6 @@ export function machines() {
     gaming: { at: new Date(Date.now() - 2 * 6e4).toISOString(), cpu: 71, gpu: 94, gpu_watts: 141, ram: 48, disk_free_gb: 312, on_battery: false, jobs: ["blender"] },
     laptop: { at: new Date(Date.now() - 4 * 6e4).toISOString(), cpu: 12, gpu: null, gpu_watts: null, ram: 63, disk_free_gb: 88, on_battery: false, jobs: [] },
   };
-  return wait({ machines, hours, last, price: demoPrice });
+  return wait({ machines, hours, last, price: demoPrice });  // turned into { ht, nt, … } by the caller
 }
-export async function savePowerPrice(p) { demoPrice = p; emit(); }
+export async function savePowerPrice(row) { demoPrice = row; emit(); }

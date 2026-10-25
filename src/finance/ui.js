@@ -285,11 +285,13 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     if (!mv) return "";
     const today = zurichToday();
     const from7 = new Date(Date.now() - 7 * 864e5).toISOString(), from30 = new Date(Date.now() - 30 * 864e5).toISOString();
-    const price = mv.price ?? null, shown = price ?? M.EXAMPLE_PRICE;
-    let sum30 = 0;
+    const price = mv.price ?? null, shown = price ?? { ht: M.EXAMPLE_PRICE, nt: null, windows: [] };
+    let sum30 = 0, chf30 = 0;
     const cards = mv.machines.map((m) => {
       const s7 = M.summarize(m, mv.hours, from7), s30 = M.summarize(m, mv.hours, from30);
       sum30 += s30.kwh;
+      const cost = M.cost(m, mv.hours, from30, shown);
+      chf30 += cost;
       const last = mv.last[m.id], stt = M.status(last);
       const ago = stt.since ? new Intl.DateTimeFormat("de-CH", { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" }).format(new Date(stt.since)) : null;
       const now = stt.online && last
@@ -298,7 +300,6 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         : ago ? `zuletzt gemeldet ${ago}` : "noch keine Messung";
       const strip = M.lastDays(s30.days, 14, today);
       const bars = strip.map((d) => `<span class="mach-day" title="${esc(shortDate(d.day))}: ${esc(M.hoursText(d.busy))} gerechnet, ${esc(M.hoursText(d.on))} an"><span style="height:${Math.min(100, (d.busy / 24) * 100).toFixed(0)}%"></span></span>`).join("");
-      const cost = M.chf(s30.kwh, shown);
       return `<div class="card fin-api mach">
         <div class="fin-api-head"><span><b>${esc(m.name)}</b></span><span class="pill${stt.online ? " published" : " draft"}">${stt.online ? "läuft" : "aus"}</span></div>
         <p class="muted small">${esc(now)}</p>
@@ -307,12 +308,15 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         <p class="fc-total"><span>Strom 30 Tage</span><b class="mono-num">${esc(M.kwhText(s30.kwh))} · ${esc(M.chfText(cost))}${price == null ? "*" : ""}</b></p>
       </div>`;
     }).join("");
-    const month = M.chf(sum30, shown);
     return `<section class="block"><h2 class="section-title">Rechner</h2><div class="mach-list">${cards}
       <div class="card fin-api">
-        <p class="fc-total"><span>Beide Rechner, 30 Tage</span><b class="mono-num">${esc(M.kwhText(sum30))} · ${esc(M.chfText(month))}${price == null ? "*" : ""}</b></p>
-        <div class="mach-price"><label class="small">Strompreis <input name="fin-power" inputmode="decimal" value="${price == null ? "" : esc(String(price))}" placeholder="z. B. 0.29" size="6"> CHF pro kWh</label><button class="btn ghost" data-action="fin-power-save" type="button">Speichern</button></div>
-        <p class="muted small">${price == null ? `* Beispielpreis ${M.EXAMPLE_PRICE.toFixed(2)} CHF/kWh, bis du deinen Strompreis einträgst. ` : ""}Verbrauch geschätzt aus der Auslastung (alle 5 Minuten gemessen), die Grafikkarte im Gaming-PC misst ihre Watt selbst. Ausgelastet heisst: Rendern, Vertonen oder viel Rechenarbeit.</p>
+        <p class="fc-total"><span>Beide Rechner, 30 Tage</span><b class="mono-num">${esc(M.kwhText(sum30))} · ${esc(M.chfText(chf30))}${price == null ? "*" : ""}</b></p>
+        <div class="mach-price">
+          <label class="small">Hochtarif <input name="fin-power-ht" inputmode="decimal" value="${price?.ht == null ? "" : esc((price?.ht * 100).toFixed(2))}" placeholder="z. B. 30.00"> Rp./kWh</label>
+          <label class="small">Niedertarif <input name="fin-power-nt" inputmode="decimal" value="${price?.nt == null ? "" : esc((price?.nt * 100).toFixed(2))}" placeholder="z. B. 22.00"> Rp./kWh</label>
+          <label class="small mach-windows">Niedertarif-Zeiten <input name="fin-power-win" value="${esc(price?.windowsText ?? "")}" placeholder="z. B. 22:00-06:00, 12:30-17:00 ab 1.1.2027"></label>
+          <button class="btn ghost" data-action="fin-power-save" type="button">Speichern</button></div>
+        <p class="muted small">${price == null ? `* Beispielpreis ${(M.EXAMPLE_PRICE * 100).toFixed(0)} Rp./kWh, bis du deinen Strompreis einträgst. ` : "Jede Stunde zählt mit dem Tarif, der gerade gilt (Preise inkl. MWST). "}Verbrauch geschätzt aus der Auslastung (alle 5 Minuten gemessen), die Grafikkarte im Gaming-PC misst ihre Watt selbst. Ausgelastet heisst: Rendern, Vertonen oder viel Rechenarbeit.</p>
       </div></div></section>`;
   }
 
@@ -633,13 +637,18 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
         return true;
       }
       case "fin-power-save": {
-        const raw = document.querySelector('[name="fin-power"]')?.value.trim().replace(",", ".") ?? "";
-        const p = raw === "" ? null : Number(raw);
-        if (p != null && !(p >= 0 && p <= 5)) { toast("Strompreis in CHF pro kWh, zum Beispiel 0.29"); return true; }
+        // typed in Rp./kWh, stored in CHF/kWh
+        const rappen = (name) => { const v = document.querySelector(`[name="${name}"]`)?.value.trim().replace(",", ".") ?? ""; return v === "" ? null : Number(v) / 100; };
+        const ht = rappen("fin-power-ht"), nt = rappen("fin-power-nt");
+        const windowsText = document.querySelector('[name="fin-power-win"]')?.value.trim() ?? "";
+        if ([ht, nt].some((v) => v != null && !(v >= 0 && v <= 5))) { toast("Preise in Rappen pro kWh, zum Beispiel 33.67"); return true; }
+        if (ht == null && nt != null) { toast("Bitte zuerst den Hochtarif eintragen"); return true; }
+        try { M.ntWindows(windowsText); } catch (err) { toast(err.message); return true; }
+        const p = ht == null ? null : { ht, nt, windowsText };
         try {
           await data.savePowerPrice(p);
-          if (st().value?.machines) st().value.machines.price = p;
-          toast(p == null ? "Strompreis gelöscht" : `Strompreis ${p.toFixed(2)} CHF/kWh gespeichert ✓`);
+          if (st().value?.machines) st().value.machines.price = data.powerPrice(p && { price_chf_kwh: ht, price_nt_chf_kwh: nt, nt_windows: windowsText || null });
+          toast(p == null ? "Strompreis gelöscht" : "Strompreis gespeichert ✓");
         } catch (err) { toast(errorText(err)); }
         break;
       }

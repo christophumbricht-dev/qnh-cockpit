@@ -1,7 +1,7 @@
 -- Rechner: how busy the gaming PC and the laptop are and what their electricity costs (Finanzen → «Rechner»).
 -- machines: one row per computer with the power estimate (watts at rest / extra at full CPU / extra at full GPU).
 -- machine_samples: one measurement every 5 minutes from scripts/machine-heartbeat.mjs (uploaded in batches,
--- signed in as Christoph like the social import). power_settings: one row, the electricity price (null = not known yet).
+-- signed in as Christoph like the social import). power_settings: one row, the electricity price with high and low tariff (null = not known yet).
 -- Admins only. Samples older than 400 days are deleted daily.
 
 create table if not exists public.machines (
@@ -29,9 +29,14 @@ create table if not exists public.machine_samples (
 );
 create index if not exists machine_samples_at on public.machine_samples (machine, at desc);
 
+-- price_chf_kwh = high tariff (or the only one); price_nt_chf_kwh = low tariff inside nt_windows (Swiss local time,
+-- every day; a window may start on a date: '22:00-06:00, 12:30-17:00 ab 1.1.2027', parsed by ntWindows in
+-- src/finance/machines.js). Prices incl. VAT (what is paid).
 create table if not exists public.power_settings (
   id          boolean primary key default true check (id),
   price_chf_kwh numeric(6, 4) check (price_chf_kwh is null or price_chf_kwh between 0 and 5),
+  price_nt_chf_kwh numeric(6, 4) check (price_nt_chf_kwh is null or price_nt_chf_kwh between 0 and 5),
+  nt_windows  text check (nt_windows is null or char_length(nt_windows) <= 200),
   updated_at  timestamptz not null default now()
 );
 insert into public.power_settings (id) values (true) on conflict do nothing;

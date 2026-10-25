@@ -3,6 +3,7 @@ import { DEMO, client } from "../api.js";
 import { QNH } from "../apps.js";
 import * as demo from "./demo.js";
 import { billFileType, inPeriod } from "./calc.js";
+import { ntWindows } from "./machines.js";
 
 const BUCKET = "finance";
 const sb = () => client(QNH);
@@ -20,7 +21,7 @@ const pick = (o, keys) => Object.fromEntries(keys.filter((k) => k in o).map((k) 
 // privateOk: the columns for receipts Christoph paid himself exist (migration 20261021120000_finance_private.sql);
 // those stay loaded until they are paid back, however old.
 export async function loadFinance() {
-  if (DEMO) return { ...(await demo.load()), voice: await loadElevenlabs() };
+  if (DEMO) return { ...(await demo.load()), voice: await loadElevenlabs(), machines: await loadMachines() };
   const [costs, probe] = await Promise.all([
     sb().from("fin_costs").select("*").order("name"),
     sb().from("fin_bills").select("paid_by").limit(1),
@@ -38,11 +39,11 @@ export async function loadFinance() {
 // Rechner: machines, 31 days of hourly rows, the newest sample per machine, the electricity price
 // (migration 20261025100000_machines.sql). null = not set up yet.
 export async function loadMachines() {
-  if (DEMO) return demo.machines();
+  if (DEMO) { const v = await demo.machines(); return { ...v, price: powerPrice(v.price) }; }
   const since = new Date(Date.now() - 31 * 864e5).toISOString();
   const [machines, price] = await Promise.all([
     sb().from("machines").select("*").order("sort"),
-    sb().from("power_settings").select("price_chf_kwh").maybeSingle(),
+    sb().from("power_settings").select("price_chf_kwh, price_nt_chf_kwh, nt_windows").maybeSingle(),
   ]);
   if (machines.error || price.error) return null;
   const hours = [];
@@ -54,14 +55,22 @@ export async function loadMachines() {
   }
   const last = await Promise.all(machines.data.map((m) =>
     sb().from("machine_samples").select("*").eq("machine", m.id).order("at", { ascending: false }).limit(1).maybeSingle()));
-  const price_chf_kwh = price.data?.price_chf_kwh;
-  return { machines: machines.data, hours, last: Object.fromEntries(machines.data.map((m, i) => [m.id, last[i].data ?? null])),
-    price: price_chf_kwh == null ? null : Number(price_chf_kwh) };
+  return { machines: machines.data, hours, last: Object.fromEntries(machines.data.map((m, i) => [m.id, last[i].data ?? null])), price: powerPrice(price.data) };
 }
 
-export async function savePowerPrice(price) {
-  if (DEMO) return demo.savePowerPrice(price);
-  must(await sb().from("power_settings").update({ price_chf_kwh: price, updated_at: new Date().toISOString() }).eq("id", true), "price");
+// { ht, nt, windowsText, windows } in CHF/kWh, or null while no price is entered
+export function powerPrice(row) {
+  if (row?.price_chf_kwh == null) return null;
+  let windows = [];
+  try { windows = ntWindows(row.nt_windows); } catch { /* unreadable: high tariff only */ }
+  return { ht: Number(row.price_chf_kwh), nt: row.price_nt_chf_kwh == null ? null : Number(row.price_nt_chf_kwh), windowsText: row.nt_windows ?? "", windows };
+}
+
+// p = { ht, nt, windowsText } (CHF/kWh) or null to clear
+export async function savePowerPrice(p) {
+  const row = { price_chf_kwh: p?.ht ?? null, price_nt_chf_kwh: p?.nt ?? null, nt_windows: p?.windowsText || null };
+  if (DEMO) return demo.savePowerPrice(row);
+  must(await sb().from("power_settings").update({ ...row, updated_at: new Date().toISOString() }).eq("id", true), "price");
 }
 
 // What the comment suggestions («Bei anderen», Anthropic API) cost per month – computed by social-publish from the
