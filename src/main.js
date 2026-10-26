@@ -6,7 +6,7 @@ import { bucket, chartSvg, periodLabel, sparkSvg } from "./charts.js";
 import { search, greeting, firstName } from "./search.js";
 import { createSocial } from "./social/ui.js";
 import { socialConfigured } from "./social/data.js";
-import { formatZurich } from "./social/validate.js";
+import { formatZurich, isPlaceholder } from "./social/validate.js";
 import { createQnh } from "./qnh/ui.js";
 import { qnhReady } from "./qnh/data.js";
 import { createStore } from "./store/ui.js";
@@ -408,7 +408,11 @@ function socialItems(today) {
   for (const p of v.posts.filter((x) => x.status === "failed")) {
     out.push({ key: `post:${p.id}`, lane: "now", tone: "alert", title: `Beitrag mit Fehler: «${first(p)}»`, sub: p.last_error?.slice(0, 120), where: where(p), scope: acc(p)?.app_id, href: "#social" });
   }
-  const drafts = v.posts.filter((p) => p.status === "draft");
+  // placeholders hold a day until the video exists: a reminder 3 days ahead, not part of «Freigabe»
+  for (const p of v.posts.filter((x) => x.status === "draft" && isPlaceholder(x) && x.scheduled_at && new Date(x.scheduled_at).getTime() < now + 3 * 864e5)) {
+    out.push({ key: `ph:${p.id}`, lane: "now", tone: "alert", title: `Video fehlt noch: «${first(p).replace(/^PLATZHALTER · /, "")}»`, sub: `geplant ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });
+  }
+  const drafts = v.posts.filter((p) => p.status === "draft" && !isPlaceholder(p));
   const urgent = drafts.filter((p) => p.scheduled_at && new Date(p.scheduled_at).getTime() < now + 864e5);
   for (const p of urgent) {
     out.push({ key: `draft:${p.id}`, lane: "now", tone: "alert", title: `Noch nicht freigegeben: «${first(p)}»`, sub: `geplant ${formatZurich(p.scheduled_at)}`, where: where(p), scope: acc(p)?.app_id, href: "#social" });

@@ -9,6 +9,7 @@
 //   npm run social -- comments draft <id> "…"                         reply suggestion – Christoph sends it himself
 //   npm run social -- import --replace    also take over changed packages of approved/edited posts (asks Christoph first!)
 //   npm run social -- todo-clear [--dry]  empty the to-do notes of drafts/planned/failed posts (backup in pakete/)
+//   npm run social -- platzhalter <app/plattform> <YYYY-MM-DD> <HH:MM> "Was kommt"   hold a day in the calendar (social-placeholder.mjs)
 //
 // Uses Christoph's admin session from `npm run roadmap -- login`. Remembers what was imported in
 // pakete/.imported.json (local, gitignored like the packages). Format: docs/social-paket.md
@@ -16,7 +17,8 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
-import { EDITABLE, jpegSize, packageHash, plan } from "./social-lib.mjs";
+import { EDITABLE, jpegSize, packageHash, plan, replacedPlaceholders } from "./social-lib.mjs";
+import { placeholder } from "./social-placeholder.mjs";
 import { stats } from "./social-stats.mjs";
 import { mb, prepareVideo } from "./social-video.mjs";
 import { comments } from "./social-comments.mjs";
@@ -117,7 +119,7 @@ async function save(sb, p, id, isNew) {
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
     : sb.from("social_posts").update(row).eq("id", id);
-  const { data, error } = await q.select("id, status, updated_at, scheduled_at").single();
+  const { data, error } = await q.select("id, account_id, status, updated_at, scheduled_at").single();
   if (error) throw new Error(error.message);
   return data;
 }
@@ -161,7 +163,8 @@ async function todoClear(sb, a) {
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  if (!["status", "import", "stats", "comments", "todo-clear"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | todo-clear [--dry]");
+  if (!["status", "import", "stats", "comments", "todo-clear", "platzhalter"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | todo-clear [--dry] | platzhalter <app/plattform> <datum> <zeit> \"…\" | platzhalter list");
+  if (cmd === "platzhalter") return placeholder(await signedIn(), args(process.argv.slice(3)));
   if (cmd === "todo-clear") return todoClear(await signedIn(), args(process.argv.slice(3), ["dry"]));
   if (cmd === "stats") return stats(await signedIn(), args(process.argv.slice(3), ["json", "refresh"]));
   if (cmd === "comments") return comments(await signedIn(), args(process.argv.slice(3), ["json", "all", "clear"]));
@@ -281,6 +284,11 @@ async function main() {
           if (old.length) await sb.storage.from(BUCKET).remove(old); // best effort
         }
         markers[r.folder] = { id: saved.id, hash: r.hash, updated_at: saved.updated_at, imported_at: new Date().toISOString() };
+        // the real post is here: its placeholder for that day goes away
+        for (const ph of replacedPlaceholders(posts, saved)) {
+          const { error } = await sb.from("social_posts").update({ status: "cancelled" }).eq("id", ph.id);
+          if (!error) { ph.status = "cancelled"; r.note = [r.note, "Platzhalter ersetzt"].filter(Boolean).join(" · "); }
+        }
         r.done = true;
         r.status = saved.status;
         r.scheduled_at = saved.scheduled_at ?? r.post?.scheduled_at;

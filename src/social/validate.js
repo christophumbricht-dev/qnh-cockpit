@@ -232,3 +232,8 @@ const DISPLAY = new Intl.DateTimeFormat("de-CH", { timeZone: TZ, weekday: "short
 export const formatZurich = (iso) => (iso ? DISPLAY.format(new Date(iso)) : "");
 const DATE = new Intl.DateTimeFormat("de-CH", { timeZone: TZ, day: "numeric", month: "numeric", year: "numeric" });
 export const formatZurichDate = (iso) => (iso ? DATE.format(new Date(iso)) : "");
+
+// Platzhalter: a planned post without its video yet holds its day in the calendar (draft «PLATZHALTER · …» without
+// media, made by `npm run social -- platzhalter`). Not part of the review round; replaced by the real package.
+export const PLACEHOLDER = "PLATZHALTER";
+export const isPlaceholder = (p) => String(p?.caption ?? "").startsWith(PLACEHOLDER) && !(p?.media ?? []).length;

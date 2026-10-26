@@ -46,3 +46,16 @@ test("plan: links packages imported by hand earlier, skips past times", () => {
   assert.deepEqual(act(rows), { a: "link", b: "past", c: "new" });
   assert.equal(rows[0].post.id, "p9");
 });
+
+test("placeholder: replaced by a new post of the same account on the same Swiss day, never the post itself", async () => {
+  const { isPlaceholder, replacedPlaceholders } = await import("../scripts/social-lib.mjs");
+  const ph = { id: "ph", account_id: "ig", status: "draft", caption: "PLATZHALTER · Panel Puzzle 1", media: [], scheduled_at: "2026-11-08T17:00:00Z" };
+  const other = { ...ph, id: "ph2", account_id: "yt" };
+  const nextDay = { ...ph, id: "ph3", scheduled_at: "2026-11-08T23:30:00Z" };       // 00:30 Swiss time on the 9th
+  const real = { id: "new", account_id: "ig", status: "draft", caption: "Oil pressure high …", media: [{ path: "x.mp4" }], scheduled_at: "2026-11-08T17:00:00Z" };
+  assert.equal(isPlaceholder(ph), true);
+  assert.equal(isPlaceholder(real), false);
+  assert.equal(isPlaceholder({ ...ph, media: [{ path: "a" }] }), false);   // has media: a real post
+  assert.deepEqual(replacedPlaceholders([ph, other, nextDay, real], real).map((p) => p.id), ["ph"]);
+  assert.deepEqual(replacedPlaceholders([{ ...ph, status: "cancelled" }], real), []);
+});

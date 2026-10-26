@@ -3,7 +3,7 @@
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
-import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
@@ -199,7 +199,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const order = [...groups.entries()].sort(([ta, a], [tb, b]) => (ta === NO_TOPIC) - (tb === NO_TOPIC) || next(a) - next(b) || last(b) - last(a));
     return order.map(([topic, ps]) => {
       const sorted = [...ps].sort((a, b) => byTime(a, b, "scheduled_at"));
-      const drafts = ps.filter((p) => p.status === "draft").length;
+      const drafts = ps.filter((p) => p.status === "draft" && !isPlaceholder(p)).length;
       return `<section class="topic-group">
         <div class="topic-head"><h3 class="group">${esc(topic)} <span class="muted">${ps.length}</span></h3>
           ${drafts ? `<button class="btn ghost" data-action="soc-review-topic" data-value="${esc(topic)}">Freigabe-Runde (${drafts})</button>` : ""}</div>
@@ -237,7 +237,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const now = Date.now();
     const next = mine.filter((p) => p.status === "approved" && p.scheduled_at && new Date(p.scheduled_at).getTime() > now).sort((x, y) => x.scheduled_at.localeCompare(y.scheduled_at))[0];
     const approved = mine.filter((p) => p.status === "approved").length;
-    const drafts = mine.filter((p) => p.status === "draft").length;
+    const drafts = mine.filter((p) => p.status === "draft" && !isPlaceholder(p)).length;
     const month = mine.filter((p) => p.status === "published" && p.published_at && now - new Date(p.published_at).getTime() < 30 * 864e5).length;
     const c = inbox.countFor(a.id);
     const youtube = a.platform === "youtube";
@@ -571,7 +571,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function reviewQueue() {
     const st = S.social;
     return posts()
-      .filter((p) => p.status === "draft" && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
+      .filter((p) => p.status === "draft" && !isPlaceholder(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
       .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {

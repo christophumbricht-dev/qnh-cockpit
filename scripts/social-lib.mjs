@@ -53,3 +53,13 @@ export function plan(pkgs, markers, posts, now = new Date()) {
     return { ...pkg, action: "new" };
   });
 }
+
+// Platzhalter (26.10.2026): a planned post without its video yet holds its day in the cockpit calendar as a draft
+// «PLATZHALTER · …» without media (it cannot be approved). When the real package of the same account and the same
+// Swiss day is imported, the placeholder is cancelled.
+import { PLACEHOLDER, isPlaceholder } from "../src/social/validate.js";
+export { PLACEHOLDER, isPlaceholder };
+const swissDay = (iso) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date(iso));
+// placeholders that a newly imported post replaces (same account, same Swiss day, still a draft)
+export const replacedPlaceholders = (posts, saved) => posts.filter((p) => isPlaceholder(p) && p.status === "draft" && p.id !== saved.id
+  && p.account_id === saved.account_id && p.scheduled_at && saved.scheduled_at && swissDay(p.scheduled_at) === swissDay(saved.scheduled_at));
