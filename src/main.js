@@ -133,6 +133,7 @@ function route() {
     S.social.byTopic = second === "themen"; // Social → Themen: same posts, grouped by topic
     if (second === "kommentare") social.setMode("comments");
     else if (second === "bei-anderen") social.setMode("outreach");
+    else if (second === "wochenplan") { S.social.filter = "all"; social.setMode("week"); }
     else if (second === "themen") { S.social.filter = "all"; social.setMode("list"); }
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }

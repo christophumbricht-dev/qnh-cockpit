@@ -871,6 +871,25 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .seg-btn.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
 .soc-apps { margin: 0 0 12px; }
 .channels { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; margin-bottom: 8px; }
+/* Social → Wochenplan: one card per channel, one row per weekday */
+.wk-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 6px; }
+.wk-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.wk-card .channel-head { display: flex; align-items: center; gap: 10px; }
+.wk-score { margin-left: auto; font: 700 15px/1 var(--display); padding: 5px 9px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); }
+.wk-score.full { background: var(--brand-soft); color: var(--brand); border-color: transparent; }
+.wk-days { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wk-day { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--surface); }
+.wk-when { display: grid; font-size: 13px; line-height: 1.3; }
+.wk-what { display: grid; gap: 2px; min-width: 0; font-size: 14px; }
+.wk-post { justify-self: start; margin: 0; text-align: left; font-size: 13px; overflow-wrap: anywhere; }
+.wk-state { font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--muted); }
+.wk-day.wk-ok { border-left-color: var(--brand); }
+.wk-day.wk-ok .wk-state { color: var(--brand); }
+.wk-day.wk-draft { border-left-color: var(--warn, #f59f00); }
+.wk-day.wk-placeholder { border-left-color: var(--warn, #f59f00); border-left-style: dashed; }
+.wk-day.wk-failed, .wk-day.wk-empty { border-left-color: var(--alert); }
+.wk-day.wk-failed .wk-state, .wk-day.wk-empty .wk-state { color: var(--alert); }
+.wk-day.wk-today { box-shadow: 0 0 0 2px var(--brand-soft); }
 .channel-card { display: grid; gap: 12px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
 .channel-head { display: flex; align-items: center; gap: 12px; }
 .channel-head .app-badge { width: 40px; height: 40px; border-radius: 12px; font-size: 16px; }

@@ -5,6 +5,7 @@ import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
 import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
+import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf, weekGrid, weekScore } from "./weekplan.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
@@ -95,7 +96,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const openComments = inbox.count(false);
     const openOut = outreach.count();
-    const modes = [["list", "Beiträge"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
+    const modes = [["list", "Beiträge"], ["calendar", "Kalender"], ["week", "Wochenplan"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
@@ -123,7 +124,38 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
       ${st.mode === "list" || st.mode === "calendar" ? searchBar(shown) : ""}
-      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "calendar" ? calendarView(shown) : listView(shown)}`;
+      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "calendar" ? calendarView(shown) : st.mode === "week" ? weekView() : listView(shown)}`;
+  }
+
+  // ---------- Wochenplan: the standard week per channel next to what is really planned (weekplan.js) ----------
+  const WK_STATE = { ok: "✓ bereit", draft: "Entwurf", placeholder: "Video fehlt", failed: "Fehler", empty: "noch leer" };
+  function weekView() {
+    const st = S.social;
+    const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
+    const monday = st.weekStart ?? thisMonday;
+    const today = utcToZurichLocal(new Date().toISOString()).slice(0, 10);
+    const swissDay = (iso) => utcToZurichLocal(iso).slice(0, 10);
+    const rows = weekGrid(WEEKPLAN.filter((c) => st.filter === "all" || c.app_id === st.filter), posts(), accounts(), monday, { swissDay, isPlaceholder });
+    const dm = (iso) => `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.`;
+    const kw = (() => { const d = new Date(`${addDaysIso(monday, 3)}T12:00:00Z`); const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return 1 + Math.round(((d - y) / 864e5 - 3 + ((y.getUTCDay() + 6) % 7)) / 7); })();
+    const name = (p) => String(p.title || p.caption || "Story").split("\n").find(Boolean)?.replace(/^PLATZHALTER · /, "").slice(0, 60) ?? "";
+    const card = (row) => {
+      const a = row.account;
+      const sc = weekScore(row);
+      const head = `<div class="channel-head">${appBadge(row.channel.app_id)}<div><b>${esc(a ? (a.platform === "youtube" ? a.handle || appName(a.app_id) : `@${a.handle}`) : appName(row.channel.app_id))}</b><span class="muted small">${esc(PLATFORM[row.channel.platform] ?? row.channel.platform)}${a ? "" : " · noch nicht verbunden"}</span></div><span class="wk-score${sc.ok === sc.total ? " full" : ""}" title="Tage mit freigegebenem Beitrag">${sc.ok}/${sc.total}</span></div>`;
+      const days = row.days.map((d) => `<li class="wk-day wk-${d.state}${d.date === today ? " wk-today" : ""}">
+          <span class="wk-when"><b>${WEEK_DAYS[d.slot.day]}</b> ${dm(d.date)}<span class="muted">${esc(d.slot.time)}</span></span>
+          <span class="wk-what"><b>${esc(d.slot.format)}</b>${d.slot.alt ? `<span class="muted small">oder ${esc(d.slot.alt)}</span>` : ""}
+            ${d.posts.map((p) => `<button class="link wk-post" data-action="soc-open" data-id="${esc(p.id)}">${esc(name(p))}</button>`).join("")}</span>
+          <span class="wk-state">${WK_STATE[d.state]}</span></li>`).join("");
+      return `<section class="channel-card wk-card">${head}<ul class="wk-days">${days}</ul></section>`;
+    };
+    return `<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
+        <b>KW ${kw} · ${dm(monday)} bis ${dm(addDaysIso(monday, 6))}${monday.slice(0, 4)}</b>
+        <button class="btn ghost" data-action="soc-week" data-value="7" aria-label="Woche vor">›</button>
+        ${monday !== thisMonday ? `<button class="link" data-action="soc-week" data-value="0">Diese Woche</button>` : ""}</div>
+      <p class="muted small">Standardwoche pro Kanal (Ziel: jeden Tag auf jedem Kanal) und was in dieser Woche wirklich geplant ist. «Video fehlt» = Platzhalter, das Paket kommt noch.</p>
+      <div class="channels wk-grid">${rows.map(card).join("")}</div>`;
   }
 
   // ---------- search + status filter ----------
@@ -324,7 +356,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
+    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "week", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -1085,6 +1117,13 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           toast(bad.length ? `@${bad[0].account}: ${bad[0].error}` : "Statistik aktualisiert");
         } catch (err) { toast(errorText(err)); }
         st.stats = null; await loadStats(true); return true;
+      case "soc-week": {
+        const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
+        const n = Number(el.dataset.value);
+        st.weekStart = n === 0 ? null : addDaysIso(st.weekStart ?? thisMonday, n);
+        render();
+        return true;
+      }
       case "soc-mode": st.mode = el.dataset.value; try { localStorage.setItem("qnh-social-mode", st.mode); } catch {} render(); return true;
       case "soc-month": st.month = el.dataset.value; render(); return true;
       case "soc-new-on":
@@ -1378,7 +1417,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
-  const setMode = (mode) => { if (["list", "calendar", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
+  const setMode = (mode) => { if (["list", "calendar", "week", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
   // checklist of one post for «Heute» (same checkboxes as in the list, action soc-todo-check)
   function todoChecklist(id) {
     const p = posts().find((x) => x.id === id);
