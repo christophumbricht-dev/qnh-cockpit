@@ -57,7 +57,9 @@ async function draft(sb, prefix, text, clear) {
   if (!/^[0-9a-f-]{6,36}$/i.test(prefix ?? "")) fail("Kommentar-ID (mindestens die ersten 6 Zeichen) angeben.");
   if (!clear && !text.trim()) fail("Antworttext fehlt (oder --clear).");
   if (text.length > 2200) fail("Höchstens 2200 Zeichen.");
-  const { data, error } = await sb.from("social_comments").select("id, author, body, own").is("deleted_at", null).limit(1000);
+  // a full id is looked up directly; a prefix among the newest 1000 (the list shows the newest first)
+  const q = sb.from("social_comments").select("id, author, body, own").is("deleted_at", null);
+  const { data, error } = prefix.length === 36 ? await q.eq("id", prefix.toLowerCase()) : await q.order("posted_at", { ascending: false }).limit(1000);
   if (error) fail(error.message);
   const hits = data.filter((c) => c.id.startsWith(prefix.toLowerCase()));
   if (hits.length !== 1) fail(hits.length ? `«${prefix}» ist nicht eindeutig – mehr Zeichen angeben.` : `Kein Kommentar «${prefix}».`);

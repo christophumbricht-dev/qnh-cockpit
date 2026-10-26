@@ -2,7 +2,7 @@
 // npm run check:secrets – fails if something secret could end up in the repo or the published site.
 // The cockpit runs in the browser: only public values (Supabase URL + anon key) may ever be in it.
 //
-// Checks src/, public/, dist/ (browser code) and supabase/ (server code + SQL):
+// Checks src/, public/, dist/ (browser code), supabase/, scripts/, tests/, docs/ and the files in the root (the repo is public):
 //   - JWTs whose payload has role "service_role"
 //   - Supabase secret keys (sb_secret_…)
 //   - Meta / Instagram access tokens (EAA…, IGAA…), Google client secrets and tokens (GOCSPX-…, 1//…, ya29.…)
@@ -16,7 +16,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const BROWSER_DIRS = ["src", "public", "dist"];
-const SERVER_DIRS = ["supabase"];
+const SERVER_DIRS = ["supabase", "scripts", "tests", "docs"];
 const SKIP = new Set(["node_modules", ".git", ".temp", ".branches"]);
 const TEXT = /\.(js|mjs|cjs|ts|tsx|jsx|json|html|css|svg|sql|toml|md|txt|webmanifest|map|yml|yaml)$|^CNAME$|^\.env/i;
 
@@ -39,13 +39,13 @@ function jwtRole(payload) {
   }
 }
 
-function files(dir) {
+function files(dir, deep = true) {
   if (!existsSync(dir)) return [];
   const out = [];
   for (const name of readdirSync(dir)) {
     if (SKIP.has(name)) continue;
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) out.push(...files(p));
+    if (statSync(p).isDirectory()) { if (deep) out.push(...files(p)); }
     else if (TEXT.test(name)) out.push(p);
   }
   return out;
@@ -65,8 +65,10 @@ function privateEnvValues(root) {
 export function checkSecrets(root) {
   const problems = [];
   const envValues = privateEnvValues(root);
-  const scan = (dir, browser) => {
-    for (const file of files(join(root, dir))) {
+  const scan = (dir, browser, deep = true) => {
+    for (const file of files(join(root, dir), deep)) {
+      if (/^.env/.test(relative(root, file))) continue;   // the local .env itself is gitignored
+      if (/check-secrets.test.mjs$/.test(file)) continue;   // its own test holds made-up keys on purpose
       const text = readFileSync(file, "utf8");
       const where = relative(root, file);
       for (const { name, re } of PATTERNS) if (re.test(text)) problems.push(`${where}: ${name}`), (re.lastIndex = 0);
@@ -77,6 +79,7 @@ export function checkSecrets(root) {
   };
   for (const d of BROWSER_DIRS) scan(d, true);
   for (const d of SERVER_DIRS) scan(d, false);
+  scan(".", false, false);
   return problems;
 }
 
@@ -88,5 +91,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const p of problems) console.error(`  ✗ ${p}`);
     process.exit(1);
   }
-  console.log("check:secrets ok – no secrets in src/, public/, dist/, supabase/");
+  console.log("check:secrets ok – no secrets in the repo (src, public, dist, supabase, scripts, tests, docs, root)");
 }

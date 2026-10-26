@@ -12,7 +12,7 @@ import { publishYoutube } from "./youtube.ts";
 export const MAX_ATTEMPTS = 3;
 
 export type UserTag = { username: string; x: number; y: number };
-export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null; duration?: number | null };
+export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null; duration?: number | null; still?: string };
 
 // Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
 export function userTags(m: MediaItem): string | undefined {
@@ -234,7 +234,11 @@ async function waitUntilFinished(deps: Deps, g: ReturnType<typeof graph>, contai
     if (status_code === "FINISHED" || status_code === "PUBLISHED") return true;
     if (status_code === "ERROR") throw new FinalError(VIDEO_ERROR);
     if (status_code === "EXPIRED") throw new Error("Der Instagram-Container ist abgelaufen. Wird neu erstellt.");
-    if (i < polls - 1) await deps.sleep(deps.pollMs ?? 20000);
+    if (i < polls - 1) {
+      // never sleep past the run's deadline: the next run (10 min) asks again, the container keeps its state
+      if (deps.deadline && deps.now().getTime() + (deps.pollMs ?? 20000) > deps.deadline) return false;
+      await deps.sleep(deps.pollMs ?? 20000);
+    }
   }
   return false;
 }
@@ -335,7 +339,7 @@ export async function cleanup(deps: Deps, keepDays = 14): Promise<Result[]> {
   const before = new Date(deps.now().getTime() - keepDays * 86400_000);
   const out: Result[] = [];
   for (const post of await deps.store.publishedWithFiles(before)) {
-    const paths = [...post.media.map((m) => m.path), ...(post.cover_path ? [post.cover_path] : [])];
+    const paths = [...post.media.flatMap((m) => [m.path, ...(m.still ? [m.still] : [])]), ...(post.cover_path ? [post.cover_path] : [])];
     await deps.store.removeFiles(paths);
     await deps.store.update(post.id, { media_deleted_at: deps.now().toISOString() });
     out.push({ id: post.id, status: "files-deleted" });

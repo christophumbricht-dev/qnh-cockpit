@@ -18,7 +18,12 @@ export async function loadSocial() {
   ]);
   const rows = must(posts, "posts");
   if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; hasTitle = "title" in rows[0]; hasAi = "ai_generated" in rows[0]; hasReply = "first_comment_reply" in rows[0]; hasTopic = "topic" in rows[0]; hasKids = "made_for_kids" in rows[0]; }
-  else hasTitle = !(await sb().from("social_posts").select("title").limit(1)).error; // empty table: ask for the column
+  else {
+    // empty table: ask the database which columns exist (else the first save would silently drop them)
+    const has = async (c) => !(await sb().from("social_posts").select(c).limit(1)).error;
+    [hasTodo, hasLocation, hasTitle, hasAi, hasReply, hasTopic, hasKids] = await Promise.all(
+      ["todo", "location", "title", "ai_generated", "first_comment_reply", "topic", "made_for_kids"].map(has));
+  }
   const places = hasLocation ? await sb().from("social_locations").select("id, page_id, name").order("name") : { data: [] };
   // what is already on Instagram (from the daily statistics; empty until that is set up)
   const seen = await sb().from("social_media_stats").select("media_id, account_id, caption, posted_at, permalink").order("day", { ascending: false }).limit(500);

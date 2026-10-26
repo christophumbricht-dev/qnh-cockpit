@@ -1,6 +1,6 @@
 // Cockpit page «Finanzen»: costs & subscriptions, bills to pay (QR-bill from a PDF or photo), overview, CSV.
 // Paying happens in e-banking – here Christoph keeps track and marks «Bezahlt».
-import { esc } from "../format.js";
+import { esc, web } from "../format.js";
 import * as data from "./data.js";
 import { BILL_FILE_ACCEPT, INTERVALS, addDays, amountText, billDue, billFileType, bookingDay, daysBetween, exportPeriod, financeDue, financeLane, monthly, monthlyTotals, money, moneyList, nextRenewal, owedPrivately, parseAmount, sumBy, toCsv, upcoming, zurichDay, zurichToday } from "./calc.js";
 import { QrBillError, formatIban, formatReference, ibanValid, parseSwissQr } from "./qrbill.js";
@@ -25,7 +25,6 @@ const TEMPLATES = [
 ];
 const fmtDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("de-CH", { weekday: "short", day: "numeric", month: "numeric", year: "numeric" }) : "");
 const shortDate = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString("de-CH", { day: "numeric", month: "short" }) : "");
-const web = (u) => (/^https?:\/\//i.test(String(u ?? "")) ? u : null);
 
 export function dueText(days) {
   if (days == null) return "ohne Fälligkeit";
@@ -46,8 +45,12 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
   const inScope = (r) => st().scope === "all" || r.scope === st().scope;
 
   async function load(force = false) {
-    if (!data.financeConfigured() || st().loading || (st().value !== undefined && !force)) return;
+    if (!data.financeConfigured()) return;
+    // a forced reload while one is running runs once more afterwards (else an older answer overwrites a quick «Bezahlt ✓»)
+    if (st().loading) { if (force) st().again = true; return; }
+    if (st().value !== undefined && !force) return;
     st().loading = true;
+    st().again = false;
     try {
       st().value = await data.loadFinance();
       st().error = null;
@@ -57,6 +60,7 @@ export function createFinance({ S, render, toast, errorText, scopes, scopeBadge 
     }
     st().loading = false;
     if (!document.activeElement?.closest?.(".fin-form")) render();
+    if (st().again) load(true);
   }
 
   // ---------- for «Heute» ----------

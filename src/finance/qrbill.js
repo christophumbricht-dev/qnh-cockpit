@@ -1,6 +1,7 @@
 // Swiss QR-bill (QR-Rechnung): the text inside the QR code («SPC» format, Swiss Implementation Guidelines 2.x)
 // → payee, IBAN, amount, reference, message. Pure functions, unit-tested (tests/finance-qrbill.test.mjs).
 // The code itself is read from a PDF or photo by reader.js.
+import { addDays, zurichToday } from "./calc.js";
 
 // fixed line positions of the «SPC» payload (0-based)
 const L = { type: 0, version: 1, coding: 2, iban: 3, cAdrTp: 4, cName: 5, cStreet: 6, cBuilding: 7, cZip: 8, cTown: 9, cCountry: 10,
@@ -96,12 +97,6 @@ export function parseBillInfo(info) {
   return out;
 }
 
-const addDays = (iso, n) => {
-  const d = new Date(`${iso}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-};
-
 // due date from the bill information, else today + 30 days; source says where it came from:
 //   "terms" (invoice date + payment terms), "terms-today" (payment terms, no invoice date → from today),
 //   "invoice-date" (invoice date + 30 days, no terms), "assumed" (today + 30 days)
@@ -109,14 +104,13 @@ export function suggestDue(billInfo, today) {
   if (billInfo.invoiceDate) return { date: addDays(billInfo.invoiceDate, billInfo.netDays ?? 30), source: billInfo.netDays != null ? "terms" : "invoice-date" };
   return { date: addDays(today, billInfo.netDays ?? 30), source: billInfo.netDays != null ? "terms-today" : "assumed" };
 }
-export const suggestDueDate = (billInfo, today) => suggestDue(billInfo, today).date;
 
 const REF_MAX = 40; // fin_bills.reference
 const fmtDay = (iso) => `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.${iso.slice(0, 4)}`;
 
 // → the bill fields plus `warnings` (German, for the form): things to check before paying. Throws QrBillError
 // only when the code is unusable.
-export function parseSwissQr(text, { today = new Date().toISOString().slice(0, 10) } = {}) {
+export function parseSwissQr(text, { today = zurichToday() } = {}) {   // Swiss day, not the UTC one
   const lines = String(text ?? "").replace(/\r\n?/g, "\n").split("\n");
   if (clean(lines[L.type]) !== "SPC") throw new QrBillError("Das ist kein QR-Code einer Schweizer QR-Rechnung.");
   if (!/^02\d\d$/.test(clean(lines[L.version]))) throw new QrBillError(`Unbekannte QR-Rechnungs-Version «${clean(lines[L.version])}».`);

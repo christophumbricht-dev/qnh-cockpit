@@ -1,5 +1,5 @@
 // Roadmap (board per app + QNH) and Hangar (quick links). Rendered inside main.js.
-import { esc } from "../format.js";
+import { esc, web } from "../format.js";
 import * as data from "./data.js";
 import { addDays, dayOfMonth, recurringDone, zurichToday } from "../finance/calc.js";
 import { dueLabel, laneForDate } from "../today.js";
@@ -36,11 +36,11 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
   const repeatSupported = () => (S.qnh.items ?? []).some((i) => "repeat" in i);
   const snoozed = (i, today) => i.snoozed_until && i.snoozed_until > today;
 
-  // items with a due date in the next 7 days (or overdue), unless put off with «Später»
+  // items with a due date in the next 7 Swiss days (or overdue), unless put off with «Später»
   function dueSoon() {
     const today = zurichToday();
-    const soon = Date.now() + 7 * 864e5;
-    return (S.qnh.items ?? []).filter((i) => i.status !== "done" && i.due && !snoozed(i, today) && new Date(`${i.due}T23:59:59`).getTime() <= soon);
+    const soon = addDays(today, 7);
+    return (S.qnh.items ?? []).filter((i) => i.status !== "done" && i.due && !snoozed(i, today) && i.due <= soon);
   }
 
   // «Heute»: overdue → Jetzt, due today → Heute, within 7 days → Diese Woche; one tap «Erledigt» / «Morgen»
@@ -104,7 +104,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     if (!i) { advanceFocus(); return f && S.qnh.focus ? focusView() : roadmapView(f?.scope === "all" ? null : f?.scope); }
     const sc = scopeOf(i.scope);
     const left = focusQueue(f.scope).filter(inRound(f)).length;
-    const overdue = i.due && new Date(`${i.due}T23:59:59`) < new Date();
+    const overdue = i.due && i.due < zurichToday();
     return `<div class="review-bar"><b>Fokus</b><span class="muted">${f.done} erledigt · noch ${left} offen</span>
         <span class="row-right"><button class="link" data-action="rm-focus-close">Schliessen</button></span></div>
       <article class="card focus-card" style="--app:${esc(sc.color)}">
@@ -172,7 +172,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
       </form>`;
     }
     const idx = ORDER.indexOf(i.status);
-    const overdue = i.due && i.status !== "done" && new Date(`${i.due}T23:59:59`) < new Date();
+    const overdue = i.due && i.status !== "done" && i.due < zurichToday();
     return `<article class="rm-card${i.status === "done" ? " done" : ""}" draggable="true" data-rm-id="${i.id}" style="--app:${esc(sc.color)}">
       ${showScope ? `<span class="rm-scope">${esc(sc.name)}</span>` : ""}
       <b class="rm-title">${esc(i.title)}</b>
@@ -243,7 +243,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
         <button class="btn ghost" data-action="hg-toggle">${st.linkEdit ? "Fertig" : "Bearbeiten"}</button></div>
       ${st.linkEdit && !st.editLink ? linkForm() : ""}
       ${groups.map((g) => `<section class="block"><h2 class="section-title">${esc(g)}</h2><div class="hangar">${st.links.filter((l) => l.grp === g).map((l) =>
-        st.editLink === l.id ? linkForm(l) : `<div class="hg-wrap"><a class="hg-link" href="${esc(l.url)}" target="_blank" rel="noopener">
+        st.editLink === l.id ? linkForm(l) : `<div class="hg-wrap"><a class="hg-link" href="${esc(web(l.url) ?? "#")}" target="_blank" rel="noopener">
           <span class="hg-badge">${esc(l.title[0] ?? "?")}</span><span class="hg-text"><b>${esc(l.title)}</b><span class="muted small">${esc(l.note || host(l.url))}</span></span>
         </a>${st.linkEdit ? `<button class="icon-mini hg-edit" data-action="hg-edit" data-id="${l.id}" aria-label="bearbeiten">✎</button>` : ""}</div>`).join("")}</div></section>`).join("")}`;
   }
@@ -265,6 +265,7 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
         await update(form.dataset.id, { title: f["rm-title"].value.trim(), body: f["rm-body"].value, scope: f["rm-scope"].value, status: f["rm-status"].value, due,
           ...(repeat !== undefined ? { repeat, repeat_day: repeatDay(item, due, repeat) } : {}) });
       } else if (kind === "hg-save") {
+        if (!web(f["hg-url"].value.trim())) { toast("Der Link muss mit http:// oder https:// beginnen."); return; }
         const saved = await data.saveLink({ id: form.dataset.id || undefined, title: f["hg-title"].value.trim(), url: f["hg-url"].value.trim(), grp: f["hg-grp"].value.trim(), note: f["hg-note"].value.trim() });
         const list = S.qnh.links;
         const i = list.findIndex((x) => x.id === saved.id);
@@ -356,5 +357,5 @@ export function createQnh({ S, render, toast, errorText, scopes }) {
     return true;
   }
 
-  return { nextTask, repeatSupported, startFocus, load, roadmapView, hangarView, dueSoon, agenda, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
+  return { nextTask, repeatSupported, startFocus, load, roadmapView, hangarView, agenda, onSubmit, onClick, onDragStart, onDragOver, onDrop, scopeOf, STATUS };
 }

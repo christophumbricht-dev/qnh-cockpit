@@ -77,9 +77,12 @@ export function planImport(expenses, { bills = [], costs = [] } = {}, nowIso = n
     const row = billRow(e, nowIso);
     const label = `${e?.date ?? ""} ${e?.vendor ?? ""}${e?.doc_no ? ` ${e.doc_no}` : ""}`.trim();
     if (!row) { plan.skipped.push({ label, why: "privat – nicht übernommen" }); continue; }
-    const key = `${row.payee.toLowerCase()}|${row.invoice_no}`;
-    if (row.invoice_no && seen.has(key)) { plan.skipped.push({ label, why: "doppelt in der Datei" }); continue; }
-    if (row.invoice_no && bills.some((b) => same(b.payee, row.payee) && b.invoice_no === row.invoice_no)) { plan.skipped.push({ label, why: "schon im Cockpit" }); continue; }
+    // a receipt without number counts as the same when payee, day, amount and currency match
+    const key = row.invoice_no ? `${row.payee.toLowerCase()}|${row.invoice_no}` : `${row.payee.toLowerCase()}|${row.due_date}|${row.amount}|${row.currency}`;
+    if (seen.has(key)) { plan.skipped.push({ label, why: "doppelt in der Datei" }); continue; }
+    const inCockpit = (b) => same(b.payee, row.payee) && (row.invoice_no ? b.invoice_no === row.invoice_no
+      : !b.invoice_no && b.due_date === row.due_date && Number(b.amount) === Number(row.amount) && b.currency === row.currency);
+    if (bills.some(inCockpit)) { plan.skipped.push({ label, why: "schon im Cockpit" }); continue; }
     seen.add(key);
     if (e.file && !fileType(e.file)) throw new ImportError(`${label}: «${e.file}» – nur PDF, JPG, PNG, HEIC oder WebP.`);
     const sub = subscriptionOf(e);

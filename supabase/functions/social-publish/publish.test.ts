@@ -252,6 +252,13 @@ Deno.test("cleanup deletes files of posts published more than 14 days ago", asyn
   assert(!fresh.media_deleted_at);
 });
 
+Deno.test("cleanup also deletes the still frame of a video", async () => {
+  const old = { ...post({ id: "old", status: "published", media: [{ path: "a/1.mp4", type: "video/mp4", still: "a/1-still.jpg" }] }), published_at: "2026-10-01T10:00:00Z" } as Post;
+  const { store, removed } = fakeStore([old]);
+  await cleanup(deps(store, mockGraph({}).fetchFn));
+  assertEquals(removed, ["a/1.mp4", "a/1-still.jpg"]);
+});
+
 Deno.test("user_tags go to the image containers (single image and carousel images), never to videos", async () => {
   const tag = [{ username: "exploring_the_skies", x: 0.5, y: 0.9 }];
   const posts = [

@@ -87,13 +87,16 @@ async function save(sb, p, id, isNew) {
   for (const [i, it] of p.items.entries()) {
     let up = it;
     let still = null;
+    let video = {};
     if (/^video\//.test(it.type)) {
       const v = prepareVideo(it.bytes);
       if (v.shrunk) p.shrunk = [...(p.shrunk ?? []), v.shrunk];
       up = { ...it, bytes: v.bytes };
       still = await uploadStill(sb, id, v.still, i);
+      video = v;   // length and size: YouTube needs the length for the right link (Short or normal video)
     }
-    media.push({ path: await upload(sb, id, up, i), type: it.type, alt: it.alt, width: it.width ?? null, height: it.height ?? null, duration: null,
+    media.push({ path: await upload(sb, id, up, i), type: it.type, alt: it.alt, width: it.width ?? video.width ?? null, height: it.height ?? video.height ?? null,
+      duration: video.seconds ?? null,
       ...(it.user_tags?.length ? { user_tags: it.user_tags } : {}), ...(still ? { still } : {}) });
   }
   const youtube = p.pkg.account.platform === "youtube";
@@ -250,18 +253,26 @@ async function main() {
     && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)) : [];
   // the package's topic reaches existing posts in every status (it only sorts the cockpit) – where the post has none yet
   const topicFills = hasTopic ? rows.filter((r) => r.post && r.pkg.topic && !r.post.topic && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
-  // drafts imported before stills existed: add a still frame from the local package video (the video stays as it is)
-  const stillFills = rows.filter((r) => r.post && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)
+  // drafts imported before stills existed: add a still frame from the local package video (the video stays as it is),
+  // only while the post is unedited (a video replaced in the cockpit must not get a still of the old package video)
+  const stillFills = rows.filter((r) => r.post && markers[r.folder]?.updated_at === r.post.updated_at
+    && ["same", "link", "conflict"].includes(r.action) && ["draft", "failed"].includes(r.post.status)
     && !r.post.media_deleted_at && (r.post.media ?? []).some((m, i) => /^video\//.test(m.type) && !m.still && r.items[i]?.bytes));
   const notes = hasTodo ? rows.filter((r) => r.post && r.pkg.todo && !r.post.todo && ["same", "link", "conflict", "locked"].includes(r.action)) : [];
 
+  // after a fill: the marker follows only if it was still in step with the post (an edit in the cockpit must stay
+  // detectable, else the next re-rendered package would overwrite it); several fills on one post stay in step
+  const bump = (r, at) => {
+    if (markers[r.folder] && markers[r.folder].updated_at === r.post.updated_at) markers[r.folder].updated_at = at;
+    r.post.updated_at = at;
+  };
   if (cmd === "import") {
     for (const r of todo) {
       try {
         let saved = r.post;
         if (r.action === "new") saved = await save(sb, r, crypto.randomUUID(), true);
         if (r.action === "update") {
-          const old = r.post.media?.flatMap((m) => [m.path, ...(m.still ? [m.still] : [])]) ?? [];
+          const old = [...(r.post.media?.flatMap((m) => [m.path, ...(m.still ? [m.still] : [])]) ?? []), ...(r.post.cover_path ? [r.post.cover_path] : [])];
           if (r.withdraw) {
             const { error } = await sb.from("social_posts").update({ status: "draft" }).eq("id", r.post.id);
             if (error) throw new Error(error.message);
@@ -282,13 +293,13 @@ async function main() {
       const { data, error } = await sb.from("social_posts").update({ location: r.place }).eq("id", r.post.id).select("updated_at").single();
       if (error) { r.note = `Standort nicht übernommen: ${error.message}`; continue; }
       r.placeDone = true;
-      if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+      bump(r, data.updated_at);
     }
     for (const r of topicFills) {
       const { data, error } = await sb.from("social_posts").update({ topic: r.pkg.topic }).eq("id", r.post.id).select("updated_at").single();
       if (error) { r.note = `Thema nicht übernommen: ${error.message}`; continue; }
       r.topicDone = true;
-      if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+      bump(r, data.updated_at);
     }
     for (const r of stillFills) {
       try {
@@ -302,7 +313,7 @@ async function main() {
         const { data, error } = await sb.from("social_posts").update({ media }).eq("id", r.post.id).select("updated_at").single();
         if (error) { r.note = `Standbild nicht übernommen: ${error.message}`; continue; }
         r.stillDone = true;
-        if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+        bump(r, data.updated_at);
       } catch (err) {
         r.note = `Standbild nicht übernommen: ${err.message}`;
       }
@@ -311,8 +322,7 @@ async function main() {
       const { data, error } = await sb.from("social_posts").update({ todo: r.pkg.todo }).eq("id", r.post.id).select("updated_at").single();
       if (error) { r.note = `To-do nicht übernommen: ${error.message}`; continue; }
       r.noteDone = true;
-      // keep "edited in the cockpit" detection for conflicts; otherwise the post still equals the package
-      if (markers[r.folder] && r.action !== "conflict") markers[r.folder].updated_at = data.updated_at;
+      bump(r, data.updated_at);
     }
     {
       const done = markers[".assets"] ?? {};

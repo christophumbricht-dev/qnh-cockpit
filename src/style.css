@@ -448,7 +448,6 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 @media (max-width: 860px) { .nav-item { min-width: 0; } .nav-label { max-width: 100%; } .side-nav { gap: 0; } }
 
 /* ---- social calendar ---- */
-.chip-sep { width: 1px; background: var(--line); margin: 2px 4px; }
 .cal-head { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; flex-wrap: wrap; }
 .cal-head h3 { margin: 0 4px; font-size: 20px; min-width: 170px; text-align: center; }
 .cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
@@ -533,9 +532,8 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .focus-list li { margin: 4px 0; }
 .focus-card .actions { margin-top: 18px; }
 
-.soc-todo a, .soc-todo-preview a { color: inherit; font-weight: 600; overflow-wrap: anywhere; }
-.soc-todo .copy, .soc-todo-preview .copy { margin: 0 0 0 2px; font-size: 12px; }
-.soc-todo-preview { margin: 4px 0 6px; white-space: pre-line; font-size: 14px; }
+.soc-todo a { color: inherit; font-weight: 600; overflow-wrap: anywhere; }
+.soc-todo .copy { margin: 0 0 0 2px; font-size: 12px; }
 
 /* ---- carousel preview: swipe like on the phone ---- */
 .phone-media.slider { position: relative; display: block; }
@@ -816,9 +814,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .fin-row-actions { white-space: nowrap; text-align: right; }
 .fin-row-actions .link { margin: 0 0 0 10px; }
 .fin-templates { margin-top: 10px; align-items: center; }
-.fin-timeline { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
-.fin-timeline li { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-.fin-when { font: 600 13px/1 var(--display); color: var(--muted); }
 .fin-bars { display: grid; gap: 10px; }
 .fin-bar { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
 .fin-bar-label { display: flex; gap: 8px; align-items: center; font-size: 14px; }
@@ -835,8 +830,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .fin-grid .wide, .fin-grid .check { grid-column: span 2; }
   .fin-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .fin-bar-track { grid-column: 1 / -1; order: 3; }
-  .fin-timeline li { grid-template-columns: 56px 1fr; }
-  .fin-timeline .fin-amount { grid-column: 2; }
 }
 .fin-cur { font-weight: 600; letter-spacing: 0.06em; margin-top: 4px; }
 .fin-date.est { border-style: dashed; }

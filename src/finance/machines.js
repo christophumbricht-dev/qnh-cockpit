@@ -2,6 +2,7 @@
 // Pure helpers, tested in tests/machines.test.mjs. Data: machine_hours (per machine and hour, migration
 // 20261025100000_machines.sql) from scripts/machine-heartbeat.mjs, which measures every 5 minutes.
 // Watts are an estimate: rest + share of full CPU + GPU (measured by nvidia-smi where the card reports it).
+import { addDays, money, zurichDay } from "./calc.js";
 
 export const SAMPLE_MIN = 5;              // the heartbeat measures every 5 minutes
 export const ONLINE_MIN = 15;             // no sample for longer than this → «aus»
@@ -25,8 +26,6 @@ export function hourEnergy(m, h) {
   return { on, busy, kwh: (watts(m, h) * mains) / 1000 };
 }
 
-// Swiss calendar day of an ISO timestamp (YYYY-MM-DD)
-export const zurichDay = (iso) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(iso));
 
 // totals of one machine since `from` (ISO), plus one row per Swiss day
 export function summarize(m, hours, from) {
@@ -97,15 +96,9 @@ export function status(last, now = Date.now()) {
 // last `n` Swiss days ending today, filled with zeros (for the small bar strip)
 export function lastDays(days, n, today) {
   const by = new Map(days.map((d) => [d.day, d]));
-  const out = [];
-  const t = new Date(`${today}T12:00:00Z`);
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(t.getTime() - i * 864e5).toISOString().slice(0, 10);
-    out.push(by.get(d) ?? { day: d, on: 0, busy: 0, kwh: 0 });
-  }
-  return out;
+  return Array.from({ length: n }, (_, k) => addDays(today, k - n + 1)).map((d) => by.get(d) ?? { day: d, on: 0, busy: 0, kwh: 0 });
 }
 
 export const hoursText = (h) => (h >= 10 ? `${Math.round(h)} h` : `${h.toLocaleString("de-CH", { maximumFractionDigits: 1 })} h`);
 export const kwhText = (k) => `${k.toLocaleString("de-CH", { maximumFractionDigits: k >= 10 ? 0 : 1 })} kWh`;
-export const chfText = (v) => `CHF ${v.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const chfText = (v) => money(v, "CHF");   // same thousands mark as the rest of Finanzen

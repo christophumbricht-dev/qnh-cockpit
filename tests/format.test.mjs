@@ -28,7 +28,9 @@ test("num formats Swiss style and handles missing values", () => {
 test("errorText explains common errors", () => {
   assert.equal(errorText({ code: "42501", message: "Only admins" }), "Dieses Konto ist kein Admin dieser App.");
   assert.match(errorText({ code: "PGRST202", message: "x" }), /apply-pending/);
-  assert.equal(errorText({ message: "Token has expired or is invalid" }), "Der Code ist falsch oder abgelaufen.");
+  assert.equal(errorText({ name: "AuthApiError", message: "Token has expired or is invalid" }), "Der Code ist falsch oder abgelaufen.");
+  // a database error with «invalid» keeps its own text (not «Code falsch»)
+  assert.equal(errorText({ code: "22P02", message: "invalid input syntax for type date" }), "invalid input syntax for type date");
   assert.equal(errorText({ message: "Signups not allowed for otp" }), "Zu dieser E-Mail gibt es kein Konto.");
   assert.equal(errorText({ message: "something else" }), "something else");
 });

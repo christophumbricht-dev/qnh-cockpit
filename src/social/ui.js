@@ -4,7 +4,7 @@ import { esc, num } from "../format.js";
 import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
 import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
-import { IMPORT, readPackage } from "./package.js";
+import { IMPORT, isQuizStory, readPackage } from "./package.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
@@ -78,26 +78,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   const daysLeft = (iso) => (iso ? Math.floor((new Date(iso) - Date.now()) / 864e5) : null);
   const firstLines = (text, n = 3) => String(text ?? "").split("\n").filter(Boolean).slice(0, n).join("\n");
 
-  // ---------- overview card + badge ----------
-  function overviewCard() {
-    if (!data.socialConfigured()) return "";
-    const st = S.social;
-    if (!st.value) return `<section class="card"><div class="card-head"><span class="dot dot-social"></span><div><h2>Social</h2><p class="muted">Beiträge aller Apps</p></div></div>${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : `<p class="muted loading">Lädt …</p>`}</section>`;
-    const planned = posts().filter((p) => p.status === "approved").sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
-    const failed = posts().filter((p) => p.status === "failed").length;
-    const drafts = posts().filter((p) => p.status === "draft").length;
-    const expiring = accounts().filter((a) => a.active && daysLeft(a.token_expires_at) !== null && daysLeft(a.token_expires_at) < 14);
-    const tile = (label, value, sub, alert, href = "#social") => `<a class="tile${alert ? " alert" : ""}" href="${href}"><span class="tile-label">${label}</span><span class="tile-num">${value}</span>${sub ? `<span class="tile-sub">${esc(sub)}</span>` : ""}</a>`;
-    const open = inbox.count();
-    return `<section class="card"><div class="card-head"><span class="dot dot-social"></span><div><h2>Social</h2><p class="muted">Beiträge aller Apps</p></div></div>
-      <div class="tiles">
-        ${tile("Geplant", num(planned.length), planned[0] ? `nächster: ${formatZurich(planned[0].scheduled_at)}` : "", false)}
-        ${tile("Entwürfe", num(drafts), "", false)}
-        ${tile("Fehler", num(failed), "", failed > 0)}
-        ${open ? tile("Kommentare", num(open), "warten auf Antwort", false, "#social/kommentare") : ""}
-        ${expiring.length ? tile("Token läuft ab", num(expiring.length), expiring.map((a) => `@${a.handle}: ${daysLeft(a.token_expires_at)} Tage`).join(", "), true) : ""}
-      </div></section>`;
-  }
+  // ---------- badge ----------
   const badge = () => posts().filter((p) => p.status === "failed").length + inbox.count();
 
   // ---------- list ----------
@@ -387,6 +368,17 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       <p class="hint">Entwürfe und geplante Beiträge auf einen anderen Tag ziehen (die Uhrzeit bleibt). «+» legt einen Beitrag für diesen Tag an.</p>`;
   }
 
+  // second half of approved → draft → approved (the time of an approved post is frozen): if it fails, the post
+  // stays a draft and would silently not go out – say so plainly
+  async function approveAgain(id, iso) {
+    try {
+      await data.setStatus(id, "approved", iso);
+    } catch (err) {
+      await load(true);
+      throw new Error(`${errorText(err)} – der Beitrag ist jetzt ein Entwurf und muss neu freigegeben werden.`);
+    }
+  }
+
   async function reschedule(id, day) {
     const p = posts().find((x) => x.id === id);
     if (!p || p.status === "published" || p.status === "publishing") return;
@@ -397,7 +389,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       if (p.status === "approved") {
         if (!confirm(`Geplanten Beitrag auf ${formatZurich(iso)} verschieben? Er bleibt freigegeben.`)) return;
         await data.setStatus(id, "draft");
-        await data.setStatus(id, "approved", iso);
+        await approveAgain(id, iso);
       } else {
         await data.updatePost(id, { scheduled_at: iso });
       }
@@ -562,9 +554,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // ---------- editor ----------
+  // tomorrow by the Swiss calendar (not "now + 24 h", which is wrong on the nights the clocks change)
   function tomorrowAt18() {
-    const local = utcToZurichLocal(new Date(Date.now() + 864e5).toISOString());
-    return `${local.slice(0, 10)}T18:00`;
+    const [y, m, d] = utcToZurichLocal(new Date().toISOString()).slice(0, 10).split("-").map(Number);
+    return `${new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)}T18:00`;
   }
 
   // ---------- review round: drafts one after another, oldest date first ----------
@@ -613,7 +606,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       ai: post?.ai_generated === true,
       // YouTube «für Kinder»: neue Beiträge der Marke Wolkenhof sind es von selbst
       kids: post ? post.made_for_kids === true : kidsDefault(fallback?.id),
-      topic: duplicate ? post?.topic ?? "" : post?.topic ?? "",
+      topic: post?.topic ?? "",
       topicGuess: post ? guessTopic(post) : null,
       scheduledLocal: post?.scheduled_at ? utcToZurichLocal(post.scheduled_at) : tomorrowAt18(),
       items,
@@ -634,7 +627,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   const checks = (ed, forApproval = false) =>
     validatePost({ kind: ed.kind, items: ed.items, caption: ed.caption, first_comment: ed.first_comment, first_comment_reply: ed.first_comment_reply,
       first_comment_reply_after_hours: ed.first_comment_reply_after_hours, quiz_answer: ed.quiz_answer, quiz_correct_replies: ed.quiz_correct_replies,
-      platform: account(ed.account_id)?.platform, title: ed.title },
+      platform: account(ed.account_id)?.platform, title: ed.title, made_for_kids: isYoutube(ed.account_id) && ed.kids },
       { forApproval, scheduledAt: zurichToUtc(ed.scheduledLocal) });
 
   function checksHtml(ed) {
@@ -670,7 +663,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const where = platformName(ed.account_id);
     const kinds = Object.entries(yt ? { reel: "Video (Short)" } : KINDS).map(([k, l]) =>
       `<button class="chip${ed.kind === k ? " on" : ""}" data-action="soc-kind" data-value="${k}"${dis}>${l}</button>`).join("");
-    const accept = ed.kind === "image" ? ".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.heic,.heif" : ed.kind === "reel" ? "video/mp4,video/quicktime" : ".jpg,.jpeg,image/jpeg,.png,image/png,.webp,image/webp,.heic,.heif,video/mp4,video/quicktime";
     const itemsHtml = ed.items.map((it, i) => `<li class="soc-file">
         ${thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "thumb small")}
         <div><span class="small muted">${/^video\//.test(it.type) ? "Video" : "Bild"} · ${aspectLabel(it.width, it.height)}${it.width ? ` · ${it.width}×${it.height}` : ""}${it.duration ? ` · ${Math.round(it.duration)} s` : ""}${it.size ? ` · ${(it.size / 1048576).toFixed(1)} MB` : ""}</span>
@@ -1035,7 +1027,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const ed = S.social.editor;
     if (ed && ed.id === id) return ed;
     const p = posts().find((x) => x.id === id);
-    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
+    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, kids: p.made_for_kids === true, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
   };
 
   async function publishNow(id) {
@@ -1049,8 +1041,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (!confirm(confirmText("Jetzt veröffentlichen? Der Beitrag geht sofort online.", { ...ed, scheduledLocal: utcToZurichLocal(now) }))) return;
     await busy(ed, async () => {
       if (S.social.editor?.id === id && (ed.dirty || ed.isNew)) await persist(ed);
-      if (ed.status === "approved") await data.setStatus(id, "draft");
-      await data.setStatus(id, "approved", now);
+      if (ed.status === "approved") { await data.setStatus(id, "draft"); await approveAgain(id, now); }
+      else await data.setStatus(id, "approved", now);
       ed.status = "approved";
       toast("Wird veröffentlicht …");
       const results = await data.publishNow(id);
@@ -1126,7 +1118,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         if (!p) return true;
         const when = new Date(Date.now() + 2 * 60e3).toISOString();
         const { errors } = validatePost({ kind: p.kind, items: p.media ?? [], caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply,
-          first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, title: p.title }, { forApproval: true, scheduledAt: when });
+          first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, title: p.title,
+          platform: account(p.account_id)?.platform, made_for_kids: p.made_for_kids === true }, { forApproval: true, scheduledAt: when });
         if (!p.media?.length) { toast("Kein Bild/Video im Beitrag – zuerst «Bearbeiten» und hochladen."); return true; }
         if (errors.length) { toast(errors[0]); return true; }
         if (!confirm("Nochmals versuchen? Der Beitrag wird in den nächsten Minuten veröffentlicht.")) return true;
@@ -1365,9 +1358,13 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   async function importPackage(fileList) {
     try {
       const pkg = await readPackage(fileList, accounts());
+      // same rules as `npm run social -- import`: quiz/poll stories are off for now (IMPORT in package.js)
+      const first = fileList[0];
+      const folder = String(first?.webkitRelativePath || first?.name || "").split("/")[0].replace(/.zip$/i, "");
+      if (!IMPORT.quizStories && isQuizStory(folder, pkg.kind)) return toast("Quiz- und Umfrage-Storys werden zurzeit nicht angelegt.");
       const ed = {
         id: crypto.randomUUID(), isNew: true, status: "draft", account_id: pkg.account.id, kind: pkg.kind,
-        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, quiz_answer: pkg.quiz_answer.join(", "), quiz_correct_replies: pkg.quiz_correct_replies.join("\n"), todo: IMPORT.todo ? pkg.todo : "", ai: pkg.ai === true, kids: pkg.made_for_kids === true, location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
+        title: pkg.title ?? "", caption: pkg.caption, first_comment: pkg.first_comment, first_comment_reply: pkg.first_comment_reply, first_comment_reply_after_hours: pkg.first_comment_reply_after_hours, quiz_answer: pkg.quiz_answer.join(", "), quiz_correct_replies: pkg.quiz_correct_replies.join("\n"), todo: IMPORT.todo ? pkg.todo : "", ai: pkg.ai === true, kids: pkg.made_for_kids === true, topic: pkg.topic ?? "", location: resolvePlace(pkg.location), scheduledLocal: pkg.suggested_time ? utcToZurichLocal(pkg.suggested_time) : tomorrowAt18(),
         items: await Promise.all(pkg.files.map(async (f, i) => ({ ...(await probe(f)), alt: pkg.alt[i] ?? "", user_tags: pkg.tags[i] }))),
         cover: pkg.cover ? await probe(pkg.cover) : null, source: "package", dirty: false, busy: false, preview: 0,
       };
@@ -1410,6 +1407,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     </div>`;
   }
   const todoProgress = (t) => { const l = todoLines(t); return { done: l.filter((x) => x.done).length, total: l.length }; };
-  return { todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, overviewCard, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+  return { todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }

@@ -32,8 +32,8 @@ const S = {
   users: {}, // appId -> user | null
   login: {}, // appId -> { step, email, busy, error }
   data: {}, // "<appId>:<kind>" -> { loading, error, value }
-  shots: {}, // feedback id -> signed screenshot URL
-  docs: {}, // verification id -> signed licence photo URL
+  shots: {}, // feedback id -> { url, exp } signed screenshot URL (expires, see fresh())
+  docs: {}, // verification id -> { url, exp } signed licence photo URL
   feedbackFilter: "new",
   verifyFilter: "pending",
   reportsFilter: "open",
@@ -82,15 +82,22 @@ applyTheme();
 async function load(a, kind, fn, force = false) {
   const key = `${a.id}:${kind}`;
   const prev = S.data[key];
-  if (prev && (prev.loading || (!force && !prev.error))) return;
-  S.data[key] = { ...prev, loading: true, error: null };
+  // a forced reload during a running load runs once more afterwards (else the older answer would win)
+  if (prev?.loading) { if (force) prev.again = true; return; }
+  if (prev && !force && !prev.error) return;
+  S.data[key] = { ...prev, loading: true, error: null, again: false };
   render();
+  let next;
   try {
-    S.data[key] = { value: await fn(), loading: false };
+    next = { value: await fn(), loading: false };
   } catch (error) {
-    S.data[key] = { value: prev?.value, error, loading: false };
+    next = { value: prev?.value, error, loading: false };
   }
+  const again = S.data[key]?.again;
+  if (!S.data[key]) return render();   // signed out meanwhile: drop the answer
+  S.data[key] = next;
   render();
+  if (again) load(a, kind, fn, true);
 }
 
 function ensureData(force = false) {
@@ -451,7 +458,7 @@ function nextCard() {
   const t = qnh.nextTask();
   if (!t) return "";
   const sc = qnh.scopeOf(t.scope);
-  const late = t.due && new Date(`${t.due}T23:59:59`) < new Date();
+  const late = t.due && t.due < zurichToday();
   const steps = String(t.body ?? "").split("\n").map((l) => l.match(/^\s*([-•*]|\[[ x]?\])\s+(.*)$/i)).filter(Boolean).map((m) => ({ text: m[2], done: /^\[x\]$/i.test(m[1]) }));
   return `<section class="next-card" style="--app:${esc(sc.color)}" aria-labelledby="next-title">
     <span class="next-eyebrow">Als Nächstes · ${esc(sc.name)}</span>
@@ -526,7 +533,7 @@ function statusTiles(lanes) {
     const failed = v.posts.filter((p) => p.status === "failed");
     const planned = v.posts.filter((p) => p.status === "approved" && p.scheduled_at && new Date(p.scheduled_at).getTime() > now).sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
     const acc = (p) => v.accounts.find((x) => x.id === p.account_id);
-    out.push(tile("#social", "Social", failed.length ? `${failed.length} ${failed.length === 1 ? "Fehler" : "Fehler"}` : `${planned.length} geplant`,
+    out.push(tile("#social", "Social", failed.length ? `${failed.length} Fehler` : `${planned.length} geplant`,
       planned[0] ? `nächster ${shortWhen(planned[0].scheduled_at)} · ${acc(planned[0])?.platform === "youtube" ? "YouTube" : "Instagram"}` : "nichts geplant", failed.length > 0));
     const comments = (v.comments ?? []).filter(isOpen);
     const ready = comments.filter((c) => String(c.draft ?? "").trim()).length;
@@ -870,8 +877,11 @@ function feedbackView(a) {
   });
 }
 
+// a cached signed link while it is still valid (else the «anzeigen» button comes back)
+const fresh = (c) => (c && c.exp > Date.now() ? c.url : null);
+
 function feedbackItem(r) {
-  const shot = S.shots[r.id];
+  const shot = fresh(S.shots[r.id]);
   return `<article class="item${r.status === "done" ? " done" : ""}">
     <div class="meta"><b>${esc(r.pilot)}</b><span>${relTime(r.created_at)}</span><span>${esc(r.app_version)}</span><span>${esc(r.device)}</span></div>
     <p class="text">${esc(r.text)}</p>
@@ -922,7 +932,7 @@ function betaItem(r) {
   return `<article class="item">
     <div class="meta"><b>${esc(r.first_name)} ${esc(r.last_name)}</b><a href="mailto:${esc(r.email)}">${esc(r.email)}</a>
       <span>${esc(sourceLabel(r.source))}</span><span>${esc(r.lang?.toUpperCase())}</span><span>${relTime(r.created_at)}</span>
-      ${r.status !== "new" ? `<span class="pill ${r.status}">${BETA_STATUS[r.status]}${r.handled_at ? ` · ${shortDate(r.handled_at)}` : ""}</span>` : ""}</div>
+      ${r.status !== "new" ? `<span class="pill ${esc(r.status)}">${esc(BETA_STATUS[r.status] ?? r.status)}${r.handled_at ? ` · ${shortDate(r.handled_at)}` : ""}</span>` : ""}</div>
     ${r.note ? `<p class="text">${esc(r.note)}</p>` : ""}
     <div class="actions">${r.status === "new" ? btn("invited", "Eingeladen") + btn("declined", "Ablehnen", true) : btn("new", "Zurück auf neu", true)}</div>
   </article>`;
@@ -944,7 +954,7 @@ function verifyView(a) {
 }
 
 function verifyItem(r) {
-  const doc = S.docs[r.id];
+  const doc = fresh(S.docs[r.id]);
   const target = r.kind === "airfield" ? r.target : r.kind === "club" ? r.target_name ?? "Club" : "";
   return `<article class="item${r.status !== "pending" ? " done" : ""}">
     <div class="meta"><b>${esc(r.name)}</b><span class="pill">${esc(KIND[r.kind] ?? r.kind)}${target ? ` · ${esc(target)}` : ""}</span>
@@ -990,7 +1000,7 @@ function reportItem(r) {
     <div class="meta"><b>${esc(TARGET[t?.kind] ?? "Gelöschter Inhalt")}</b>
       ${r.author ? `<span>von ${esc(r.author.name)}${r.author.banned ? " (gesperrt)" : ""}</span>` : ""}
       <span>gemeldet von ${esc(r.reporter ?? "?")}</span><span>${relTime(r.created_at)}</span>
-      ${r.status !== "open" ? `<span class="pill">${REPORT_STATUS[r.status] ?? r.status}${r.status === "actioned" && r.action ? `: ${ACTION[r.action] ?? r.action}` : ""}</span>` : ""}
+      ${r.status !== "open" ? `<span class="pill">${esc(REPORT_STATUS[r.status] ?? r.status)}${r.status === "actioned" && r.action ? `: ${esc(ACTION[r.action] ?? r.action)}` : ""}</span>` : ""}
       ${t?.hidden && r.action !== "hide" ? `<span class="pill declined">ausgeblendet</span>` : ""}</div>
     ${r.reason ? `<p class="text"><span class="muted">Grund:</span> ${esc(r.reason)}</p>` : ""}
     ${t?.preview ? `<blockquote>${esc(t.preview)}</blockquote>` : ""}
@@ -1028,15 +1038,12 @@ const appBadge = (a, size = "") => (a.logo
 const ICONS = {
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
-  social: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.6" fill="currentColor"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>',
   logout: '<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/>',
   arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   wallet: '<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1V7z"/><path d="M4 7l11-3v3"/><circle cx="16" cy="13.5" r="1.2" fill="currentColor"/>',
   plane: '<path d="M2 13l8-2 4-7h2l-2 7 6 1 2-2h1l-1 4 1 4h-1l-2-2-6 1 2 7h-2l-4-7-8-2z"/>',
@@ -1186,8 +1193,12 @@ root.addEventListener("click", async (e) => {
       break;
     case "sign-out":
       await api.signOut(a);
+      // QNH Core holds social, roadmap, finance and store with live subscriptions: start clean
+      if (a.id === QNH.id) { location.reload(); return; }
       S.users[a.id] = null;
       for (const k of Object.keys(S.data)) if (k.startsWith(`${a.id}:`)) delete S.data[k];
+      S.shots = {};
+      S.docs = {};
       render();
       break;
     case "feedback-filter":
@@ -1218,8 +1229,9 @@ root.addEventListener("click", async (e) => {
       break;
     case "ver-doc": {
       const row = S.data[`${a.id}:verify`]?.value?.find((r) => r.id === id);
+      if (!row) break;
       try {
-        S.docs[id] = await api.verificationDocUrl(a, row.doc_path);
+        S.docs[id] = { url: await api.verificationDocUrl(a, row.doc_path), exp: Date.now() + 270e3 };   // the link lives 300 s
         render();
       } catch (err) {
         toast(errorText(err));
@@ -1271,8 +1283,9 @@ root.addEventListener("click", async (e) => {
       break;
     case "fb-shot": {
       const row = S.data[`${a.id}:feedback`]?.value?.find((r) => r.id === id);
+      if (!row) break;
       try {
-        S.shots[id] = await api.screenshotUrl(a, row.screenshot_path);
+        S.shots[id] = { url: await api.screenshotUrl(a, row.screenshot_path), exp: Date.now() + 570e3 };   // the link lives 600 s
         render();
       } catch (err) {
         toast(errorText(err));

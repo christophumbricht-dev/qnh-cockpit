@@ -38,13 +38,15 @@ function withTemp(fn) {
 
 const run = (args) => execFileSync("ffmpeg", ["-nostdin", "-v", "error", "-y", ...args], { stdio: ["ignore", "ignore", "pipe"] });
 
-// → { bytes, still, shrunk: { from, to } | null }
+// → { bytes, still, shrunk: { from, to } | null, seconds, width, height } (the last three null without ffprobe)
 export function prepareVideo(bytes) {
-  if (!hasFfmpeg()) return { bytes, still: null, shrunk: null };
+  if (!hasFfmpeg()) return { bytes, still: null, shrunk: null, seconds: null, width: null, height: null };
   return withTemp((dir) => {
     const src = join(dir, "in.mp4");
     writeFileSync(src, bytes);
     const seconds = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src]).toString().trim());
+    const [width, height] = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", src])
+      .toString().trim().split(",").map(Number);
     let out = bytes;
     let shrunk = null;
     if ((bitrate(bytes.length, seconds) ?? 0) > MAX_BPS) {
@@ -65,7 +67,8 @@ export function prepareVideo(bytes) {
     } catch {
       still = null;
     }
-    return { bytes: out, still, shrunk };
+    const num = (v) => (Number.isFinite(v) && v > 0 ? v : null);
+    return { bytes: out, still, shrunk, seconds: num(seconds), width: num(width), height: num(height) };
   });
 }
 

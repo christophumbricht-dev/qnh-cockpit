@@ -1,5 +1,8 @@
 // Small pure helpers (unit-tested in tests/format.test.mjs).
 
+// a link only when it is http(s) – never javascript: or data: in an href
+export const web = (u) => (/^https?:\/\//i.test(String(u ?? "")) ? u : null);
+
 export function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -51,7 +54,8 @@ export function errorText(err) {
   if (err.code === "42501" || /Only admins/i.test(err.message ?? "")) return "Dieses Konto ist kein Admin dieser App.";
   if (err.code === "PGRST202") return "Diese Funktion fehlt noch in der Datenbank: In Supabase den SQL-Code aus supabase/apply-pending.sql von Downwind ausführen.";
   if (/Failed to fetch|NetworkError|Load failed/i.test(err.message ?? "")) return "Keine Verbindung zum Server.";
-  if (/token has expired|invalid/i.test(err.message ?? "")) return "Der Code ist falsch oder abgelaufen.";
+  // only sign-in errors: a database "invalid input syntax" must show its own text
+  if (/^Auth/.test(err.name ?? "") && /token has expired|invalid/i.test(err.message ?? "")) return "Der Code ist falsch oder abgelaufen.";
   if (/Signups not allowed|User not found/i.test(err.message ?? "")) return "Zu dieser E-Mail gibt es kein Konto.";
   if (/Moderators only/i.test(err.message ?? "")) return "Dieses Konto ist kein Moderator dieser App.";
   if (/cannot ban yourself/i.test(err.message ?? "")) return "Du kannst dich nicht selbst sperren.";

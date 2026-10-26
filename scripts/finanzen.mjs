@@ -34,7 +34,7 @@ async function importFile(sb, file, opt) {
   try { json = JSON.parse(readFileSync(file, "utf8")); } catch (err) { fail(`${file} ist kein gültiges JSON (${err.message}).`); }
 
   const [bills, costs, probe] = await Promise.all([
-    sb.from("fin_bills").select("id, payee, invoice_no"),
+    sb.from("fin_bills").select("id, payee, invoice_no, due_date, amount, currency"),
     sb.from("fin_costs").select("id, name"),
     sb.from("fin_bills").select("paid_by").limit(1),
   ]);
