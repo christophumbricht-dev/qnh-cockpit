@@ -28,7 +28,7 @@ const STATUS_FILTERS = [
 ];
 
 export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [] }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null };
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null, reviewWeek: null };
   let unsubscribe = null;
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
@@ -150,10 +150,16 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <span class="wk-state">${WK_STATE[d.state]}</span></li>`).join("");
       return `<section class="channel-card wk-card">${head}<ul class="wk-days">${days}</ul></section>`;
     };
+    // drafts of this week that the review round would show (same filters as the round itself)
+    const prevWeek = st.reviewWeek;
+    st.reviewWeek = monday;
+    const weekDrafts = reviewQueue().length;
+    st.reviewWeek = prevWeek;
     return `<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
         <b>KW ${kw} · ${dm(monday)} bis ${dm(addDaysIso(monday, 6))}${monday.slice(0, 4)}</b>
         <button class="btn ghost" data-action="soc-week" data-value="7" aria-label="Woche vor">›</button>
-        ${monday !== thisMonday ? `<button class="link" data-action="soc-week" data-value="0">Diese Woche</button>` : ""}</div>
+        ${monday !== thisMonday ? `<button class="link" data-action="soc-week" data-value="0">Diese Woche</button>` : ""}
+        ${weekDrafts ? `<button class="btn wk-review" data-action="soc-review-week" data-value="${esc(monday)}">Diese Woche freigeben (${weekDrafts})</button>` : ""}</div>
       <p class="muted small">Standardwoche pro Kanal (Ziel: jeden Tag auf jedem Kanal) und was in dieser Woche wirklich geplant ist. «Video fehlt» = Platzhalter, das Paket kommt noch.</p>
       <div class="channels wk-grid">${rows.map(card).join("")}</div>`;
   }
@@ -600,10 +606,17 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return ta === tb ? String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")) : ta - tb;
   }
 
+  // review round of one week (from the Wochenplan): only drafts planned Monday to Sunday of that week
+  function inReviewWeek(p) {
+    const w = S.social.reviewWeek;
+    if (!w) return true;
+    const day = p.scheduled_at ? utcToZurichLocal(p.scheduled_at).slice(0, 10) : "";
+    return day >= w && day <= addDaysIso(w, 6);
+  }
   function reviewQueue() {
     const st = S.social;
     return posts()
-      .filter((p) => p.status === "draft" && !isPlaceholder(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
+      .filter((p) => p.status === "draft" && !isPlaceholder(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic) && inReviewWeek(p))
       .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {
@@ -611,7 +624,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const next = reviewQueue().find((p) => p.id !== currentId && !st.review.skipped.has(p.id));
     if (next) return openEditor(next);
     toast(`Freigabe-Runde fertig: ${st.review.done} freigegeben${st.review.skipped.size ? `, ${st.review.skipped.size} für später` : ""}.`);
-    st.review = null; st.reviewTopic = null;
+    st.review = null; st.reviewTopic = null; st.reviewWeek = null;
     st.editor = null;
     render();
   }
@@ -1155,7 +1168,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       case "soc-duplicate": openEditor(posts().find((p) => p.id === id) ?? (ed && { ...ed, media: ed.items, scheduled_at: zurichToUtc(ed.scheduledLocal), cover_path: ed.cover?.path }), { duplicate: true }); return true;
       case "soc-close":
         if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
-        st.editor = null; st.review = null; st.reviewTopic = null; render(); load(true); return true;
+        st.editor = null; st.review = null; st.reviewTopic = null; st.reviewWeek = null; render(); load(true); return true;
       case "soc-copy":
         try { await navigator.clipboard.writeText(el.dataset.value); toast("Link kopiert – im Story-Editor beim Link-Sticker einfügen"); }
         catch { prompt("Link kopieren:", el.dataset.value); }
@@ -1192,14 +1205,21 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       case "soc-save-todo":
         await busy(ed, async () => { const row = await data.setTodo(ed.id, ed.todo ?? ""); if (row?.updated_at) ed.updated_at = row.updated_at; ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
         return true;
+      case "soc-review-week":
+        st.reviewTopic = null;
+        st.reviewWeek = el.dataset.value;
+        st.review = { skipped: new Set(), done: 0 };
+        if (reviewQueue()[0]) openEditor(reviewQueue()[0]); else { st.review = null; st.reviewWeek = null; }
+        return true;
       case "soc-review-topic":
         st.reviewTopic = el.dataset.value;
       // falls through: same review round, only this topic
       case "soc-review": {
-        if (action === "soc-review") st.reviewTopic = null;
+        if (action === "soc-review") { st.reviewTopic = null; st.reviewWeek = null; }
+        if (action === "soc-review-topic") st.reviewWeek = null;
         st.review = { skipped: new Set(), done: 0 };
         const first = reviewQueue()[0];
-        if (first) openEditor(first); else { st.review = null; st.reviewTopic = null; }
+        if (first) openEditor(first); else { st.review = null; st.reviewTopic = null; st.reviewWeek = null; }
         return true;
       }
       case "soc-review-skip":
