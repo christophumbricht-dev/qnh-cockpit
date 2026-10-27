@@ -3,7 +3,7 @@
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
-import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, youtubeIsLong, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf, weekGrid, weekScore } from "./weekplan.js";
 import { sparkSvg } from "../charts.js";
@@ -851,9 +851,29 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return h && at && ed.first_comment_reply.trim() ? `ca. ${esc(formatZurich(new Date(new Date(at).getTime() + h * 3600e3).toISOString()))}` : "";
   }
 
+  // a normal (long or landscape) YouTube video: shown on a computer screen, 16:9, title and description below
+  function desktopHtml(ed, acc, it) {
+    const handle = acc?.handle || appName(acc?.app_id) || "Kanal";
+    const ratio = it.width && it.height ? `${it.width} / ${it.height}` : "16 / 9";
+    const media = thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "phone-img");
+    const desc = ed.caption.length > 220 ? `${esc(ed.caption.slice(0, 220))}… <span class="muted">mehr</span>` : esc(ed.caption);
+    return `<div class="desktop">
+      <div class="desk-bar"><span></span><span></span><span></span><span class="desk-url">youtube.com/watch</span></div>
+      <div class="desk-body">
+        <div class="phone-media" style="aspect-ratio:${ratio}">${media}</div>
+        <div class="desk-title">${esc(ed.title || "(Titel fehlt)")}</div>
+        <div class="desk-chan"><span class="avatar"></span><b>${esc(handle)}</b>${it.duration ? `<span class="muted small">${Math.floor(it.duration / 60)}:${String(Math.round(it.duration % 60)).padStart(2, "0")} min</span>` : ""}</div>
+        ${ed.caption.trim() ? `<div class="desk-desc">${desc}</div>` : ""}
+      </div>
+    </div>
+    <div class="desk-stand" aria-hidden="true"></div>
+    <p class="small muted">Vorschau, ungefähr wie ein YouTube-Video am Computer (Querformat oder länger als 3 Minuten: kein Short). Das Titelbild wählt YouTube selbst.</p>`;
+  }
+
   function previewHtml(ed, acc) {
     const handle = acc?.handle ?? "konto";
     const it = ed.items[Math.min(ed.preview, ed.items.length - 1)];
+    if (isYoutube(ed.account_id) && youtubeIsLong(it)) return desktopHtml(ed, acc, it);
     const src = (x) => ({ ...x, url: x.url ?? (x.path ? data.mediaUrl(x.path) : x.copyFrom ? data.mediaUrl(x.copyFrom) : undefined) });
     const slider = ed.kind === "carousel" && ed.items.length > 1;
     const media = slider
@@ -1430,16 +1450,17 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const a = account(p.account_id);
     const yt = isYoutube(p.account_id);
     const first = p.media?.[0];
-    const vertical = p.kind === "story" || p.kind === "reel" || yt;
+    const long = yt && youtubeIsLong(first);                  // normal YouTube video: landscape tile, not a Short
+    const vertical = !long && (p.kind === "story" || p.kind === "reel" || yt);
     let media = `<span class="phone-img empty">kein Bild</span>`;
     if (p.media_deleted_at) media = `<span class="phone-img empty">Datei entfernt</span>`;
     else if (p.cover_path) media = `<img class="phone-img" src="${esc(data.mediaUrl(p.cover_path))}" alt="" loading="lazy" decoding="async">`;
     else if (first?.still) media = `<img class="phone-img" src="${esc(data.mediaUrl(first.still))}" alt="" loading="lazy" decoding="async">`;
     else if (first && /^video\//.test(first.type)) media = `<span class="phone-img empty">▶ Video</span>`; // not downloaded just for the list
     else if (first) media = `<img class="phone-img" src="${esc(data.mediaUrl(first.path))}" alt="${esc(first.alt ?? "")}" loading="lazy" decoding="async">`;
-    const ratio = vertical ? "9 / 16" : first?.width ? `${first.width} / ${first.height}` : "4 / 5";
+    const ratio = long ? "16 / 9" : vertical ? "9 / 16" : first?.width ? `${first.width} / ${first.height}` : "4 / 5";
     const text = yt ? p.title || p.caption : p.caption;
-    return `<div class="phone mini${vertical ? " vertical" : ""}" aria-label="Vorschau des Beitrags">
+    return `<div class="phone mini${vertical ? " vertical" : ""}${long ? " wide" : ""}" aria-label="Vorschau des Beitrags">
       <div class="phone-head"><span class="avatar"></span><b>${esc(a?.handle ?? "konto")}</b></div>
       <div class="phone-media" style="aspect-ratio:${ratio}">${media}${p.kind === "reel" || yt ? `<span class="mini-play" aria-hidden="true">▶</span>` : ""}</div>
       ${text?.trim() ? `<div class="phone-caption">${esc(firstLines(text, 2).slice(0, 70))}</div>` : ""}

@@ -1,9 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aspectLabel, countHashtags, validateItem, validatePost, zurichToUtc, utcToZurichLocal } from "../src/social/validate.js";
+import { aspectLabel, countHashtags, validateItem, validatePost, youtubeIsLong, zurichToUtc, utcToZurichLocal } from "../src/social/validate.js";
 
 const jpg = (w, h, size = 500_000) => ({ type: "image/jpeg", size, width: w, height: h });
 const mp4 = (w, h, duration, size = 10_000_000) => ({ type: "video/mp4", size, width: w, height: h, duration });
+
+test("YouTube: landscape or longer than 3 minutes is a normal video, not a Short", () => {
+  assert.equal(youtubeIsLong(mp4(1080, 1920, 40)), false);
+  assert.equal(youtubeIsLong(mp4(1080, 1920, 179)), false);
+  assert.equal(youtubeIsLong(mp4(1080, 1920, 282)), true);
+  assert.equal(youtubeIsLong(mp4(1920, 1080, 30)), true);
+  assert.equal(youtubeIsLong({ type: "video/mp4" }), false);        // size unknown yet: phone preview
+  assert.equal(youtubeIsLong(undefined), false);
+});
 
 test("aspect labels", () => {
   assert.equal(aspectLabel(1080, 1350), "4:5");

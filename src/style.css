@@ -344,6 +344,20 @@ h3.group { font: 500 13px/1 var(--display); letter-spacing: 0.12em; text-transfo
 .phone-caption, .phone-comment { padding: 4px 12px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .phone-comment { color: #555; padding-top: 0; }
 .phone-comment.reply { padding-left: 36px; }
+/* normal YouTube video (landscape or > 3 min): a computer screen instead of the phone */
+.desktop { width: 100%; max-width: 520px; margin: 0 auto; background: #0f0f0f; color: #f1f1f1; border: 10px solid #1b1b1d; border-bottom-width: 14px; border-radius: 12px; overflow: hidden; font-size: 13px; }
+.desk-bar { display: flex; align-items: center; gap: 6px; padding: 7px 10px; background: #26262a; }
+.desk-bar > span:not(.desk-url) { width: 9px; height: 9px; border-radius: 50%; background: #55555c; }
+.desk-url { margin-left: 8px; flex: 1; padding: 2px 10px; border-radius: 10px; background: #111; color: #9a9aa2; font-size: 11px; }
+.desk-body { padding: 0 0 12px; }
+.desk-body .phone-media { background: #000; }
+.desk-title { padding: 10px 12px 4px; font-weight: 700; font-size: 15px; line-height: 1.3; }
+.desk-chan { display: flex; align-items: center; gap: 8px; padding: 2px 12px 6px; }
+.desk-chan .avatar { box-shadow: none; background: #555; }
+.desk-chan .muted { margin-left: auto; color: #aaa; }
+.desk-desc { margin: 4px 12px 0; padding: 8px 10px; border-radius: 8px; background: #272727; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4; }
+.desk-stand { width: 90px; height: 18px; margin: 0 auto 10px; background: #1b1b1d; clip-path: polygon(30% 0, 70% 0, 100% 100%, 0 100%); }
+.phone.mini.wide { width: 220px; flex-basis: 220px; border-radius: 10px; }
 .soc-reply { margin: 2px 0; overflow-wrap: anywhere; }
 .soc-reply-hours input { width: 5.5em; margin-right: 4px; }
 

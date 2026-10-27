@@ -98,6 +98,9 @@ export function validateItem(kind, item, index = 0) {
   return { errors, warnings };
 }
 
+// a YouTube upload becomes a normal video (not a Short) when it is landscape or longer than 3 minutes
+export const youtubeIsLong = (item) => !!item && ((!!item.width && item.width > item.height) || item.duration > YOUTUBE.shortMax);
+
 // YouTube video: MP4/MOV up to 50 MB (Supabase); vertical up to 3 minutes = Short, anything else a normal video
 export function validateYoutubeItem(item) {
   const errors = [], warnings = [];
@@ -105,8 +108,7 @@ export function validateYoutubeItem(item) {
   else if (!/^video\/(mp4|quicktime)$/.test(item.type)) errors.push("Videos als MP4 (H.264, AAC) exportieren.");
   if (item.size > LIMITS.fileBytes) errors.push(`Datei ist ${mb(item.size)} gross, höchstens 50 MB (Supabase Gratis-Plan).`);
   if (item.duration != null && item.duration < 1) errors.push("Das Video ist leer.");
-  const short = (!item.width || item.height >= item.width) && !(item.duration > YOUTUBE.shortMax);
-  if (!short) warnings.push(item.duration > YOUTUBE.shortMax ? `Video ist ${Math.round(item.duration)} s lang – länger als 3 Minuten wird es ein normales Video, kein Short.` : "Querformat – wird ein normales YouTube-Video, kein Short.");
+  if (youtubeIsLong(item)) warnings.push(item.duration > YOUTUBE.shortMax ? `Video ist ${Math.round(item.duration)} s lang – länger als 3 Minuten wird es ein normales Video, kein Short.` : "Querformat – wird ein normales YouTube-Video, kein Short.");
   return { errors, warnings };
 }
 
