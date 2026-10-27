@@ -9,9 +9,9 @@ export const WEEKPLAN = [
   {
     app_id: "leesidelab", platform: "instagram", slots: [
       { day: 0, time: "18:00", format: "Wetter-Serie, Teil 1", note: "Reel mit Stimme" },
-      { day: 1, time: "18:00", format: "Unfall-Reel", alt: "Karussell «Weather trap in 1 picture»", note: "Unfall in Paketwochen, sonst Karussell aus der Serie" },
+      { day: 1, time: "18:00", format: "Unfall-Reel", alt: "Reel «Wind im Griff» (Serie A)", note: "Unfall in Paketwochen, sonst Serie A (seit 27.10.2026 statt Karussell)" },
       { day: 2, time: "18:00", format: "Wetter-Serie, Teil 2", note: "Reel mit Stimme" },
-      { day: 3, time: "18:00", format: "Instrument-Reel", alt: "Karussell «Weather trap in 1 picture»", note: "Instrument in Paketwochen, sonst Karussell" },
+      { day: 3, time: "18:00", format: "Instrument-Reel", alt: "Reel «Woher kommt das Wetter?» (Serie B)", note: "Instrument in Paketwochen, sonst Serie B (seit 27.10.2026 statt Karussell)" },
       { day: 4, time: "18:00", format: "Wetter-Serie, Teil 3", note: "Reel mit Stimme" },
       { day: 5, time: "18:00", format: "METAR of the week", note: "Karussell-Quiz, Auflösung im Kommentar" },
       { day: 6, time: "18:00", format: "Panel Puzzle", note: "Quiz im Kommentar, Auflösung nach 4 h" },
@@ -20,9 +20,9 @@ export const WEEKPLAN = [
   {
     app_id: "leesidelab", platform: "youtube", slots: [
       { day: 0, time: "19:00", format: "Wetter-Serie, Teil 1", note: "Short" },
-      { day: 1, time: "19:00", format: "Unfall-Reel", alt: "Short aus einem langen Video", note: "Unfall in Paketwochen, sonst Kapitel aus einem Langvideo" },
+      { day: 1, time: "19:00", format: "Unfall-Reel", alt: "Short «Wind im Griff» (Serie A)", note: "Unfall in Paketwochen, sonst Serie A oder ein Kapitel aus einem Langvideo" },
       { day: 2, time: "19:00", format: "Wetter-Serie, Teil 2", note: "Short" },
-      { day: 3, time: "19:00", format: "Instrument-Reel", alt: "Short aus einem langen Video", note: "Instrument in Paketwochen, sonst Kapitel aus einem Langvideo" },
+      { day: 3, time: "19:00", format: "Instrument-Reel", alt: "Short «Woher kommt das Wetter?» (Serie B)", note: "Instrument in Paketwochen, sonst Serie B oder ein Kapitel aus einem Langvideo" },
       { day: 4, time: "19:00", format: "Wetter-Serie, Teil 3", note: "Short" },
       { day: 5, time: "19:00", format: "METAR of the week", note: "Short" },
       { day: 6, time: "19:00", format: "Panel Puzzle", note: "Short" },
