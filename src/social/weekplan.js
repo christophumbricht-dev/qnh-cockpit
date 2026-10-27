@@ -74,5 +74,21 @@ export function weekGrid(plan, posts, accounts, monday, { swissDay, isPlaceholde
   });
 }
 
+// 4-week block (Christoph 27.10.2026: plan in blocks of 4 weeks, each starting on a Monday): one row per week,
+// one cell per day; a day is as good as its weakest channel (channels without an account are left out)
+// → [{ monday, days: [{ date, state, channels: [{ channel, state }] }] }]
+export function blockGrid(plan, posts, accounts, monday, weeks, opts) {
+  return Array.from({ length: weeks }, (_, w) => {
+    const m = addDaysIso(monday, 7 * w);
+    const rows = weekGrid(plan, posts, accounts, m, opts).filter((r) => r.account);
+    const days = Array.from({ length: 7 }, (_, d) => {
+      const channels = rows.map((r) => ({ channel: r.channel, state: r.days.find((x) => x.slot.day === d)?.state })).filter((c) => c.state);
+      const state = channels.length ? channels.map((c) => c.state).reduce((a, b) => (RANK[b] < RANK[a] ? b : a)) : "empty";
+      return { date: addDaysIso(m, d), state, channels };
+    });
+    return { monday: m, days };
+  });
+}
+
 // how full the week is per channel: { ok, total } (a day counts when its posts are approved or out)
 export const weekScore = (row) => ({ ok: row.days.filter((d) => d.state === "ok").length, total: row.days.length });

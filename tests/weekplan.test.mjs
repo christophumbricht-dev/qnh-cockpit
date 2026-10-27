@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WEEKPLAN, mondayOf, postState, weekGrid, weekScore } from "../src/social/weekplan.js";
+import { WEEKPLAN, blockGrid, mondayOf, postState, weekGrid, weekScore } from "../src/social/weekplan.js";
 import { isPlaceholder, utcToZurichLocal } from "../src/social/validate.js";
 
 const swissDay = (iso) => utcToZurichLocal(iso).slice(0, 10);
@@ -49,4 +49,23 @@ test("weekGrid: a channel without a connected account stays empty", () => {
   const [row] = weekGrid([{ app_id: "wolkenhof", platform: "youtube", slots: [{ day: 0, time: "10:00", format: "Folge" }] }], [], accounts, "2026-11-02", opts);
   assert.equal(row.account, null);
   assert.equal(row.days[0].state, "empty");
+});
+
+test("blockGrid: 4 weeks from a Monday, a day is as good as its weakest channel", () => {
+  const plan = WEEKPLAN.filter((c) => c.app_id === "leesidelab");
+  const posts = [
+    { id: 1, account_id: "ig", status: "approved", caption: "a", media: [{}], scheduled_at: "2026-10-26T17:00:00Z" },   // Mo IG ok
+    { id: 2, account_id: "yt", status: "approved", caption: "a", media: [{}], scheduled_at: "2026-10-26T18:00:00Z" },   // Mo YT ok
+    { id: 3, account_id: "ig", status: "approved", caption: "b", media: [{}], scheduled_at: "2026-10-27T17:00:00Z" },   // Di IG ok
+    { id: 4, account_id: "yt", status: "draft", caption: "b", media: [{}], scheduled_at: "2026-10-27T18:00:00Z" },      // Di YT draft
+    { id: 5, account_id: "ig", status: "draft", caption: "PLATZHALTER · c", media: [], scheduled_at: "2026-11-02T17:00:00Z" },
+  ];
+  const b = blockGrid(plan, posts, accounts, "2026-10-26", 4, opts);
+  assert.deepEqual(b.map((w) => w.monday), ["2026-10-26", "2026-11-02", "2026-11-09", "2026-11-16"]);
+  assert.equal(b[0].days[0].state, "ok");
+  assert.equal(b[0].days[1].state, "draft");
+  assert.equal(b[0].days[2].state, "empty");
+  assert.equal(b[1].days[0].state, "empty");                       // IG placeholder, YT nothing: the weaker wins
+  assert.equal(b[0].days[0].channels.length, 2);
+  assert.equal(b[3].days[6].date, "2026-11-22");
 });

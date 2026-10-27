@@ -5,7 +5,7 @@ import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
 import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, youtubeIsLong, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
-import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf, weekGrid, weekScore } from "./weekplan.js";
+import { WEEKPLAN, WEEK_DAYS, addDaysIso, blockGrid, mondayOf, weekGrid, weekScore } from "./weekplan.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
@@ -146,16 +146,34 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const days = row.days.map((d) => `<li class="wk-day wk-${d.state}${d.date === today ? " wk-today" : ""}">
           <span class="wk-when"><b>${WEEK_DAYS[d.slot.day]}</b> ${dm(d.date)}<span class="muted">${esc(d.slot.time)}</span></span>
           <span class="wk-what"><b>${esc(d.slot.format)}</b>${d.slot.alt ? `<span class="muted small">oder ${esc(d.slot.alt)}</span>` : ""}
-            ${d.posts.map((p) => `<button class="link wk-post" data-action="soc-open" data-id="${esc(p.id)}">${esc(name(p))}</button>`).join("")}</span>
+            ${d.posts.map((p) => `<button class="link wk-post" data-action="soc-open" data-id="${esc(p.id)}">${esc(name(p))}</button>${p.status === "draft" && !isPlaceholder(p) ? `<button class="btn small wk-approve" data-action="soc-open" data-id="${esc(p.id)}">Ansehen und freigeben ›</button>` : ""}`).join("")}</span>
           <span class="wk-state">${WK_STATE[d.state]}</span></li>`).join("");
       return `<section class="channel-card wk-card">${head}<ul class="wk-days">${days}</ul></section>`;
     };
+    // 4-week block: one row per week, one cell per day (green = every channel ready, orange = a draft waits for
+    // approval, red = a video is missing); a row opens that week below
+    const plan = WEEKPLAN.filter((c) => st.filter === "all" || c.app_id === st.filter);
+    const blockStart = st.blockStart ?? thisMonday;
+    const block = blockGrid(plan, posts(), accounts(), blockStart, 4, { swissDay, isPlaceholder });
+    const tone = (s) => (s === "ok" ? "ok" : s === "draft" ? "draft" : "miss");
+    const chName = (c) => `${appName(c.app_id)} ${PLATFORM[c.platform] ?? c.platform}`;
+    const blockHtml = `<section class="blk">
+        <div class="blk-head"><button class="btn ghost" data-action="soc-block" data-value="-28" aria-label="4 Wochen zurück">‹</button>
+          <b>4 Wochen ab ${dm(blockStart)}${blockStart.slice(0, 4)}</b>
+          <button class="btn ghost" data-action="soc-block" data-value="28" aria-label="4 Wochen vor">›</button>
+          ${blockStart !== thisMonday ? `<button class="link" data-action="soc-block" data-value="0">ab dieser Woche</button>` : ""}</div>
+        <div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}
+          ${block.map((w) => `<button class="blk-week${w.monday === monday ? " on" : ""}" data-action="soc-week-set" data-value="${esc(w.monday)}">${dm(w.monday)}</button>${w.days.map((d) =>
+            `<button class="blk-cell blk-${tone(d.state)}${d.date === today ? " today" : ""}" data-action="soc-week-set" data-value="${esc(w.monday)}" title="${esc(`${dm(d.date)}\n${d.channels.map((c) => `${chName(c.channel)}: ${WK_STATE[c.state]}`).join("\n")}`)}" aria-label="${esc(`${dm(d.date)}: ${d.channels.map((c) => `${chName(c.channel)} ${WK_STATE[c.state]}`).join(", ")}`)}"></button>`).join("")}`).join("")}
+        </div>
+        <p class="muted small blk-legend"><span class="blk-key blk-ok"></span> alles freigegeben <span class="blk-key blk-draft"></span> Entwurf wartet auf Freigabe <span class="blk-key blk-miss"></span> Video fehlt</p>
+      </section>`;
     // drafts of this week that the review round would show (same filters as the round itself)
     const prevWeek = st.reviewWeek;
     st.reviewWeek = monday;
     const weekDrafts = reviewQueue().length;
     st.reviewWeek = prevWeek;
-    return `<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
+    return `${blockHtml}<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
         <b>KW ${kw} · ${dm(monday)} bis ${dm(addDaysIso(monday, 6))}${monday.slice(0, 4)}</b>
         <button class="btn ghost" data-action="soc-week" data-value="7" aria-label="Woche vor">›</button>
         ${monday !== thisMonday ? `<button class="link" data-action="soc-week" data-value="0">Diese Woche</button>` : ""}
@@ -732,7 +750,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       return `<div class="review-bar"><b>Freigabe-Runde</b>${platformBadge(acc)}<span class="muted">${rv.done} freigegeben · noch ${queue.length} Entw${queue.length === 1 ? "urf" : "ürfe"}</span>
         <span class="row-right"><button class="btn ghost" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Später freigeben ›</button></span></div>`;
     })() : "";
-    return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : "← Zurück zur Liste"}</button>
+    return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : S.social.mode === "week" ? "← Zurück zum Wochenplan" : "← Zurück zur Liste"}</button>
         <span class="muted">${ed.isNew ? (ed.source === "duplicate" ? "Duplikat" : "Neuer Beitrag") : `${STATUS[ed.status] ?? ed.status}`}${ro ? " · zum Ändern zuerst zurückziehen oder duplizieren" : ""}</span></div>
       <section class="soc-editor">
         <div class="soc-form card">
@@ -1150,6 +1168,20 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           toast(bad.length ? `@${bad[0].account}: ${bad[0].error}` : "Statistik aktualisiert");
         } catch (err) { toast(errorText(err)); }
         st.stats = null; await loadStats(true); return true;
+      case "soc-block": {
+        const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
+        const n = Number(el.dataset.value);
+        st.blockStart = n === 0 ? null : addDaysIso(st.blockStart ?? thisMonday, n);
+        render();
+        return true;
+      }
+      case "soc-week-set": {
+        const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
+        st.weekStart = el.dataset.value === thisMonday ? null : el.dataset.value;
+        render();
+        document.querySelector(".wk-nav")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return true;
+      }
       case "soc-week": {
         const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
         const n = Number(el.dataset.value);
