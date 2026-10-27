@@ -14,6 +14,8 @@ import { createOutreach } from "./outreach-ui.js";
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
 const PLATFORM = { instagram: "Instagram", facebook: "Facebook", youtube: "YouTube" };
+// remembered view per device; new key on 27.10.2026 so every device starts once in the Wochenplan
+const MODE_KEY = "qnh-social-mode-2";
 const LOCKED = ["approved", "publishing", "published"];
 // status filter above the post list: [value, label, test, tooltip]
 const STATUS_FILTERS = [
@@ -96,7 +98,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const openComments = inbox.count(false);
     const openOut = outreach.count();
-    const modes = [["list", "Beiträge"], ["calendar", "Kalender"], ["week", "Wochenplan"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
+    // Wochenplan first (27.10.2026, Christoph: look at the 4-week block, then approve in the week); the full post list last
+    const modes = [["week", "Wochenplan"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"], ["list", "Alle Beiträge"]].map(([v, l]) =>
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
@@ -380,7 +383,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { const m = localStorage.getItem("qnh-social-mode"); return ["calendar", "week", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
+    try { const m = localStorage.getItem(MODE_KEY); return ["calendar", "list", "stats", "comments", "outreach"].includes(m) ? m : "week"; } catch { return "week"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -1189,7 +1192,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         render();
         return true;
       }
-      case "soc-mode": st.mode = el.dataset.value; try { localStorage.setItem("qnh-social-mode", st.mode); } catch {} render(); return true;
+      case "soc-mode": st.mode = el.dataset.value; try { localStorage.setItem(MODE_KEY, st.mode); } catch {} render(); return true;
       case "soc-month": st.month = el.dataset.value; render(); return true;
       case "soc-new-on":
         openEditor(null);
