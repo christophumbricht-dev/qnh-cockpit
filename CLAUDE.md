@@ -85,9 +85,9 @@ Finanzen (`#finanzen`, `src/finance/`): migration `20261021100000_finance.sql` (
 
 **Rechner** (25.10.2026): Finanzen → «Rechner» shows per computer (gaming PC, laptop) online status, how busy it was (7 days), a 14-day strip of busy hours and electricity in kWh/CHF (30 days). Migration `20261025100000_machines.sql`: `machines` (watt estimate per machine: `idle_w`, `cpu_w`, `gpu_w`), `machine_samples` (one row per 5-minute slot), view `machine_hours` (per hour; busy = heavy program or CPU ≥ 40 % or GPU ≥ 30 %), one-row `power_settings` (`price_chf_kwh` = high tariff, `price_nt_chf_kwh`, `nt_windows` like «22:00-06:00, 12:30-17:00 ab 1.1.2027», parsed by `ntWindows`; each hour costed at its tariff by `cost`/`ntShare`; Christoph types the prices in the card in Rp./kWh incl. VAT; until then an example price 0.30 marked with *), cron `machine-samples-cleanup` (400 days). Logic `src/finance/machines.js`, measuring `scripts/machine-heartbeat.mjs` + pure `scripts/machine-lib.mjs` (CPU via WMI, GPU load and watts via nvidia-smi, heavy programs via tasklist, battery), tests `tests/machines.test.mjs`. Windows task «QNH Rechner-Messung» (`scripts/machine-task.ps1 -Machine gaming -Always` / `-Machine laptop`, runs `machine-heartbeat.cmd` headless every 5 min). Samples wait in `%USERPROFILE%\.qnh-machine\<machine>.jsonl` (NOT AppData: processes started from the Claude app see AppData redirected) and go up about once an hour with that computer's own `.qnh-session.json` (never copy it between computers: the refresh token rotates).
 
-## Social calendar
+## Social views
 
-`src/social/ui.js`: list/calendar toggle (localStorage `qnh-social-mode`), month grid in Swiss time; dragging a draft/approved post to another day keeps its time (approved posts: draft → approved again with the new time, as the guard trigger requires).
+`src/social/ui.js`, tabs since 27.10.2026 (Christoph): **Wochenplan** first and default (4-week block on top, then the week with «Ansehen und freigeben ›» and «Diese Woche freigeben»), Kommentare, Bei anderen, Statistik, «Alle Beiträge» (the list) last; remembered per device in localStorage `qnh-social-mode-2`. The month calendar tab was removed (the 4-week block replaces it); its code (month grid, drag a post to another day) is still in ui.js but not reachable.
 
 ## Hosting (cockpit.setqnh.ch)
 

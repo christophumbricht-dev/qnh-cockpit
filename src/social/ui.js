@@ -98,8 +98,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       .map(([v, l]) => `<button class="chip${v === "all" ? "" : " chip-app"}${st.filter === v ? " on" : ""}" data-action="soc-filter" data-value="${esc(v)}" title="${esc(l)}">${v === "all" ? "" : appBadge(v)}${esc(l)}</button>`).join("");
     const openComments = inbox.count(false);
     const openOut = outreach.count();
-    // Wochenplan first (27.10.2026, Christoph: look at the 4-week block, then approve in the week); the full post list last
-    const modes = [["week", "Wochenplan"], ["calendar", "Kalender"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"], ["list", "Alle Beiträge"]].map(([v, l]) =>
+    // Wochenplan first (27.10.2026, Christoph: look at the 4-week block, then approve in the week); the full post list last.
+    // The month calendar tab was removed the same day (the 4-week block replaces it).
+    const modes = [["week", "Wochenplan"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"], ["list", "Alle Beiträge"]].map(([v, l]) =>
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
@@ -383,7 +384,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { const m = localStorage.getItem(MODE_KEY); return ["calendar", "list", "stats", "comments", "outreach"].includes(m) ? m : "week"; } catch { return "week"; }
+    try { const m = localStorage.getItem(MODE_KEY); return ["list", "stats", "comments", "outreach"].includes(m) ? m : "week"; } catch { return "week"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -1492,7 +1493,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
-  const setMode = (mode) => { if (["list", "calendar", "week", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
+  const setMode = (mode) => { if (["list", "week", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
   // checklist of one post for «Heute» (same checkboxes as in the list, action soc-todo-check)
   function todoChecklist(id) {
     const p = posts().find((x) => x.id === id);
