@@ -10,11 +10,24 @@ const must = (r, what) => { if (r.error) throw Object.assign(new Error(r.error.m
 
 export const socialConfigured = () => DEMO || Boolean(QNH.url && QNH.anonKey);
 
+// all posts that are not cancelled, in pages (a fixed limit of 300 hid older posts once the placeholders for
+// months ahead came in, 27.10.2026). The rows are small; media are only paths.
+const PAGE = 1000;
+async function loadPosts() {
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const r = await sb().from("social_posts").select("*").neq("status", "cancelled").order("created_at", { ascending: false }).order("id").range(from, from + PAGE - 1);
+    if (r.error) return r;
+    rows.push(...r.data);
+    if (r.data.length < PAGE || rows.length >= 20 * PAGE) return { data: rows, error: null };
+  }
+}
+
 export async function loadSocial() {
   if (DEMO) return demo.load();
   const [accounts, posts] = await Promise.all([
     sb().from("social_accounts").select("id, app_id, platform, handle, active, token_expires_at").order("app_id"),
-    sb().from("social_posts").select("*").neq("status", "cancelled").order("created_at", { ascending: false }).limit(300),
+    loadPosts(),
   ]);
   const rows = must(posts, "posts");
   if (rows.length) { hasTodo = "todo" in rows[0]; hasLocation = "location" in rows[0]; hasTitle = "title" in rows[0]; hasAi = "ai_generated" in rows[0]; hasReply = "first_comment_reply" in rows[0]; hasTopic = "topic" in rows[0]; hasKids = "made_for_kids" in rows[0]; }
