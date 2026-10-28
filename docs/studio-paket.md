@@ -10,7 +10,7 @@ Jede Rückmeldung wird ausserdem eine Regel in `C:\QNH\03_Social\Abnahme-Regeln.
 
 ## YouTube-Ablauf (seit 28.10.2026)
 
-Die **langen** YouTube-Videos (`leesidelab/youtube`, Format `video_long`, Ziel 2 pro Woche) und die **Leeside-Instagram-Reels** (`leesidelab/instagram`, Format `reel`, Ziel 6 pro Woche) laufen durch vier Schritte, geplant in 4-Wochen-Blöcken (Liste `PIPELINE` in `src/studio/pipeline.js`). YouTube-Shorts nicht: die laufen direkt in Sichtung 1. Der Social-Import ordnet ein Paket der bestätigten Idee mit gleichem Kanal, Tag und Format zu (`pickIdea`), sonst `"studio": "<slug>"` in `post.json`. Christoph sieht den Stand im Wochenplan (Social → Wochenplan) und im Studio als farbige Kästchen:
+Die **langen** YouTube-Videos (`leesidelab/youtube`, Format `video_long`, Ziel 2 pro Woche) und **alles auf Instagram von Leeside und Downwind** (`leesidelab/instagram`, `downwind/instagram`, jedes Format, Ziel je 7 pro Woche) laufen durch vier Schritte, geplant in 4-Wochen-Blöcken (Liste `PIPELINE` in `src/studio/pipeline.js`). YouTube-Shorts nicht: die laufen direkt in Sichtung 1. Der Social-Import ordnet ein Paket der bestätigten Idee mit gleichem Kanal, Tag und Format zu (`pickIdea`), sonst `"studio": "<slug>"` in `post.json`. Christoph sieht den Stand im Wochenplan (Social → Wochenplan) und im Studio als farbige Kästchen:
 
 | Schritt | Farbe | Claude | Christoph | fertig bis |
 |---|---|---|---|---|

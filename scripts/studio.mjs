@@ -250,7 +250,7 @@ async function adopt(sb, a) {
     const status = adoptStatus(p, isPlaceholder);
     const row = ph
       ? { channel: base.channel, format, ...placeholderText(p.caption), day, status, slug: slugOf(`${day}-${placeholderText(p.caption).title}`.slice(0, 70) + `-${p.id.slice(0, 4)}`) }
-      : { ...base, format, status, ...(status === "approved" ? { approved_at: p.updated_at } : {}) };
+      : { ...base, format, status, ...(p.caption?.trim() || p.title?.trim() ? {} : { title: p.kind === "story" ? "Story" : "Beitrag" }), ...(status === "approved" ? { approved_at: p.updated_at } : {}) };
     made.push({ row, post: p, ph });
   }
   for (const m of made) console.log(`  ${m.row.day}  ${m.row.channel.padEnd(20)} ${m.row.format.padEnd(10)} ${m.row.status.padEnd(9)} ${m.row.title}`);

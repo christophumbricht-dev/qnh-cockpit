@@ -134,7 +134,7 @@ export function ideaRow({ channel, day, title, pitch, format = "short", slug = n
   if (!DAY.test(day ?? "")) throw new CliError("Datum als YYYY-MM-DD angeben.");
   if (!String(title ?? "").trim()) throw new CliError("Titel fehlt.");
   if (!String(pitch ?? "").trim()) throw new CliError("Bitte in ein, zwei Sätzen sagen, worum es geht.");
-  if (!["short", "video_long", "reel"].includes(format)) throw new CliError("--format short, video_long oder reel.");
+  if (!["short", "video_long", "reel", "carousel", "image", "story"].includes(format)) throw new CliError("--format short, video_long, reel, carousel, image oder story.");
   return { channel, format, title: String(title).trim().slice(0, 200), pitch: String(pitch).trim().slice(0, 2000), day, status: "idea", slug: slugOf(slug ?? `${day}-${title}`) };
 }
 // what the chats do next with ideas: waiting on Christoph, accepted (make the draft), dropped without a replacement yet

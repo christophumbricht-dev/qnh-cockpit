@@ -8,13 +8,15 @@
 import { addDaysIso } from "../social/weekplan.js";
 
 // what runs through the Ablauf (Christoph 28.10.2026): the long YouTube videos (2 a week, the Shorts not) and the
-// Leeside Instagram reels (6 a week; Saturday is the METAR carousel)
+// Instagram of Leeside and Downwind with every format, reel, carousel, picture or story (7 a week each; «es soll alles
+// durchs Studio durch»). formats null = all formats.
 export const PIPELINE = [
-  { channel: "leesidelab/youtube", format: "video_long", perWeek: 2, label: "lange Videos" },
-  { channel: "leesidelab/instagram", format: "reel", perWeek: 6, label: "Reels" },
+  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "lange Videos" },
+  { channel: "leesidelab/instagram", formats: null, perWeek: 7, label: "Instagram" },
+  { channel: "downwind/instagram", formats: null, perWeek: 7, label: "Instagram" },
 ];
 export const PIPELINE_CHANNELS = PIPELINE.map((p) => p.channel);
-export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && p.format === format);
+export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && (!p.formats || p.formats.includes(format)));
 
 export const STEPS = [
   null,
@@ -68,8 +70,8 @@ export const christophsTurn = (status) => phaseOf(status).who === "christoph";
 // has fewer than perWeek items and its idea deadline (21 days before its Monday) has passed
 // → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late }] }] }]
 export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE) {
-  return pipeline.map(({ channel, format, perWeek, label }) => {
-    const mine = items.filter((i) => i.channel === channel && i.format === format && i.status !== "dropped" && i.day);
+  return pipeline.map(({ channel, formats, perWeek, label }) => {
+    const mine = items.filter((i) => i.channel === channel && (!formats || formats.includes(i.format)) && i.status !== "dropped" && i.day);
     return {
       channel, perWeek, label,
       weeks: Array.from({ length: weeks }, (_, w) => {
