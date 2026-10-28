@@ -139,3 +139,23 @@ test("adoptStatus maps the Social plan to the Ablauf", () => {
   assert.deepEqual(placeholderText("PLATZHALTER · Föhn Teil 2\nWarum der Norden warm wird"), { title: "Föhn Teil 2", pitch: "Warum der Norden warm wird" });
   assert.deepEqual(placeholderText("PLATZHALTER · Unfall-Reel"), { title: "Unfall-Reel", pitch: "Unfall-Reel" });
 });
+
+import { dailyDue, requestRow, summaryOf } from "../scripts/studio-lib.mjs";
+test("dailyDue: from 08:00 Swiss time, once per Swiss day", () => {
+  assert.equal(dailyDue(new Date("2026-10-29T06:55:00Z"), null), false);            // 07:55 Zurich (CET)
+  assert.equal(dailyDue(new Date("2026-10-29T07:00:00Z"), null), true);             // 08:00
+  assert.equal(dailyDue(new Date("2026-10-29T07:05:00Z"), "2026-10-29T07:00:10Z"), false);
+  assert.equal(dailyDue(new Date("2026-10-30T07:01:00Z"), "2026-10-29T07:00:10Z"), true);
+  assert.equal(dailyDue(new Date("2026-07-01T06:01:00Z"), null), true);             // 08:01 summer time
+});
+test("summaryOf takes the report after ZUSAMMENFASSUNG:", () => {
+  assert.equal(summaryOf("lots of work\nZUSAMMENFASSUNG: 2 Ideen, 1 Entwurf."), "2 Ideen, 1 Entwurf.");
+  assert.equal(summaryOf(""), "(kein Bericht)");
+  assert.equal(summaryOf("x".repeat(3000)).length, 1500);
+});
+test("requestRow: voicing needs sentences and credits", () => {
+  assert.deepEqual(requestRow({ title: "Vertonen: Föhn", sentences: "12", credits: "1200" }), { kind: "voice", title: "Vertonen: Föhn", body: "", sentences: 12, credits: 1200, item_id: null });
+  assert.throws(() => requestRow({ title: "Vertonen" }), /saetze/);
+  assert.throws(() => requestRow({ title: "", sentences: 1, credits: 1 }), /titel/);
+  assert.equal(requestRow({ title: "Frage", kind: "other" }).sentences, null);
+});

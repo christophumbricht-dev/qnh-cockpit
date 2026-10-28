@@ -30,6 +30,9 @@ await db.exec(read("20261013100000_social.sql"));
 await db.exec(`insert into public.qnh_admins (user_id) values ('${ADMIN}');`);
 await db.exec(read("20261028100000_studio.sql"));
 await db.exec(read("20261028100000_studio.sql"));   // safe to run twice
+await db.exec("create schema if not exists cron; create or replace function cron.schedule(text, text, text) returns bigint language sql as $$ select 1::bigint $$;");
+await db.exec(read("20261028200000_studio_jobs.sql"));
+await db.exec(read("20261028200000_studio_jobs.sql"));   // safe to run twice
 
 async function as(who, sql) {
   const role = who === "service" ? "service_role" : who ? "authenticated" : "anon";
@@ -60,4 +63,17 @@ test("versions are unique per item, markers carry time, scene and spot; deleting
 test("channel and format are checked", async () => {
   await assert.rejects(as(ADMIN, "insert into studio_items (channel, format) values ('leesidelab', 'reel')"));
   await assert.rejects(as(ADMIN, "insert into studio_items (channel, format) values ('leesidelab/instagram', 'movie')"));
+});
+
+test("background runs: admins only, at most one waiting run; requests need a title", async () => {
+  await as(ADMIN, "insert into studio_jobs (trigger) values ('button')");
+  await assert.rejects(as(ADMIN, "insert into studio_jobs (trigger) values ('button')"), /duplicate|unique/);
+  await as(ADMIN, "update studio_jobs set status = 'running'");
+  await as(ADMIN, "insert into studio_jobs (trigger) values ('daily')");   // a new one may wait while one runs
+  assert.equal((await as(OTHER, "select * from studio_jobs")).rows.length, 0);
+  await assert.rejects(as(null, "select * from studio_jobs"));
+  await as(ADMIN, "insert into studio_requests (title, sentences, credits, body) values ('Vertonen: Föhn Teil 2', 12, 1200, 'Satz 1')");
+  await assert.rejects(as(ADMIN, "insert into studio_requests (title) values ('')"));
+  await assert.rejects(as(ADMIN, "update studio_requests set status = 'maybe'"));
+  assert.equal((await as(OTHER, "select * from studio_requests")).rows.length, 0);
 });

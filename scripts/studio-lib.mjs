@@ -206,3 +206,31 @@ export function placeholderText(caption) {
   const [first, ...rest] = text.split("\n");
   return { title: (first || "Idee").slice(0, 200), pitch: (rest.join("\n").trim() || first || "").slice(0, 2000) };
 }
+
+// ---------- Claude in the background (scripts/studio-worker.mjs) ----------
+// the daily run starts at the first check from 08:00 Swiss time, once per Swiss day
+export function dailyDue(now, lastDailyAt, hour = 8) {
+  const z = (d) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false }).formatToParts(d)
+    .reduce((o, p) => ({ ...o, [p.type]: p.value }), {});
+  const n = z(now);
+  if (Number(n.hour) < hour) return false;
+  if (!lastDailyAt) return true;
+  const l = z(new Date(lastDailyAt));
+  return `${l.year}-${l.month}-${l.day}` !== `${n.year}-${n.month}-${n.day}`;
+}
+// the run's report: the text after the last «ZUSAMMENFASSUNG:», else the end of the output, at most 4000 characters
+export function summaryOf(output) {
+  const text = String(output ?? "").replace(/\r/g, "").trim();
+  const i = text.lastIndexOf("ZUSAMMENFASSUNG:");
+  const s = (i >= 0 ? text.slice(i + "ZUSAMMENFASSUNG:".length) : text.slice(-1500)).trim();
+  return Array.from(s).slice(0, 4000).join("") || "(kein Bericht)";
+}
+// a question for Christoph (voicing): checked before it goes to the cockpit
+export function requestRow({ title, body = "", sentences = null, credits = null, kind = "voice", item_id = null }) {
+  if (!String(title ?? "").trim()) throw new CliError("--titel fehlt.");
+  const int = (v, max, name) => { if (v == null || v === true) return null; const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > max) throw new CliError(`--${name} muss eine ganze Zahl sein.`); return n; };
+  if (!["voice", "other"].includes(kind)) throw new CliError("--art voice oder other.");
+  const row = { kind, title: String(title).trim().slice(0, 200), body: String(body ?? "").slice(0, 4000), sentences: int(sentences, 500, "saetze"), credits: int(credits, 1000000, "credits"), item_id };
+  if (kind === "voice" && (row.sentences == null || row.credits == null)) throw new CliError("Beim Vertonen gehören --saetze und --credits dazu (Regel: vor jedem ElevenLabs-Aufruf fragen).");
+  return row;
+}

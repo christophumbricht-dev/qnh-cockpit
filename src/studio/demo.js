@@ -45,7 +45,16 @@ const markers = [
   { id: id(), item_id: "reel", version: 1, at: null, target: "caption", category: "text", body: "Kein Strich als Satzzeichen", status: "done", note: "Strich durch Punkt ersetzt", scope: "all", rule: "Keine Striche als Satzzeichen", done_version: 2, created_at: "2026-10-26T09:01:00Z" },
 ];
 
-export const load = () => wait({ items, versions, markers });
+const jobs = [{ id: "j1", trigger: "daily", status: "done", requested_at: "2026-10-28T07:00:00Z", started_at: "2026-10-28T07:00:30Z", finished_at: "2026-10-28T07:41:00Z", machine: "gaming", summary: "2 Ideen vorgeschlagen (Nebel, Gewitter), Entwurf «Thermik» gebaut, 1 Vertonung angefragt." }];
+const requests = [{ id: "q1", item_id: "yt3", kind: "voice", title: "Vertonen: Mountain waves explained", body: "Lee waves form when stable air flows over a ridge …", sentences: 18, credits: 1700, status: "pending", created_at: "2026-10-28T07:40:00Z" }];
+export const load = () => wait({ items, versions, markers, jobs, requests, runsReady: true });
+export async function startRun(note) {
+  if (jobs.some((j) => j.status === "queued")) return false;
+  jobs.unshift({ id: id(), trigger: "button", status: "queued", note, requested_at: new Date().toISOString() });
+  emit();
+  return true;
+}
+export async function answerRequest(qid, status, answer) { Object.assign(requests.find((q) => q.id === qid), { status, answer, decided_at: new Date().toISOString() }); emit(); }
 // demo media: pictures from public/, no videos (the player offers the PC file)
 export const url = (source) => (source?.path && !/\.mp4$/.test(source.path) ? source.path : null);
 export async function saveMarker(m) {

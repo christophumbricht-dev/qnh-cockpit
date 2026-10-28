@@ -93,7 +93,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   }
 
   // ---------- for «Heute» and the sidebar ----------
-  const badge = () => waiting().length;
+  const openRequests = () => (st().value?.requests ?? []).filter((q) => q.status === "pending");
+  const badge = () => waiting().length + openRequests().length;
   function agenda() {
     const out = [];
     const n = waiting().filter((i) => LOOKING.includes(i.status)).length;
@@ -103,6 +104,10 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const t = today();
     const late = items().filter((i) => i.day && christophsTurn(i.status) && inPipeline(i.channel, i.format) && isLate(i.status, i.day, t)).length;
     if (late) out.push({ key: "studio-late", lane: "now", tone: "alert", title: `${late} ${late === 1 ? "Beitrag ist" : "Beiträge sind"} im Ablauf im Verzug und ${late === 1 ? "wartet" : "warten"} auf dich`, sub: "Digital Studio", where: "Studio", href: "#studio" });
+    const q = openRequests().length;
+    if (q) out.push({ key: "studio-requests", lane: "today", tone: "info", title: `${q} ${q === 1 ? "Frage" : "Fragen"} von Claude ${q === 1 ? "wartet" : "warten"} auf dich`, sub: "zum Beispiel Vertonen mit ElevenLabs", where: "Studio", href: "#studio" });
+    const last = st().value?.jobs?.[0];
+    if (last?.status === "failed") out.push({ key: "studio-run-failed", lane: "now", tone: "alert", title: "Der letzte Claude-Lauf im Hintergrund ist fehlgeschlagen", sub: String(last.summary ?? "").slice(0, 120), where: "Studio", href: "#studio" });
     // R2 has no spending cap: flag it from 80 % of the free 10 GB, and loudly once it costs something
     const r2 = index.r2;
     const flag = r2Flag(r2.bytes);
@@ -131,6 +136,35 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map((d) => cell(d, r.channel)).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
       <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran · rechts: Beiträge der Woche (rot = zu wenige Ideen)</p>
       <p class="muted small">Fristen vor dem Sendetag: Idee ${DEADLINE_DAYS[1]} Tage, Entwurf ${DEADLINE_DAYS[2]}, Video ${DEADLINE_DAYS[3]}, Feinschliff ${DEADLINE_DAYS[4]}.</p></section>`;
+  }
+
+  // ---------- Claude in the background (gaming PC, scripts/studio-worker.mjs) ----------
+  const WHEN = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  const when = (iso) => (iso ? WHEN.format(new Date(iso)) : "");
+  function requestHtml(q) {
+    const cost = [q.sentences != null ? `${q.sentences} Sätze` : "", q.credits != null ? `etwa ${q.credits.toLocaleString("de-CH")} Credits` : ""].filter(Boolean).join(", ");
+    return `<div class="st-req">
+      <div><b>${esc(q.title)}</b>${cost ? `<span class="muted small"> · ${esc(cost)}</span>` : ""}
+        ${q.body ? `<details><summary class="small">Text ansehen</summary><p class="st-pkg-text small">${esc(q.body)}</p></details>` : ""}</div>
+      ${q.status === "pending"
+        ? `<div class="st-idea-act"><button class="btn ghost" data-action="st-req" data-id="${esc(q.id)}" data-value="declined">Nein</button><button class="btn" data-action="st-req" data-id="${esc(q.id)}" data-value="approved">✓ ${q.kind === "voice" ? "Vertonen ok" : "Ok"}</button></div>`
+        : `<span class="pill st-approved">ok, beim nächsten Lauf</span>`}</div>`;
+  }
+  function runsHtml() {
+    const v = st().value;
+    if (!v.runsReady) return "";
+    const jobs = v.jobs ?? [];
+    const active = jobs.find((j) => j.status === "queued" || j.status === "running");
+    const last = jobs.find((j) => j.status === "done" || j.status === "failed");
+    const state = active?.status === "running" ? `läuft seit ${esc(when(active.started_at))}`
+      : active ? `wartet auf den Gaming-PC (startet innert 5 Minuten)${active.trigger === "daily" ? ", Tageslauf" : ""}` : "";
+    const reqs = v.requests ?? [];
+    return `<section class="card st-runs"><div class="st-week-head"><b>Claude im Hintergrund</b>
+        <button class="btn" data-action="st-run"${active ? " disabled" : ""}>▶ Claude jetzt starten</button></div>
+      <p class="muted small">Läuft jeden Tag um 08:00 am Gaming-PC von selbst und erledigt alles, wo «Claude ist dran» steht. Der Knopf startet einen Lauf sofort.</p>
+      ${state ? `<p class="small"><b>Jetzt:</b> ${state}${active?.note ? ` · «${esc(active.note)}»` : ""}</p>` : ""}
+      ${last ? `<p class="small ${last.status === "failed" ? "error" : ""}"><b>Letzter Lauf</b> ${esc(when(last.finished_at ?? last.started_at))}${last.status === "failed" ? " (fehlgeschlagen)" : ""}: ${esc(last.summary ?? "")}</p>` : `<p class="muted small">Noch kein Lauf.</p>`}
+      ${reqs.length ? `<h3>Fragen von Claude</h3>${reqs.map(requestHtml).join("")}` : ""}</section>`;
   }
 
   function ideasHtml() {
@@ -217,6 +251,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <div class="row-right"><button class="btn ghost" data-action="st-week" data-value="-7" aria-label="Woche zurück">‹</button><button class="btn ghost" data-action="st-week" data-value="7" aria-label="Woche vor">›</button>${s.weekStart ? `<button class="link" data-action="st-week" data-value="0">Diese Woche</button>` : ""}</div></div>
       <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. Lange YouTube-Videos und alles auf Instagram haben davor Idee und Entwurf.</p>
       ${(() => { const r2 = index.r2; const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
+      ${runsHtml()}
       ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
       ${weeks.map(week).join("")}
       ${noDay.length ? `<section class="card st-week"><b>Ohne Tag</b><div class="st-cards">${noDay.map(card).join("")}</div></section>` : ""}`;
@@ -254,6 +289,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <h2>${esc(it.title || "(ohne Titel)")}</h2></div><span class="pill st-${it.status}">${inPipeline(it.channel, it.format) ? `Schritt ${phaseOf(it.status).n} · ` : ""}${esc(STATUS[it.status])}${ver ? ` · Fassung ${it.current_version}` : ""}</span></div>
       ${it.status !== "dropped" ? stepper(it) : ""}
       ${claudeNote(it)}
+      ${(st().value?.requests ?? []).filter((q) => q.item_id === it.id).map(requestHtml).join("")}
       ${it.pitch || it.status === "idea" ? ideaView(it) : ""}
       ${["idea", "idea_ok", "dropped"].includes(it.status) && !ver ? "" : `<div class="st-body${it.format === "video_long" ? " wide" : ""}">
         <div class="st-stage">${ver ? (isPages(it.format) ? pagesView(it, ver, ms) : playerView(it, ver, ms)) : `<p class="note">Noch keine Fassung. Sie kommt mit dem Import oder mit <code>npm run studio -- upload</code>.</p>`}</div>
@@ -561,7 +597,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     location.hash = `#studio/${id}`;
   }
 
-  const WRITES = new Set(["st-approve", "st-finish", "st-again", "st-idea-ok", "st-idea-drop", "st-judge", "st-del", "st-choose"]);
+  const WRITES = new Set(["st-run", "st-req", "st-approve", "st-finish", "st-again", "st-idea-ok", "st-idea-drop", "st-judge", "st-del", "st-choose"]);
   async function onClick(action, el) {
     if (!WRITES.has(action)) return handleClick(action, el);
     if (busy) return true;
@@ -644,6 +680,19 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         try { await wrote(() => data.judgeIdea(it, ok, note.trim())); toast(ok ? "Idee ok. Claude macht den Entwurf." : "Verworfen. Claude schlägt eine andere Idee vor."); } catch (err) { toast(errorText(err)); }
         return true;
       }
+      case "st-run": {
+        const note = prompt("Was soll Claude machen? Leer lassen: alles, was ansteht.");
+        if (note === null) return true;
+        try {
+          let ok;
+          await wrote(async () => { ok = await data.startRun(note.trim()); });
+          toast(ok ? "Claude startet in den nächsten 5 Minuten am Gaming-PC." : "Es wartet schon ein Lauf.");
+        } catch (err) { toast(errorText(err)); }
+        return true;
+      }
+      case "st-req":
+        try { await wrote(() => data.answerRequest(id, el.dataset.value)); toast(el.dataset.value === "approved" ? "Ok. Claude vertont beim nächsten Lauf." : "Abgelehnt."); } catch (err) { toast(errorText(err)); }
+        return true;
       case "st-block": {
         const n = Number(el.dataset.value);
         s.blockStart = addDaysIso(s.blockStart ?? mondayOf(today()), n);

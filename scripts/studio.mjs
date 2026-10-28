@@ -11,6 +11,10 @@
 //   npm run studio -- idee <kanal> <YYYY-MM-DD> "Titel" "Worum es geht" [--format short|video_long]   step 1
 //   npm run studio -- ideen                                     waiting / accepted (make the draft) / dropped (propose another)
 //   npm run studio -- entwurf <studio/<slug>>                  step 2: entwurf.json → draft video (Windows voice) → upload
+//   npm run studio -- anfrage <slug|-> --titel "Vertonen: …" --saetze 12 --credits 1200 [--text datei.txt] [--art voice|other]
+//                                                               ask Christoph in the cockpit (every ElevenLabs voicing!)
+//   npm run studio -- anfragen                                  open questions; «ok» = go ahead, then anfrage-erledigt <id>
+//   npm run studio -- anfrage-erledigt <id>
 //   npm run studio -- uebernehmen [--von YYYY-MM-DD] [--wochen 4] [--dry]   take the Social plan into the Ablauf
 //                                                               (placeholder → idea, draft → Sichtung 1, approved/out → ready)
 //                                                               studio package of a long video → new version
@@ -28,7 +32,7 @@ import { buildDraft } from "./studio-draft.mjs";
 import { inPipeline } from "../src/studio/pipeline.js";
 import { isPlaceholder } from "../src/social/validate.js";
 import { addDaysIso, mondayOf } from "../src/social/weekplan.js";
-import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
+import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, requestRow, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
   statusAfterNewVersion, summary, versionFromPost, workMarkers } from "./studio-lib.mjs";
 
 const PAKETE = join(ROOT, "pakete");
@@ -227,6 +231,39 @@ async function draft(sb, a) {
   await upload(sb, { ...a, _: [out], slug: a.slug ?? basename(dir) });
 }
 
+async function ask(sb, a) {
+  const ref = a._[0];
+  let item_id = null;
+  if (ref && ref !== "-") {
+    const { items } = await loadAll(sb);
+    const it = findItem(items, ref);
+    if (!it) throw new CliError(`Kein Studio-Beitrag zu «${ref}».`);
+    item_id = it.id;
+  }
+  const body = a.text ? readFileSync(resolve(a.text), "utf8") : "";
+  const row = requestRow({ title: a.titel, body, sentences: a.saetze, credits: a.credits, kind: a.art ?? "voice", item_id });
+  const saved = must(await sb.from("studio_requests").insert(row).select("id").single());
+  console.log(`✓ Frage im Cockpit (Studio → «Fragen von Claude»): ${row.title}${row.sentences != null ? ` · ${row.sentences} Sätze, etwa ${row.credits} Credits` : ""}. Id ${saved.id}`);
+  console.log("Erst nach «ok» weitermachen: npm run studio -- anfragen");
+}
+
+async function requests(sb) {
+  const r = await sb.from("studio_requests").select("*").in("status", ["pending", "approved", "declined"]).order("created_at");
+  if (missingTables(r.error)) throw new CliError("Die Tabelle studio_requests fehlt noch (Migration 20261028200000_studio_jobs.sql).");
+  const list = must(r).filter((q) => q.status !== "declined" || Date.now() - Date.parse(q.decided_at ?? q.created_at) < 7 * 864e5);
+  const label = { pending: "wartet auf Christoph", approved: "OK: jetzt machen", declined: "abgelehnt" };
+  if (!list.length) return console.log("Keine offenen Fragen.");
+  for (const q of list) console.log(`  ${q.id}  [${label[q.status]}]  ${q.title}${q.sentences != null ? ` · ${q.sentences} Sätze, ${q.credits} Credits` : ""}${q.answer ? `  · Christoph: ${q.answer}` : ""}`);
+  console.log("\nNach dem Erledigen: npm run studio -- anfrage-erledigt <id>");
+}
+
+async function requestDone(sb, a) {
+  const id = a._[0];
+  if (!id) throw new CliError("npm run studio -- anfrage-erledigt <id>");
+  const done = must(await sb.from("studio_requests").update({ status: "done", done_at: new Date().toISOString() }).eq("id", id).eq("status", "approved").select("id"));
+  console.log(done.length ? "✓ erledigt" : "Nichts geändert: die Frage ist nicht (mehr) freigegeben.");
+}
+
 async function adopt(sb, a) {
   const zurich = (iso) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(iso));
   const from = a.von ?? mondayOf(zurich(new Date().toISOString()));
@@ -271,8 +308,8 @@ ${made.length} Einträge würden übernommen (Probelauf, nichts geschrieben).`);
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt };
-  if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner>");
+  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone };
+  if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner> | anfrage <slug|-> --titel … --saetze … --credits … | anfragen | anfrage-erledigt <id> | uebernehmen");
   try {
     await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry"]));
   } catch (err) {

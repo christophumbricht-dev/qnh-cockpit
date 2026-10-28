@@ -18,14 +18,41 @@ const swissToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zu
 export async function loadStudio() {
   if (DEMO) return demo.load();
   const from = new Date(Date.parse(`${swissToday()}T12:00:00Z`) - LOAD_DAYS_BACK * 864e5).toISOString().slice(0, 10);
-  const r = await sb().from("studio_items").select("*, studio_versions(*), studio_markers(*)")
-    .or(`day.gte.${from},day.is.null`).order("day", { ascending: true, nullsFirst: false }).limit(1000);
+  const [r, runs] = await Promise.all([
+    sb().from("studio_items").select("*, studio_versions(*), studio_markers(*)")
+      .or(`day.gte.${from},day.is.null`).order("day", { ascending: true, nullsFirst: false }).limit(1000),
+    loadRuns(),
+  ]);
   if (r.error && /does not exist|could not find/i.test(r.error.message)) return null;
   const rows = must(r);
   const versions = [], markers = [];
   const items = rows.map(({ studio_versions: v = [], studio_markers: m = [], ...item }) => { versions.push(...v); markers.push(...m); return item; });
   markers.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
-  return { items, versions, markers };
+  return { items, versions, markers, ...runs };
+}
+
+// Claude in the background (migration 20261028200000_studio_jobs.sql): the last runs and the open questions.
+// runsReady false = migration not there yet (the card then explains it).
+async function loadRuns() {
+  const [jobs, requests] = await Promise.all([
+    sb().from("studio_jobs").select("*").order("requested_at", { ascending: false }).limit(5),
+    sb().from("studio_requests").select("*").in("status", ["pending", "approved"]).order("created_at").limit(50),
+  ]);
+  if ((jobs.error || requests.error) && /does not exist|could not find/i.test((jobs.error ?? requests.error).message)) return { jobs: [], requests: [], runsReady: false };
+  return { jobs: must(jobs), requests: must(requests), runsReady: true };
+}
+// «Claude jetzt starten»: one waiting run at most (the database refuses a second one)
+export async function startRun(note = "") {
+  if (DEMO) return demo.startRun(note);
+  const r = await sb().from("studio_jobs").insert({ trigger: "button", note: note || null });
+  if (r.error && /duplicate|unique/i.test(r.error.message)) return false;
+  must(r);
+  return true;
+}
+// Christoph's answer to a question (voicing): approved | declined
+export async function answerRequest(id, status, answer = "") {
+  if (DEMO) return demo.answerRequest(id, status, answer);
+  must(await sb().from("studio_requests").update({ status, answer: answer || null, decided_at: new Date().toISOString() }).eq("id", id).eq("status", "pending"));
 }
 
 const r2Cache = new Map();   // key → { url, until }
@@ -93,6 +120,9 @@ export async function setVersionMeta(id, meta) {
 export function subscribe(onChange) {
   if (DEMO) return demo.subscribe(onChange);
   const ch = sb().channel("studio").on("postgres_changes", { event: "*", schema: "public", table: "studio_markers" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "studio_items" }, onChange).subscribe();
+    .on("postgres_changes", { event: "*", schema: "public", table: "studio_items" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "studio_versions" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "studio_jobs" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "studio_requests" }, onChange).subscribe();
   return () => sb().removeChannel(ch);
 }
