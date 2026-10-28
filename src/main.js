@@ -55,7 +55,17 @@ const store = createStore({ S, render: () => render(), toast: (t) => toast(t), e
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
   appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), studioFor: (id) => studio.itemForPost(id),
   studioBlock: (monday) => studio.pipelineHtml(monday, { nav: false }), studioPhase: (channel, date) => studio.dayPhase(channel, date) });
-const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id) });
+const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id),
+  handleFor: (channel) => { const [app, platform] = channel.split("/"); const a = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform); return a?.handle || app; },
+  // a day without a studio item: the Social post of that day (e.g. a YouTube Short), else the list
+  openDay: (channel, date) => {
+    const [app, platform] = channel.split("/");
+    const acc = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform);
+    const day = (iso) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(iso));
+    const post = acc && S.social.value.posts.find((p) => p.account_id === acc.id && p.status !== "cancelled" && p.scheduled_at && day(p.scheduled_at) === date);
+    if (post) { location.hash = "#social"; setTimeout(() => social.onClick("soc-open", { dataset: { id: post.id } }), 50); }
+    else toast(`Am ${Number(date.slice(8, 10))}.${Number(date.slice(5, 7))}. ist auf diesem Kanal noch nichts geplant.`);
+  } });
 const scopeBadge = (id) => appBadge(id === "qnh" ? { name: "QNH", color: "#0B7285" } : appById(id) ?? { name: id, color: "#627d98" });
 const finance = createFinance({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: () => SCOPES, scopeBadge });
 const app = () => appById(S.appId);
@@ -137,7 +147,7 @@ function route() {
     S.social.byTopic = second === "themen"; // Social → Themen: same posts, grouped by topic
     if (second === "kommentare") social.setMode("comments");
     else if (second === "bei-anderen") social.setMode("outreach");
-    else if (second === "wochenplan") { S.social.filter = "all"; social.setMode("week"); }
+    else if (second === "wochenplan") { location.replace("#studio"); return; }   // the week plan is the Ablauf in the studio now
     else if (second === "themen") { S.social.filter = "all"; social.setMode("list"); }
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }

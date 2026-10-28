@@ -51,6 +51,7 @@ Since 26.10.2026 every planned post stands in the calendar at once (rule in `C:\
 
 ## Wochenplan (standard week per channel)
 
+**Since 28.10.2026 the tab is gone** (Christoph): its job is done by the «Ablauf» block in the Digital Studio; `#social/wochenplan` redirects to `#studio`. `WEEKPLAN` still defines the standard week (the studio shows each day's planned format) and `weekView` is still in ui.js, unused. Old description:
 Social → «Wochenplan» (`#social/wochenplan`, mode `week`): one card per channel (Leeside Instagram, Leeside YouTube, Downwind Instagram), one row per weekday with the planned format (`WEEKPLAN` in `src/social/weekplan.js`, Christoph's goal 26.10.2026: every day on every channel) next to the real posts of that week: ✓ bereit (approved/out), Entwurf, Video fehlt (placeholder), Fehler, noch leer; score «n/7»; week back/forward. Pure logic `weekGrid`/`mondayOf`/`postState`, tests `tests/weekplan.test.mjs`. When the standard week changes, edit `WEEKPLAN` and `C:\QNH\03_Social\Sendeplan.md`.
 
 ## Social answer below the first comment (quiz → solution)
@@ -88,7 +89,7 @@ Finanzen (`#finanzen`, `src/finance/`): migration `20261021100000_finance.sql` (
 
 ## Social views
 
-`src/social/ui.js`, tabs since 27.10.2026 (Christoph): **Wochenplan** first and default (4-week block on top, then the week with «Ansehen und freigeben ›» and «Diese Woche freigeben»), Kommentare, Bei anderen, Statistik, «Alle Beiträge» (the list) last; remembered per device in localStorage `qnh-social-mode-2`. The month calendar tab was removed (the 4-week block replaces it); its code (month grid, drag a post to another day) is still in ui.js but not reachable.
+`src/social/ui.js`, tabs since 28.10.2026 (Christoph): «Alle Beiträge» first and default, Kommentare, Bei anderen, Statistik; remembered per device in localStorage `qnh-social-mode-2`. The month calendar tab was removed (the 4-week block replaces it); its code (month grid, drag a post to another day) is still in ui.js but not reachable.
 
 ## Digital Studio (#studio)
 

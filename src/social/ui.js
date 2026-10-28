@@ -100,7 +100,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const openOut = outreach.count();
     // Wochenplan first (27.10.2026, Christoph: look at the 4-week block, then approve in the week); the full post list last.
     // The month calendar tab was removed the same day (the 4-week block replaces it).
-    const modes = [["week", "Wochenplan"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"], ["list", "Alle Beiträge"]].map(([v, l]) =>
+    // the week plan moved into the Digital Studio (Ablauf block, 28.10.2026, Christoph); weekView stays unused for now
+    const modes = [["list", "Alle Beiträge"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
@@ -385,7 +386,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
-    try { const m = localStorage.getItem(MODE_KEY); return ["list", "stats", "comments", "outreach"].includes(m) ? m : "week"; } catch { return "week"; }
+    try { const m = localStorage.getItem(MODE_KEY); return ["list", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
   }
   const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
   const todayKey = () => dayKey(new Date().toISOString());
@@ -775,7 +776,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       return `<div class="review-bar"><b>Freigabe-Runde</b>${platformBadge(acc)}<span class="muted">${rv.done} freigegeben · noch ${queue.length} Entw${queue.length === 1 ? "urf" : "ürfe"}</span>
         <span class="row-right"><button class="btn ghost" data-action="soc-review-skip"${ed.busy ? " disabled" : ""}>Später freigeben ›</button></span></div>`;
     })() : "";
-    return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : S.social.mode === "week" ? "← Zurück zum Wochenplan" : "← Zurück zur Liste"}</button>
+    return `${rvBar}<div class="toolbar"><button class="link" data-action="soc-close">${rv ? "← Runde beenden" : "← Zurück zur Liste"}</button>
         <span class="muted">${ed.isNew ? (ed.source === "duplicate" ? "Duplikat" : "Neuer Beitrag") : `${STATUS[ed.status] ?? ed.status}`}${ro ? " · zum Ändern zuerst zurückziehen oder duplizieren" : ""}</span></div>
       <section class="soc-editor">
         <div class="soc-form card">

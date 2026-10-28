@@ -5,7 +5,7 @@
 //   4 Feinschliff (yellow)  Claude polishes; Sichtung 2 and approval
 //   5 bereit (green)    approved, waits for publishing or is out
 // Red is only for «late»: a step not done by its deadline (days before the air date). Pure, tested in tests/studio-pipeline.test.mjs.
-import { addDaysIso } from "../social/weekplan.js";
+import { WEEKPLAN, addDaysIso } from "../social/weekplan.js";
 
 // what runs through the Ablauf (Christoph 28.10.2026): the long YouTube videos (2 a week, the Shorts not) and the
 // Instagram of Leeside and Downwind with every format, reel, carousel, picture or story (7 a week each; «es soll alles
@@ -71,6 +71,8 @@ export const christophsTurn = (status) => phaseOf(status).who === "christoph";
 // → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late }] }] }]
 export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE) {
   return pipeline.map(({ channel, formats, perWeek, label }) => {
+    const [app_id, platform] = channel.split("/");
+    const plan = WEEKPLAN.find((c) => c.app_id === app_id && c.platform === platform && formats == null);   // the standard week (Instagram)
     const mine = items.filter((i) => i.channel === channel && (!formats || formats.includes(i.format)) && i.status !== "dropped" && i.day);
     return {
       channel, perWeek, label,
@@ -80,7 +82,7 @@ export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELI
           const date = addDaysIso(m, d);
           const list = mine.filter((i) => i.day === date);
           const weakest = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
-          return { date, items: list, phase: phaseOf(weakest?.status ?? null), late: weakest && date >= today ? isLate(weakest.status, date, today) : false };
+          return { date, slot: plan?.slots.find((s) => s.day === d) ?? null, items: list, phase: phaseOf(weakest?.status ?? null), late: weakest && date >= today ? isLate(weakest.status, date, today) : false };
         });
         const count = days.reduce((n, d) => n + d.items.length, 0);
         const missing = Math.max(0, perWeek - count);

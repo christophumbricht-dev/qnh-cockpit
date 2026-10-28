@@ -18,7 +18,7 @@ const RATES = [0.1, 0.25, 0.5, 1, 2, 3];
 const savedRate = () => { try { const r = Number(localStorage.getItem("qnh-studio-rate")); return RATES.includes(r) ? r : 1; } catch { return 1; } };
 const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.` : "ohne Tag");
 
-export function createStudio({ S, render, toast, errorText, approvePost }) {
+export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {} }) {
   S.studio = { value: undefined, loading: false, error: null, itemId: null, round: null, page: 0, form: null, filter: "all", weekStart: null, local: {}, urls: {}, mediaFor: null };
   const st = () => S.studio;
   let unsubscribe = null, reloadTimer;
@@ -81,18 +81,18 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     if (!st().value) return "";
     const t = today();
     const rows = pipelineBlock(items(), monday, t);
-    const cell = (d) => {
+    const cell = (d, channel) => {
       const it = d.items[0];
       const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";
-      const tip = `${dm(d.date)} · ${d.items.length ? esc(FORMAT_NAME[d.items[0].format] ?? "") : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
-      const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="noop"`;
+      const tip = `${dm(d.date)} · ${d.items.length ? esc(FORMAT_NAME[d.items[0].format] ?? "") : d.slot ? `geplant: ${esc(d.slot.format)}` : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
+      const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="st-day" data-channel="${esc(channel)}" data-value="${esc(d.date)}"`;
       return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.items.length ? "" : " pl-free"}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${who}</button>`;
     };
     const legend = STEPS.filter(Boolean).map((s) => `<span class="pl-key pl-${s.color}"></span> ${s.n < 5 ? `${s.n} ` : ""}${esc(s.name)}`).join(" ");
     return `<section class="card pl-block"><div class="blk-head"><b>Ablauf: Idee → Entwurf → Video → Feinschliff</b>
         ${nav ? `<button class="btn ghost" data-action="st-block" data-value="-28" aria-label="4 Wochen zurück">‹</button><span>4 Wochen ab ${esc(dm(monday))}</span><button class="btn ghost" data-action="st-block" data-value="28" aria-label="4 Wochen vor">›</button>` : `<span>4 Wochen ab ${esc(dm(monday))}</span>`}</div>
       ${rows.map((r) => `<p class="st-ch">${esc(CHANNEL_NAME[r.channel] ?? r.channel)} · ${esc(r.label)}</p><div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}<span class="blk-dow">Woche</span>
-        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map(cell).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
+        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map((d) => cell(d, r.channel)).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
       <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran · rechts: Beiträge der Woche (rot = zu wenige Ideen)</p>
       <p class="muted small">Fristen vor dem Sendetag: Idee ${DEADLINE_DAYS[1]} Tage, Entwurf ${DEADLINE_DAYS[2]}, Video ${DEADLINE_DAYS[3]}, Feinschliff ${DEADLINE_DAYS[4]}.</p></section>`;
   }
@@ -210,7 +210,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const nav = r ? `<span class="muted small">Wochenrunde ${r.idx + 1} von ${r.ids.length}</span>
         <button class="btn ghost" data-action="st-round-step" data-value="-1"${r.idx ? "" : " disabled"}>‹ Zurück</button>
         <button class="btn ghost" data-action="st-round-step" data-value="1"${r.idx < r.ids.length - 1 ? "" : " disabled"}>Weiter ›</button>` : "";
-    return `<div class="st-head"><button class="link" data-action="st-close">‹ Übersicht</button>${nav}</div>
+    return `<div class="st-head"><button class="link" data-action="st-close">‹ Übersicht</button>${nav}${topAction(it, ms)}</div>
       <div class="st-title"><div><span class="muted small">${esc(CHANNEL_NAME[it.channel] ?? it.channel)} · ${esc(FORMAT_NAME[it.format] ?? it.format)} · ${esc(dm(it.day))}</span>
         <h2>${esc(it.title || "(ohne Titel)")}</h2></div><span class="pill st-${it.status}">${inPipeline(it.channel, it.format) ? `Schritt ${phaseOf(it.status).n} · ` : ""}${esc(STATUS[it.status])}${ver ? ` · Fassung ${it.current_version}` : ""}</span></div>
       ${it.pitch || it.status === "idea" ? ideaView(it) : ""}
@@ -219,6 +219,55 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
         <aside class="st-side">${formView(it)}${markerList(it, ver, ms)}${actions(it, ms)}</aside>
       </div>`}
       ${ver ? packageView(it, ver) : ""}`;
+  }
+
+  // the one button that moves the post on, always at the top (also without any marker: «approve as it is»)
+  function topAction(it, ms) {
+    const drafts = ms.filter((m) => m.status === "draft").length;
+    const notYet = ms.filter((m) => m.status === "not_yet").length;
+    if (it.status === "idea") return `<button class="btn st-top" data-action="st-idea-ok" data-id="${esc(it.id)}">✓ Idee ok</button>`;
+    if (it.status === "draft") return `<button class="btn st-top" data-action="st-finish">${drafts ? `Input abschicken (${drafts})` : "✓ Entwurf passt"}</button>`;
+    if (it.status === "review1" || it.status === "review2") {
+      return drafts || notYet
+        ? `<button class="btn st-top" data-action="${it.status === "review1" ? "st-finish" : "st-again"}">${drafts + notYet} ${drafts + notYet === 1 ? "Punkt" : "Punkte"} an Claude</button>`
+        : `<button class="btn st-top" data-action="st-approve">✓ Freigeben</button>`;
+    }
+    if (it.status === "approved") return `<span class="pill st-approved st-top">✓ freigegeben</span>`;
+    return "";
+  }
+
+  // ---------- device frames: the post as the viewer sees it (Christoph 28.10.2026) ----------
+  // Instagram: a phone with the feed post (carousel, picture) or the full-screen reel/story with its overlay;
+  // YouTube: a laptop with the player and the title below (Shorts: a phone). The overlays never take clicks,
+  // so markers can still be set on the picture, and they show where Instagram covers the picture.
+  const isPhone = (it) => it.channel.endsWith("/instagram") || it.format !== "video_long";
+  const fullScreen = (it) => ["reel", "short", "story"].includes(it.format);
+  function chosenTitle(ver) {
+    const m = ver?.meta ?? {};
+    return (m.titles ?? [])[m.chosen_title ?? 0] ?? "";
+  }
+  function screenOverlay(it, ver) {
+    if (!fullScreen(it)) return "";
+    const handle = handleFor(it.channel);
+    const text = it.channel.endsWith("/youtube") ? chosenTitle(ver) || it.title : ver?.meta?.caption ?? "";
+    if (it.format === "story") return `<div class="dev-ui dev-story" aria-hidden="true"><span class="dev-bar"></span><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span></div>`;
+    return `<div class="dev-ui dev-reel" aria-hidden="true"><div class="dev-side"><span>♡</span><span>💬</span><span>➤</span><span>⋯</span></div>
+      <div class="dev-cap"><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span><p>${esc(String(text).split("\n").find(Boolean) ?? "")}</p></div></div>`;
+  }
+  function device(it, ver, frame) {
+    const handle = handleFor(it.channel);
+    if (!isPhone(it)) {
+      const desc = String(ver?.meta?.description ?? ver?.meta?.caption ?? "").split("\n").filter(Boolean).slice(0, 2).join(" ");
+      return `<div class="dev-laptop"><div class="dev-lid"><div class="dev-screen dev-yt">${frame}
+          <div class="yt-meta"><b>${esc(chosenTitle(ver) || it.title)}</b><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span>${desc ? `<p>${esc(desc)}</p>` : ""}</div></div></div><div class="dev-base"></div></div>`;
+    }
+    if (fullScreen(it)) return `<div class="dev-phone"><div class="dev-screen">${frame}</div></div>`;
+    const cap = String(ver?.meta?.caption ?? "");
+    return `<div class="dev-phone"><div class="dev-screen dev-feed">
+        <div class="ig-head"><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span><span>⋯</span></div>${frame}
+        <div class="ig-act"><span>♡ 💬 ➤</span><span>⌑</span></div>
+        <div class="ig-cap"><b>${esc(handle)}</b> ${esc(cap.slice(0, 220))}${cap.length > 220 ? " … mehr" : ""}</div>
+        ${ver?.meta?.first_comment ? `<div class="ig-com"><b>${esc(handle)}</b> ${esc(ver.meta.first_comment.slice(0, 120))}</div>` : ""}</div></div>`;
   }
 
   function playerView(it, ver, ms) {
@@ -230,11 +279,12 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const mticks = ms.filter((m) => m.target === "medium").map((m) => { const p = placed(m, ver); return p.at == null ? "" : `<button class="st-mtick st-m-${m.status}" style="left:${dur ? (p.at / dur) * 100 : 0}%" data-action="st-seek" data-value="${p.at}" title="${esc(m.body)}"></button>`; }).join("");
     const spot = s.form?.x != null ? `<span class="st-spot form" style="left:${s.form.x}%;top:${s.form.y}%"></span>` : "";
     const spots = ms.filter((m) => m.target === "medium" && m.x != null).map((m) => { const p = placed(m, ver); return p.at == null ? "" : `<span class="st-spot st-m-${m.status}" data-at="${p.at}" style="left:${m.x}%;top:${m.y}%" title="${esc(m.body)}"></span>`; }).join("");
-    return `<div class="st-frame${vertical ? " vertical" : ""}">
+    return `${device(it, ver, `<div class="st-frame${vertical ? " vertical" : ""}">
         <div class="st-video-slot" id="st-video-slot"></div>
+        ${screenOverlay(it, ver)}
         <div class="st-overlay" data-action="st-spot">${spots}${spot}</div>
-        ${url ? "" : `<div class="st-nomedia"><p>${ver.source?.kind === "r2" ? "Das Video liegt in Cloudflare R2, ist aber gerade nicht erreichbar (Funktion studio-media noch nicht eingerichtet?)." : "Kein Video verfügbar."}</p><button class="btn" data-action="st-local">Video vom PC öffnen</button></div>`}
-      </div>
+        ${url ? "" : `<div class="st-nomedia"><p>${ver.source?.kind === "r2" ? "Das Video liegt in Cloudflare R2, ist aber gerade nicht erreichbar." : "Kein Video verfügbar."}</p><button class="btn" data-action="st-local">Video vom PC öffnen</button></div>`}
+      </div>`)}
       <div class="st-timeline" data-action="st-scrub">${ticks}${mticks}<span class="st-playhead" id="st-playhead"></span></div>
       <div class="st-time"><b id="st-time">${fmtTime(video.currentTime || 0)}</b><span class="muted" id="st-scene">${esc(sceneAt(ver.scenes, video.currentTime || 0)?.label ?? "")}</span><span class="muted">${fmtTime(dur)}</span></div>
       <div class="st-controls">
@@ -259,8 +309,9 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const p = Math.min(s.page, Math.max(0, pages.length - 1));
     const spots = ms.filter((m) => m.target === "medium" && m.page === p && m.x != null).map((m) => `<span class="st-spot st-m-${m.status}" style="left:${m.x}%;top:${m.y}%" title="${esc(m.body)}"></span>`).join("");
     const spot = s.form?.x != null && s.form.page === p ? `<span class="st-spot form" style="left:${s.form.x}%;top:${s.form.y}%"></span>` : "";
-    return `<div class="st-frame vertical pages">${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}">` : `<p class="note">Keine Bilder.</p>`}
-        <div class="st-overlay" data-action="st-spot">${spots}${spot}</div></div>
+    return `${device(it, ver, `<div class="st-frame vertical pages">${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}">` : `<p class="note">Keine Bilder.</p>`}
+        <div class="st-overlay" data-action="st-spot">${spots}${spot}</div>
+        ${pages.length > 1 ? `<span class="ig-dots" aria-hidden="true">${pages.map((_, i) => `<i class="${i === p ? "on" : ""}"></i>`).join("")}</span>` : ""}</div>`)}
       <div class="st-strip">${pages.map((u, i) => `<button class="st-thumb${i === p ? " on" : ""}" data-action="st-page" data-value="${i}"><img src="${esc(u)}" alt="Seite ${i + 1}"><span>${i + 1}${ms.some((m) => m.page === i) ? " ●" : ""}</span></button>`).join("")}</div>
       <div class="st-controls"><button class="btn ghost" data-action="st-key" data-value="prevPage">‹ Seite</button><span class="muted">${p + 1} / ${pages.length}</span>
         <button class="btn ghost" data-action="st-key" data-value="nextPage">Seite ›</button><button class="btn st-mark" data-action="st-key" data-value="mark">● Marker</button></div>
@@ -453,6 +504,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
         return true;
       }
       case "st-key": act(el.dataset.value); return true;
+      case "st-day": openDay(el.dataset.channel, el.dataset.value); return true;
       case "st-rate":
         rate = Number(el.dataset.value);
         video.playbackRate = rate;
