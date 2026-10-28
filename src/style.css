@@ -1200,3 +1200,4 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .wk-card .wk-days { grid-row: span 7; grid-template-rows: subgrid; gap: 8px; }
   .wk-day { min-height: 72px; }
 }
+.warn-text { color: var(--warn); }

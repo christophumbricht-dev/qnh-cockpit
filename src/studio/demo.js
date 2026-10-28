@@ -29,7 +29,7 @@ const items = [
   { id: "yt6", channel: "leesidelab/youtube", format: "video_long", title: "Gewitter im Jura", slug: "yt-gewitter", day: addDaysIso(mon, 25), status: "idea", current_version: 1, social_post_id: null, pitch: "Afternoon thunderstorms along the Jura: where they start and how to see them early." },
 ];
 const versions = [
-  { id: "v1", item_id: "long", version: 1, source: { kind: "r2", key: "studio/foehn-long/v1/video.mp4" }, scenes: SCENES, fps: 30, duration: 337,
+  { id: "v1", item_id: "long", version: 1, source: { kind: "r2", key: "studio/foehn-long/v1/video.mp4", bytes: 223290282 }, scenes: SCENES, fps: 30, duration: 337,
     meta: { titles: ["Föhn explained for pilots", "Why the north gets 8 °C warmer: föhn for pilots"], thumbnails: [], description: "Föhn in 3D: why the south gets the rain …",
       chapters: SCENES.map((s) => `${Math.floor(s.start / 60)}:${String(s.start % 60).padStart(2, "0")} ${s.label}`).join("\n"), shorts: [], assumptions: ["Musik gleichmässig −15 dB unter der Stimme", "Ortsnamen bleiben (Entscheid 28.10.)"],
       thumbnails: [{ path: "logos/leesidelab.svg" }, { name: "thumb_b.jpg" }] } },

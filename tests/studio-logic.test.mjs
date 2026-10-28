@@ -80,3 +80,25 @@ test("sortMarkers: medium by time or page first, texts after; formatOf maps soci
   assert.equal(formatOf("reel", "youtube", 600), "video_long");
   assert.equal(formatOf("carousel", "instagram"), "carousel");
 });
+
+import { R2_FREE_BYTES, fmtGB, r2Flag, r2Usage } from "../src/studio/logic.js";
+
+test("r2Usage adds up the R2 files of all versions (videos and thumbnails), nothing else", () => {
+  const versions = [
+    { source: { kind: "r2", key: "studio/a/v1/video.mp4", bytes: 2e8 }, meta: { thumbnails: [{ key: "studio/a/v1/t.jpg", bytes: 3e5 }, { name: "t2.jpg" }] } },
+    { source: { kind: "storage", path: "x.mp4", bytes: 9e9 } },
+    { source: { kind: "local", name: "a/v2/video.mp4" } },
+    { source: { kind: "r2", key: "studio/b/v1/video.mp4" } },
+  ];
+  assert.deepEqual(r2Usage(versions), { bytes: 2e8 + 3e5, files: 2 });
+  assert.deepEqual(r2Usage(null), { bytes: 0, files: 0 });
+});
+
+test("r2Flag: quiet under 8 GB, warn from 80 %, cost above 10 GB", () => {
+  assert.equal(r2Flag(7.9e9), null);
+  assert.deepEqual(r2Flag(8e9), { level: "warn", usd: 0 });
+  assert.deepEqual(r2Flag(R2_FREE_BYTES), { level: "warn", usd: 0 });
+  assert.deepEqual(r2Flag(R2_FREE_BYTES + 1e9), { level: "cost", usd: 0.02 });
+  assert.deepEqual(r2Flag(110e9), { level: "cost", usd: 1.5 });
+  assert.equal(fmtGB(1.234e9), "1.23 GB");
+});

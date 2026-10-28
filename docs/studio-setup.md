@@ -14,7 +14,9 @@ Supabase → Projekt «QNH Core» → SQL Editor → Inhalt von `supabase/migrat
 
 ## 3. Funktion und Secrets in Supabase
 
-1. Supabase → Edge Functions → Secrets: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` eintragen.
+1. Supabase → Edge Functions → Secrets: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` eintragen. Steht in der Adresse des Buckets (Bucket → Settings → «S3 API») `.eu.r2.cloudflarestorage.com`, zusätzlich `R2_JURISDICTION` = `eu`.
+
+Kosten: R2 hat kein Ausgabelimit. Bis 10 GB Speicher ist es gratis, Datenverkehr kostet nichts. Das Cockpit zählt, was im Studio in R2 liegt, und meldet sich auf «Heute» ab 8 GB und sobald es etwas kostet.
 2. Funktion hochladen (Claude mit deinem OK oder selbst):
 
 ```bash

@@ -106,3 +106,25 @@ export function sortMarkers(markers) {
 export const formatOf = (kind, platform, durationSec = null) =>
   kind === "carousel" ? "carousel" : kind === "image" ? "image" : kind === "story" ? "story"
     : platform === "youtube" ? (durationSec != null && durationSec > 180 ? "video_long" : "short") : "reel";
+
+// Cloudflare R2 (28.10.2026, Christoph: flag it in the cockpit as soon as it would cost something). R2 has no spending
+// cap; egress is free, so only storage above the free 10 GB-month costs ($0.015 per GB-month, Standard class).
+// What we store is known: every R2 file of a studio version carries its size (source.bytes, thumbnails[].bytes).
+export const R2_FREE_BYTES = 10e9;
+export const R2_USD_PER_GB = 0.015;
+export const R2_WARN_SHARE = 0.8;
+export function r2Usage(versions) {
+  let bytes = 0, files = 0;
+  for (const v of versions ?? []) {
+    const parts = [v.source, ...(v.meta?.thumbnails ?? [])].filter((x) => x && (x.kind === "r2" || x.key) && Number(x.bytes) > 0);
+    for (const p of parts) { bytes += Number(p.bytes); files++; }
+  }
+  return { bytes, files };
+}
+// → null (well inside the free tier), { level: "warn" } from 80 %, { level: "cost", usd } above 10 GB (USD per month)
+export function r2Flag(bytes) {
+  if (bytes > R2_FREE_BYTES) return { level: "cost", usd: Math.ceil(((bytes - R2_FREE_BYTES) / 1e9) * R2_USD_PER_GB * 100) / 100 };
+  if (bytes >= R2_FREE_BYTES * R2_WARN_SHARE) return { level: "warn", usd: 0 };
+  return null;
+}
+export const fmtGB = (bytes) => `${(bytes / 1e9).toFixed(bytes < 1e10 ? 2 : 1)} GB`;

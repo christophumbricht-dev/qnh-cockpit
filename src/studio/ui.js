@@ -5,6 +5,7 @@
 // playback is not interrupted; time and playhead are updated directly, not by re-rendering.
 import { esc } from "../format.js";
 import * as data from "./data.js";
+import { R2_FREE_BYTES, fmtGB, r2Flag, r2Usage } from "./logic.js";
 import { CATEGORIES, MARKER_STATUS, SCOPES, STATUS, TARGETS, anchor, arrowStep, fmtTime, isPages, keyAction, markersFor, openCount, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
 import { DEADLINE_DAYS, LOOKING, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
@@ -60,6 +61,12 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     if (k) out.push({ key: "studio-ideas", lane: "today", tone: "info", title: `${k} ${k === 1 ? "Idee wartet" : "Ideen warten"} auf dein Ok`, sub: "YouTube-Ablauf, Schritt 1", where: "Studio", href: "#studio" });
     const late = items().filter((i) => inPipeline(i.channel, i.format) && i.day && christophsTurn(i.status) && isLate(i.status, i.day, today())).length;
     if (late) out.push({ key: "studio-late", lane: "now", tone: "alert", title: `${late} YouTube-${late === 1 ? "Video ist" : "Videos sind"} im Verzug und ${late === 1 ? "wartet" : "warten"} auf dich`, sub: "Digital Studio", where: "Studio", href: "#studio" });
+    // R2 has no spending cap: flag it from 80 % of the free 10 GB, and loudly once it costs something
+    const r2 = r2Usage(st().value?.versions);
+    const flag = r2Flag(r2.bytes);
+    if (flag) out.push(flag.level === "cost"
+      ? { key: "studio-r2", lane: "now", tone: "alert", title: `Cloudflare R2 kostet jetzt etwa ${flag.usd.toFixed(2)} pro Monat`, sub: `${fmtGB(r2.bytes)} gespeichert, gratis sind ${fmtGB(R2_FREE_BYTES)}. Alte Fassungen löschen?`, where: "Studio", href: "#studio" }
+      : { key: "studio-r2", lane: "today", tone: "info", title: `Cloudflare R2 fast voll: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis`, sub: "Darüber kostet es etwas. Alte Fassungen löschen?", where: "Studio", href: "#studio" });
     return out;
   }
 
@@ -164,6 +171,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     return `<div class="toolbar"><div class="chips">${chips}</div>
         <div class="row-right"><button class="btn ghost" data-action="st-week" data-value="-7" aria-label="Woche zurück">‹</button><button class="btn ghost" data-action="st-week" data-value="7" aria-label="Woche vor">›</button>${s.weekStart ? `<button class="link" data-action="st-week" data-value="0">Diese Woche</button>` : ""}</div></div>
       <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. YouTube-Videos haben davor Idee und Entwurf.</p>
+      ${(() => { const r2 = r2Usage(s.value.versions); const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
       ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
       ${weeks.map(week).join("")}
       ${noDay.length ? `<section class="card st-week"><b>Ohne Tag</b><div class="st-cards">${noDay.map(card).join("")}</div></section>` : ""}`;

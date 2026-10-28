@@ -127,14 +127,15 @@ async function upload(sb, a) {
   const key = `studio/${slug}/v${n}/video.mp4`;
   console.log(`Lade ${(statSync(video).size / 1e6).toFixed(0)} MB nach R2 …`);
   const put = await r2Put(sb, key, video, "video/mp4");
-  const source = put ? { kind: "r2", key } : { kind: "local", name: `${slug}/v${n}/video.mp4` };
+  // bytes: the cockpit adds them up against R2's free 10 GB (r2Usage in src/studio/logic.js)
+  const source = put ? { kind: "r2", key, bytes: statSync(video).size } : { kind: "local", name: `${slug}/v${n}/video.mp4` };
   // thumbnails: small pictures, also to R2 (the cockpit signs them like the video)
   const thumbs = [];
   for (const t of meta.thumbnails) {
     const p = join(dir, t);
     if (!existsSync(p)) throw new CliError(`Titelbild fehlt: ${t}`);
     const k = `studio/${slug}/v${n}/${basename(t).replace(/[^A-Za-z0-9._-]/g, "-")}`;
-    thumbs.push(put && (await r2Put(sb, k, p, /\.png$/i.test(t) ? "image/png" : "image/jpeg")) ? { key: k } : { name: t });
+    thumbs.push(put && (await r2Put(sb, k, p, /\.png$/i.test(t) ? "image/png" : "image/jpeg")) ? { key: k, bytes: statSync(p).size } : { name: t });
   }
   must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, source, scenes, fps: meta.fps, duration, meta: { ...meta, thumbnails: thumbs }, hash }));
   must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), ...(a.tag ? { day: a.tag } : {}) }).eq("id", item.id));

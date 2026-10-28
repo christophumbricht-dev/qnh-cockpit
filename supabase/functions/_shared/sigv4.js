@@ -38,8 +38,10 @@ export async function presign({ method = "GET", host, path, region, service = "s
 }
 
 // Cloudflare R2: https://<account>.r2.cloudflarestorage.com/<bucket>/<key>
-export const r2Presign = ({ accountId, bucket, key, ...rest }) =>
-  presign({ ...rest, host: `${accountId}.r2.cloudflarestorage.com`, path: `/${bucket}/${key}`, region: "auto" });
+// jurisdiction "eu": a bucket created with the EU jurisdiction lives at <account>.eu.r2.cloudflarestorage.com
+export const r2Host = (accountId, jurisdiction = "") => `${accountId}.${jurisdiction ? `${jurisdiction}.` : ""}r2.cloudflarestorage.com`;
+export const r2Presign = ({ accountId, jurisdiction = "", bucket, key, ...rest }) =>
+  presign({ ...rest, host: r2Host(accountId, jurisdiction), path: `/${bucket}/${key}`, region: "auto" });
 
 // a studio media key: only studio/<slug>/v<n>/<file>, never anything else in the bucket
 export const STUDIO_KEY = /^studio\/[a-z0-9][a-z0-9._-]{1,80}\/v\d{1,3}\/[A-Za-z0-9._-]{1,120}$/;

@@ -6,7 +6,8 @@
 //
 // Allowed callers: a signed-in QNH admin (checked with is_qnh_admin()).
 // Secrets (Supabase → Edge Functions → Secrets, entered by Christoph):
-//   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (R2 API token «Object Read & Write» for this bucket only), R2_BUCKET
+//   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (R2 API token «Object Read & Write» for this bucket only), R2_BUCKET,
+//   optional R2_JURISDICTION = eu (bucket created with the EU jurisdiction)
 // Without them the function answers { error: "not_configured" } and the studio falls back to a file from the PC.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -45,6 +46,8 @@ Deno.serve(async (req) => {
   const accountId = env("R2_ACCOUNT_ID"), accessKeyId = env("R2_ACCESS_KEY_ID"), secretAccessKey = env("R2_SECRET_ACCESS_KEY"), bucket = env("R2_BUCKET");
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket) return json({ error: "not_configured" }, 200);
   const expires = method === "PUT" ? 900 : 3600;
-  const url = await r2Presign({ accountId, bucket, key, method, accessKeyId, secretAccessKey, expires });
+  const jurisdiction = (Deno.env.get("R2_JURISDICTION") ?? "").trim().toLowerCase();
+  if (jurisdiction && !/^[a-z]{2,10}$/.test(jurisdiction)) return json({ error: "bad_jurisdiction" }, 500);
+  const url = await r2Presign({ accountId, jurisdiction, bucket, key, method, accessKeyId, secretAccessKey, expires });
   return json({ url, expires_in: expires });
 });

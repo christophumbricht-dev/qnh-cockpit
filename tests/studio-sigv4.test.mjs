@@ -23,3 +23,9 @@ test("STUDIO_KEY: only studio/<slug>/v<n>/<file>", () => {
   assert.ok(STUDIO_KEY.test("studio/foehn-long/v2/video.mp4"));
   for (const k of ["secrets/x", "studio/../x/v1/a.mp4", "studio/foehn/v1/../a", "studio/Foehn/v1/a.mp4", "studio/foehn/1/a.mp4"]) assert.equal(STUDIO_KEY.test(k), false, k);
 });
+
+import { r2Host } from "../supabase/functions/_shared/sigv4.js";
+test("r2Host: default and EU jurisdiction", () => {
+  assert.equal(r2Host("abc"), "abc.r2.cloudflarestorage.com");
+  assert.equal(r2Host("abc", "eu"), "abc.eu.r2.cloudflarestorage.com");
+});
