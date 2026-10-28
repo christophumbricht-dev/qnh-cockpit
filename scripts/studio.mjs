@@ -15,6 +15,8 @@
 //                                                               ask Christoph in the cockpit (every ElevenLabs voicing!)
 //   npm run studio -- anfragen                                  open questions; «ok» = go ahead, then anfrage-erledigt <id>
 //   npm run studio -- anfrage-erledigt <id>
+//   npm run studio -- auftraege                                 Christoph's instructions from «An Claude» (open first)
+//   npm run studio -- auftrag <id> --status doing|done|failed [--antwort "kurz auf Deutsch"]
 //   npm run studio -- uebernehmen [--von YYYY-MM-DD] [--wochen 4] [--dry]   take the Social plan into the Ablauf
 //                                                               (placeholder → idea, draft → Sichtung 1, approved/out → ready)
 //                                                               studio package of a long video → new version
@@ -264,6 +266,25 @@ async function requestDone(sb, a) {
   console.log(done.length ? "✓ erledigt" : "Nichts geändert: die Frage ist nicht (mehr) freigegeben.");
 }
 
+async function instructions(sb) {
+  const r = await sb.from("claude_inbox").select("*").in("status", ["open", "doing"]).order("created_at");
+  if (missingTables(r.error)) throw new CliError("Die Tabelle claude_inbox fehlt noch (Migration 20261028210000_claude_inbox.sql).");
+  const list = must(r);
+  if (!list.length) return console.log("Keine offenen Anweisungen von Christoph.");
+  for (const q of list) console.log(`\n${q.id}  [${q.status}]  ${q.scope}  (${q.created_at.slice(0, 16).replace("T", " ")} UTC)\n  ${q.body.split("\n").join("\n  ")}`);
+  console.log("\nAntworten: npm run studio -- auftrag <id> --status done --antwort \"…\"");
+}
+
+async function instruction(sb, a) {
+  const id = a._[0];
+  const status = a.status ?? "done";
+  if (!id || !["doing", "done", "failed"].includes(status)) throw new CliError("npm run studio -- auftrag <id> --status doing|done|failed [--antwort \"…\"]");
+  if (status !== "doing" && !String(a.antwort ?? "").trim()) throw new CliError("Zu «done» und «failed» gehört eine kurze Antwort für Christoph (--antwort).");
+  const patch = { status, ...(a.antwort ? { reply: String(a.antwort).trim().slice(0, 4000) } : {}), ...(status === "doing" ? {} : { done_at: new Date().toISOString() }) };
+  const done = must(await sb.from("claude_inbox").update(patch).eq("id", id).in("status", ["open", "doing"]).select("id"));
+  console.log(done.length ? `✓ Anweisung ${status}` : "Nichts geändert: die Anweisung ist nicht mehr offen (zurückgezogen?).");
+}
+
 async function adopt(sb, a) {
   const zurich = (iso) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(iso));
   const from = a.von ?? mondayOf(zurich(new Date().toISOString()));
@@ -308,7 +329,7 @@ ${made.length} Einträge würden übernommen (Probelauf, nichts geschrieben).`);
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone };
+  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
   if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner> | anfrage <slug|-> --titel … --saetze … --credits … | anfragen | anfrage-erledigt <id> | uebernehmen");
   try {
     await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry"]));

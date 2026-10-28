@@ -33,6 +33,8 @@ await db.exec(read("20261028100000_studio.sql"));   // safe to run twice
 await db.exec("create schema if not exists cron; create or replace function cron.schedule(text, text, text) returns bigint language sql as $$ select 1::bigint $$;");
 await db.exec(read("20261028200000_studio_jobs.sql"));
 await db.exec(read("20261028200000_studio_jobs.sql"));   // safe to run twice
+await db.exec(read("20261028210000_claude_inbox.sql"));
+await db.exec(read("20261028210000_claude_inbox.sql"));
 
 async function as(who, sql) {
   const role = who === "service" ? "service_role" : who ? "authenticated" : "anon";
@@ -76,4 +78,14 @@ test("background runs: admins only, at most one waiting run; requests need a tit
   await assert.rejects(as(ADMIN, "insert into studio_requests (title) values ('')"));
   await assert.rejects(as(ADMIN, "update studio_requests set status = 'maybe'"));
   assert.equal((await as(OTHER, "select * from studio_requests")).rows.length, 0);
+});
+
+test("«An Claude»: admins only, scope and status checked, updated_at moves", async () => {
+  const id = (await as(ADMIN, "insert into claude_inbox (scope, body) values ('leesidelab', 'Mach ein Reel über Nebel') returning id, updated_at")).rows[0].id;
+  await assert.rejects(as(ADMIN, "insert into claude_inbox (scope, body) values ('Leeside Lab', 'x')"));
+  await assert.rejects(as(ADMIN, "insert into claude_inbox (body) values ('')"));
+  await assert.rejects(as(ADMIN, `update claude_inbox set status = 'maybe' where id = '${id}'`));
+  await as(ADMIN, `update claude_inbox set status = 'done', reply = 'Erledigt' where id = '${id}'`);
+  assert.equal((await as(OTHER, "select * from claude_inbox")).rows.length, 0);
+  await assert.rejects(as(null, "select * from claude_inbox"));
 });

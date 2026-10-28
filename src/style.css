@@ -1207,3 +1207,17 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .st-runs h3 { margin: 12px 0 4px; font-size: 15px; }
 .st-req { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
 .st-req > div:first-child { flex: 1 1 260px; min-width: 0; }
+
+/* «An Claude» (#claude) */
+.ib-form { display: grid; gap: 8px; margin-bottom: 12px; }
+.ib-form textarea, .ib-form select { width: 100%; font: inherit; }
+.ib-now { display: flex; gap: 8px; align-items: center; }
+.ib-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ib-item { border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+.ib-item.ib-done { border-left-color: var(--ok); }
+.ib-item.ib-failed { border-left-color: var(--alert); }
+.ib-item.ib-cancelled { opacity: .55; border-left-color: var(--line); }
+.ib-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ib-state { margin-left: auto; font-weight: 600; }
+.ib-body { margin: 6px 0; white-space: pre-wrap; }
+.ib-reply { white-space: pre-wrap; }

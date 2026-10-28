@@ -7,7 +7,7 @@ import { esc } from "../format.js";
 import * as data from "./data.js";
 import { CATEGORIES, MARKER_STATUS, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
-import { DEADLINE_DAYS, LOOKING, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
+import { DEADLINE_DAYS, LOOKING, PIPELINE, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
 const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Leeside · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube" };
 const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", carousel: "Karussell", image: "Bild", story: "Story" };
@@ -121,7 +121,9 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   function pipelineHtml(monday = st().blockStart ?? mondayOf(today())) {
     if (!st().value) return "";
     const t = today();
-    const rows = pipelineBlock(items(), monday, t);
+    // a channel chosen above: only its 4 weeks (Christoph 28.10.2026)
+    const f = st().filter;
+    const rows = pipelineBlock(items(), monday, t, 4, PIPELINE.filter((p) => f === "all" || p.channel === f));
     const cell = (d, channel) => {
       const it = d.items[0];
       const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";

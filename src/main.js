@@ -11,6 +11,7 @@ import { createQnh } from "./qnh/ui.js";
 import { qnhReady } from "./qnh/data.js";
 import { createStore } from "./store/ui.js";
 import { createStudio } from "./studio/ui.js";
+import { createInbox } from "./inbox/ui.js";
 import { createFinance } from "./finance/ui.js";
 import { financeConfigured } from "./finance/data.js";
 import { billDue, money, moneyList, monthlyTotals, owedPrivately, sumBy, upcoming, zurichToday } from "./finance/calc.js";
@@ -54,6 +55,7 @@ const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), error
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
   appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), studioFor: (id) => studio.itemForPost(id) });
+const inbox = createInbox({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id),
   handleFor: (channel) => { const [app, platform] = channel.split("/"); const a = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform); return a?.handle || app; },
   // a day without a studio item: the Social post of that day (e.g. a YouTube Short), else the list
@@ -69,7 +71,7 @@ const scopeBadge = (id) => appBadge(id === "qnh" ? { name: "QNH", color: "#0B728
 const finance = createFinance({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: () => SCOPES, scopeBadge });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
-const GLOBAL_TABS = ["today", "social", "studio", "roadmap-all", "hangar", "finance", "apps"];
+const GLOBAL_TABS = ["today", "social", "studio", "claude", "roadmap-all", "hangar", "finance", "apps"];
 const isAppPage = () => !GLOBAL_TABS.includes(S.tab);
 const appTabs = (a) => ["overview", ...(a.offline ? [] : a.tabs ?? []), ...(a.store ? ["store"] : []), "roadmap"];
 
@@ -126,6 +128,7 @@ function ensureData(force = false) {
   if (qnhReady() && (api.DEMO || S.users[QNH.id])) {
     qnh.load(force);
     studio.load(force);
+    inbox.load(force);
     store.load(APPS, force);
     if (financeConfigured()) finance.load(force);
   }
@@ -151,6 +154,7 @@ function route() {
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }
   else if (first === "studio") { S.tab = "studio"; studio.setItemFromRoute(second || null); }
+  else if (first === "claude") { S.tab = "claude"; inbox.setScopeFromRoute(second || null); }
   else if (first === "apps") S.tab = "apps";
   else if (first === "roadmap") S.tab = "roadmap-all";
   else if (first === "hangar") S.tab = "hangar";
@@ -223,6 +227,7 @@ function shell() {
       <nav class="side-nav">
         ${navItem("#", S.tab === "today", icon("home"), "Heute", todoCount, lanes.now.length ? "hot" : "")}
         ${qnhReady() ? navItem("#roadmap", S.tab === "roadmap-all", icon("tasks"), "Aufgaben", 0) : ""}
+        ${qnhReady() ? navItem("#claude", S.tab === "claude", icon("chat"), "An Claude", inbox.openCount(), "desk-only") : ""}
         ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "desk-only hot") : ""}
         <p class="side-label">Apps</p>
         ${appItems}
@@ -275,11 +280,13 @@ function sheet() {
   const item = (attrs, ico, label, sub = "") => `<button class="sheet-item" ${attrs}>${icon(ico)}<span><b>${esc(label)}</b>${sub ? `<span class="muted small">${esc(sub)}</span>` : ""}</span></button>`;
   const body = S.sheet === "new"
     ? `<h2>Neu</h2>
+      ${item('data-action="go" data-value="#claude"', "chat", "Anweisung an Claude", "Claude erledigt es im Hintergrund")}
       ${item('data-action="quick-task"', "tasks", "Aufgabe", "in die Roadmap")}
       ${financeConfigured() ? item('data-action="quick-bill"', "wallet", "Rechnung erfassen", "PDF oder Foto, QR-Rechnung wird gelesen") : ""}
       ${socialConfigured() && S.social?.value?.accounts?.length ? item('data-action="go-new-post"', "chat", "Beitrag", "Instagram oder YouTube") : ""}
       ${socialConfigured() ? item('data-action="quick-package"', "folder", "Paket importieren", "Ordner oder ZIP mit post.json") : ""}`
     : `<h2>Menü</h2>
+      ${qnhReady() ? item('data-action="go" data-value="#claude"', "chat", "An Claude", "Anweisungen, allgemein oder pro Projekt") : ""}
       ${item('data-action="go" data-value="#apps"', "grid", "Apps", "Downwind, SecondSeat")}
       ${item('data-action="go" data-value="#hangar"', "folder", "Hangar", "Links und Ablage")}
       ${item('data-action="search-open"', "search", "Suchen")}
@@ -318,6 +325,9 @@ function pageHead() {
   }
   if (S.tab === "finance") {
     return `<header class="page-head"><div class="ph-title">${icon("wallet", "ph-icon")}<div><h1>Finanzen</h1><p class="muted">Kosten, Abos und Rechnungen – bezahlt wird im E-Banking, hier behältst du den Überblick.</p></div></div></header>`;
+  }
+  if (S.tab === "claude") {
+    return `<header class="page-head"><div class="ph-title">${icon("chat", "ph-icon")}<div><h1>An Claude</h1><p class="muted">Sag Claude, was zu tun ist, allgemein oder für ein Projekt. Claude arbeitet im Hintergrund am Gaming-PC und antwortet hier.</p></div></div></header>`;
   }
   if (S.tab === "studio") {
     return `<header class="page-head"><div class="ph-title">${icon("play", "ph-icon")}<div><h1>Digital Studio</h1><p class="muted">Jeder Beitrag höchstens zweimal ansehen: Marker setzen, dann freigeben.</p></div></div></header>`;
@@ -363,6 +373,7 @@ function tileValue(a, t, stats) {
 function view() {
   if (S.tab === "today") return todayView();
   if (S.tab === "social") return social.view();
+  if (S.tab === "claude") return api.DEMO || S.users[QNH.id] ? inbox.view() : `<p class="note">Bei QNH Core anmelden (Seite «Heute»).</p>`;
   if (S.tab === "studio") return api.DEMO || S.users[QNH.id] ? studio.view() : `<p class="note">Für das Studio bei QNH Core anmelden (Seite «Heute»).</p>`;
   if (S.tab === "roadmap-all") return qnh.roadmapView(null);
   if (S.tab === "hangar") return qnh.hangarView();
@@ -473,7 +484,7 @@ function agenda() {
   for (const a of APPS) for (const t of todos(a)) items.push({ key: `app:${a.id}:${t.href}:${t.label}`, lane: t.lane ?? "today", tone: t.tone, title: t.label, where: a.name, scope: a.id, href: t.href });
   for (const t of store.todos(APPS)) items.push({ key: `store:${t.app.id}:${t.label}`, lane: t.tone === "alert" ? "now" : "today", tone: t.tone, title: t.label, where: t.app.name, scope: t.app.id, href: t.href });
   items.push(...socialItems(today), ...qnh.agenda(today));
-  if (qnhReady()) items.push(...studio.agenda());
+  if (qnhReady()) items.push(...studio.agenda(), ...inbox.agenda());
   if (financeConfigured()) items.push(...finance.agenda(today));
   return buildAgenda(items);
 }
@@ -1101,6 +1112,7 @@ root.addEventListener("submit", async (e) => {
   if (/^(rm|hg)-/.test(form.dataset.form)) return qnh.onSubmit(form);
   if (form.dataset.form.startsWith("fin-")) return finance.onSubmit(form);
   if (form.dataset.form.startsWith("st-")) return studio.onSubmit(form);
+  if (form.dataset.form.startsWith("ib-")) return inbox.onSubmit(form);
   const a = appById(form.dataset.app);
   const l = (S.login[a.id] ??= { step: "email", email: "" });
   l.busy = true;
@@ -1195,6 +1207,7 @@ root.addEventListener("click", async (e) => {
   if (action.startsWith("soc-")) return social.onClick(action, el);
   if (action === "st-spot" || action === "st-scrub") return studio.onPointer(e);
   if (action.startsWith("st-")) return studio.onClick(action, el);
+  if (action.startsWith("ib-")) return inbox.onClick(action, el);
   if (action === "go-focus") { qnh.startFocus("all"); if (location.hash === "#roadmap") render(); else location.hash = "#roadmap"; return; }
   if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
   if (action.startsWith("store-")) return store.onClick(el, APPS);
