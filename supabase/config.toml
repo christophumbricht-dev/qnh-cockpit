@@ -421,3 +421,7 @@ verify_jwt = false
 # Called by the cockpit (admin JWT, checked inside the function with is_qnh_admin()).
 [functions.store-status]
 verify_jwt = false
+
+# Called by the cockpit and npm run studio (admin JWT, checked inside the function with is_qnh_admin()).
+[functions.studio-media]
+verify_jwt = false
