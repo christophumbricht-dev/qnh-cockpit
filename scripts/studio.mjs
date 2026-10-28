@@ -8,7 +8,7 @@
 //   npm run studio -- upload <ordner> [--kanal leesidelab/youtube] [--tag YYYY-MM-DD] [--slug …]
 //
 // YouTube-Ablauf (src/studio/pipeline.js: Idee → Entwurf → Video → Feinschliff → bereit):
-//   npm run studio -- idee <kanal> <YYYY-MM-DD> "Titel" "Worum es geht" [--format short|video_long]   step 1
+//   npm run studio -- idee <kanal> <YYYY-MM-DD> "Titel" "Worum es geht" [--format …] [--ok]   step 1 (--ok: Christoph already confirmed)
 //   npm run studio -- ideen                                     waiting / accepted (make the draft) / dropped (propose another)
 //   npm run studio -- entwurf <studio/<slug>>                  step 2: entwurf.json → draft video (Windows voice) → upload
 //   npm run studio -- anfrage <slug|-> --titel "Vertonen: …" --saetze 12 --credits 1200 [--text datei.txt] [--art voice|other]
@@ -204,10 +204,12 @@ async function idea(sb, a) {
   const [channel, day, title, pitch] = a._;
   const row = ideaRow({ channel, day, title, pitch, format: a.format ?? "short", slug: a.slug ?? null });
   const { items } = await loadAll(sb);
-  const taken = items.filter((i) => i.channel === channel && i.day === day && i.status !== "dropped");
+  const taken = items.filter((i) => i.channel === channel && i.day === day && i.format === row.format && i.status !== "dropped");   // Shorts beside a long video are fine
   if (taken.length && !a.zusaetzlich) throw new CliError(`Am ${day} gibt es auf ${channel} schon: ${taken.map((i) => `«${i.title}»`).join(", ")}. Mit --zusaetzlich trotzdem anlegen.`);
+  // --ok: Christoph confirmed the idea himself (in a chat): it goes straight to «Idee ok», Claude makes the draft
+  if (a.ok) row.status = "idea_ok";
   const saved = must(await sb.from("studio_items").insert(row).select().single());
-  console.log(`✓ Idee «${saved.title}» für ${day} (${channel}) wartet auf Christophs Ok. Studio: ${saved.slug}`);
+  console.log(`✓ Idee «${saved.title}» für ${day} (${channel}) ${a.ok ? "ist bestätigt, Claude macht den Entwurf" : "wartet auf Christophs Ok"}. Studio: ${saved.slug}`);
 }
 
 async function ideas(sb) {
@@ -335,7 +337,7 @@ async function main() {
   const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
   if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner> | anfrage <slug|-> --titel … --saetze … --credits … | anfragen | anfrage-erledigt <id> | uebernehmen");
   try {
-    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry", "alle"]));
+    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry", "alle", "ok"]));
   } catch (err) {
     if (err instanceof CliError) fail(err.message);
     throw err;
