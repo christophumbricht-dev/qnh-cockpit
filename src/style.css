@@ -1190,3 +1190,13 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .pl-block .blk-grid { grid-template-columns: 54px repeat(7, minmax(0, 1fr)) 40px; }
 .pl-count { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
 .pl-count.pl-short { color: var(--pl-late); }
+/* Wochenplan: the same weekday sits at the same height in every channel card (Christoph 28.10.2026). Cards span
+   8 grid rows (head + 7 days) of the shared grid through subgrid; each day box fills its row, so all are as tall as the
+   tallest day of that row. On the phone (one column) the cards stack as before. */
+@media (min-width: 861px) {
+  .wk-grid { row-gap: 8px; column-gap: 14px; }
+  .wk-card { grid-row: span 8; grid-template-rows: subgrid; row-gap: 8px; }
+  .wk-card .channel-head { margin-bottom: 4px; }
+  .wk-card .wk-days { grid-row: span 7; grid-template-rows: subgrid; gap: 8px; }
+  .wk-day { min-height: 72px; }
+}
