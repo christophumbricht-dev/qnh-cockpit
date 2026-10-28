@@ -6,6 +6,11 @@
 //   npm run studio -- resolve <marker-id> "was geändert" [--regel all|channel|post "Regeltext"]
 //   npm run studio -- reject <marker-id> "warum nicht"
 //   npm run studio -- upload <ordner> [--kanal leesidelab/youtube] [--tag YYYY-MM-DD] [--slug …]
+//
+// YouTube-Ablauf (src/studio/pipeline.js: Idee → Entwurf → Video → Feinschliff → bereit):
+//   npm run studio -- idee <kanal> <YYYY-MM-DD> "Titel" "Worum es geht" [--format short|video_long]   step 1
+//   npm run studio -- ideen                                     waiting / accepted (make the draft) / dropped (propose another)
+//   npm run studio -- entwurf <studio/<slug>>                  step 2: entwurf.json → draft video (Windows voice) → upload
 //                                                               studio package of a long video → new version
 //
 // The Social import (npm run social -- import) adds a studio version for every draft it creates or replaces
@@ -17,7 +22,8 @@ import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
-import { CliError, approvalCarriesOver, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
+import { buildDraft } from "./studio-draft.mjs";
+import { CliError, approvalCarriesOver, ideaRow, ideasOverview, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
   statusAfterNewVersion, summary, versionFromPost, workMarkers } from "./studio-lib.mjs";
 
 const PAKETE = join(ROOT, "pakete");
@@ -131,7 +137,7 @@ async function upload(sb, a) {
     thumbs.push(put && (await r2Put(sb, k, p, /\.png$/i.test(t) ? "image/png" : "image/jpeg")) ? { key: k } : { name: t });
   }
   must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, source, scenes, fps: meta.fps, duration, meta: { ...meta, thumbnails: thumbs }, hash }));
-  must(await sb.from("studio_items").update({ current_version: n, status: n === 1 ? "review1" : statusAfterNewVersion(item.status), ...(a.tag ? { day: a.tag } : {}) }).eq("id", item.id));
+  must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), ...(a.tag ? { day: a.tag } : {}) }).eq("id", item.id));
   console.log(`✓ ${slug}: Fassung ${n}${put ? " (Video in R2)" : " · R2 nicht eingerichtet: Christoph öffnet das Video im Studio vom PC («Video vom PC öffnen»)"}.`);
 }
 
@@ -163,16 +169,50 @@ export async function studioFromImport(sb, { folder, dir, post, account, videoBy
   const n = (last?.version ?? 0) + 1;
   must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, ...ver, hash: packageHash }));
   const day = itemFromPost(post, account, folder).day;
-  must(await sb.from("studio_items").update({ current_version: n, status: n === 1 ? "review1" : statusAfterNewVersion(item.status), day }).eq("id", item.id));
+  must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), day }).eq("id", item.id));
   return n === 1 ? "im Studio" : `Studio Fassung ${n}`;
+}
+
+async function idea(sb, a) {
+  const [channel, day, title, pitch] = a._;
+  const row = ideaRow({ channel, day, title, pitch, format: a.format ?? "short", slug: a.slug ?? null });
+  const { items } = await loadAll(sb);
+  const taken = items.filter((i) => i.channel === channel && i.day === day && i.status !== "dropped");
+  if (taken.length && !a.zusaetzlich) throw new CliError(`Am ${day} gibt es auf ${channel} schon: ${taken.map((i) => `«${i.title}»`).join(", ")}. Mit --zusaetzlich trotzdem anlegen.`);
+  const saved = must(await sb.from("studio_items").insert(row).select().single());
+  console.log(`✓ Idee «${saved.title}» für ${day} (${channel}) wartet auf Christophs Ok. Studio: ${saved.slug}`);
+}
+
+async function ideas(sb) {
+  const { items } = await loadAll(sb);
+  const o = ideasOverview(items);
+  const line = (i) => `  ${i.day}  ${i.channel.padEnd(20)} ${i.title}  (${i.slug})${i.idea_note ? `
+      Christoph: ${i.idea_note}` : ""}`;
+  console.log(`
+Warten auf Christophs Ok (${o.waiting.length}):`);
+  o.waiting.forEach((i) => console.log(line(i)));
+  console.log(`
+Ok, Entwurf machen (${o.accepted.length}):  npm run studio -- entwurf <ordner>`);
+  o.accepted.forEach((i) => console.log(line(i)));
+  console.log(`
+Verworfen, neue Idee vorschlagen (${o.replace.length}):  npm run studio -- idee …`);
+  o.replace.forEach((i) => console.log(line(i)));
+}
+
+async function draft(sb, a) {
+  const dir = a._[0] && resolve(a._[0]);
+  if (!dir) throw new CliError("Ordner des Studio-Beitrags angeben (mit entwurf.json).");
+  const { out, duration, voice } = buildDraft(dir);
+  console.log(`Entwurf gebaut: ${out} (${duration.toFixed(1)} s, Stimme ${voice})`);
+  await upload(sb, { ...a, _: [out], slug: a.slug ?? basename(dir) });
 }
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload };
-  if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …]");
+  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft };
+  if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner>");
   try {
-    await cmds[cmd](await signedIn(), args(rest, ["json"]));
+    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich"]));
   } catch (err) {
     if (err instanceof CliError) fail(err.message);
     throw err;

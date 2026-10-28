@@ -29,7 +29,7 @@ const STATUS_FILTERS = [
   ["ai", "KI-Info", (p) => p.ai_generated === true, "mit «KI-Info» markiert"],
 ];
 
-export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], studioFor = () => null }) {
+export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], studioFor = () => null, studioBlock = () => "", studioPhase = () => "" }) {
   S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null, reviewWeek: null };
   let unsubscribe = null;
   let reloadTimer;
@@ -151,7 +151,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <span class="wk-when"><b>${WEEK_DAYS[d.slot.day]}</b> ${dm(d.date)}<span class="muted">${esc(d.slot.time)}</span></span>
           <span class="wk-what"><b>${esc(d.slot.format)}</b>${d.slot.alt ? `<span class="muted small">oder ${esc(d.slot.alt)}</span>` : ""}
             ${d.posts.map((p) => `<button class="link wk-post" data-action="soc-open" data-id="${esc(p.id)}">${esc(name(p))}</button>${p.status === "draft" && !isPlaceholder(p) ? `<button class="btn small wk-approve" data-action="soc-open" data-id="${esc(p.id)}">Ansehen und freigeben ›</button>` : ""}`).join("")}</span>
-          <span class="wk-state">${WK_STATE[d.state]}</span></li>`).join("");
+          <span class="wk-state">${WK_STATE[d.state]}</span>${studioPhase(`${row.channel.app_id}/${row.channel.platform}`, d.date)}</li>`).join("");
       return `<section class="channel-card wk-card">${head}<ul class="wk-days">${days}</ul></section>`;
     };
     // 4-week block: one row per week, one cell per day (green = every channel ready, orange = a draft waits for
@@ -177,7 +177,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     st.reviewWeek = monday;
     const weekDrafts = reviewQueue().length;
     st.reviewWeek = prevWeek;
-    return `${blockHtml}<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
+    // YouTube-Ablauf (Idee → Entwurf → Video → Feinschliff → bereit) for the same 4 weeks, from the studio
+    return `${blockHtml}${studioBlock(blockStart)}<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
         <b>KW ${kw} · ${dm(monday)} bis ${dm(addDaysIso(monday, 6))}${monday.slice(0, 4)}</b>
         <button class="btn ghost" data-action="soc-week" data-value="7" aria-label="Woche vor">›</button>
         ${monday !== thisMonday ? `<button class="link" data-action="soc-week" data-value="0">Diese Woche</button>` : ""}

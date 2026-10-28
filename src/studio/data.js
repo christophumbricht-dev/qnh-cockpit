@@ -5,6 +5,7 @@ import { DEMO, client } from "../api.js";
 import { QNH } from "../apps.js";
 import { mediaUrl as socialUrl } from "../social/data.js";
 import * as demo from "./demo.js";
+import { afterReview } from "./pipeline.js";
 
 const sb = () => client(QNH);
 const must = (r) => { if (r.error) throw Object.assign(new Error(r.error.message), { code: r.error.code }); return r.data; };
@@ -60,11 +61,17 @@ export async function judgeMarker(id, status) {
   if (DEMO) return demo.judgeMarker(id, status);
   must(await sb().from("studio_markers").update({ status }).eq("id", id));
 }
-// «Sichtung abschliessen»: his drafts become open for Claude, the item goes to «in Arbeit»
+// «Sichtung abschliessen»: his drafts become open for Claude; a draft goes on to the real video, a version to «in Arbeit»
 export async function finishReview(item) {
-  if (DEMO) return demo.finishReview(item.id);
+  if (DEMO) return demo.finishReview(item.id, afterReview(item.status));
   must(await sb().from("studio_markers").update({ status: "open" }).eq("item_id", item.id).eq("status", "draft"));
-  must(await sb().from("studio_items").update({ status: "work" }).eq("id", item.id));
+  must(await sb().from("studio_items").update({ status: afterReview(item.status) }).eq("id", item.id));
+}
+// the idea: ok (Claude makes the draft) or dropped with a note (Claude proposes another one)
+export async function judgeIdea(item, ok, note = "") {
+  const patch = { status: ok ? "idea_ok" : "dropped", idea_note: note || null };
+  if (DEMO) return demo.setItem(item.id, patch);
+  must(await sb().from("studio_items").update(patch).eq("id", item.id).eq("status", "idea"));
 }
 export async function setItem(id, patch) {
   if (DEMO) return demo.setItem(id, patch);

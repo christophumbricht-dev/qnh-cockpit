@@ -7,6 +7,7 @@ import { esc } from "../format.js";
 import * as data from "./data.js";
 import { CATEGORIES, MARKER_STATUS, SCOPES, STATUS, TARGETS, anchor, arrowStep, fmtTime, isPages, keyAction, markersFor, openCount, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
+import { DEADLINE_DAYS, LOOKING, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
 const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Leeside · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube" };
 const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", carousel: "Karussell", image: "Bild", story: "Story" };
@@ -39,7 +40,9 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
   const versionsOf = (it) => (st().value?.versions ?? []).filter((v) => v.item_id === it.id).sort((a, b) => a.version - b.version);
   const current = (it) => versionsOf(it).find((v) => v.version === it.current_version) ?? versionsOf(it).at(-1) ?? null;
   const markersOf = (it) => sortMarkers(markersFor(st().value?.markers ?? [], it));
-  const waiting = () => items().filter((i) => i.status === "review1" || i.status === "review2");
+  // Christoph's turn: an idea to confirm, a draft or a version to look at
+  const waiting = () => items().filter((i) => christophsTurn(i.status));
+  const ideas = () => items().filter((i) => i.status === "idea").sort((a, b) => String(a.day).localeCompare(String(b.day)));
 
   // the marker as it sits on the current version (remapped through its scene when it was set on an older one)
   function placed(m, ver) {
@@ -50,8 +53,45 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
   // ---------- for «Heute» and the sidebar ----------
   const badge = () => waiting().length;
   function agenda() {
-    const n = waiting().length;
-    return n ? [{ key: "studio", lane: "today", tone: "info", title: `${n} ${n === 1 ? "Beitrag wartet" : "Beiträge warten"} auf Sichtung`, sub: "Digital Studio", where: "Studio", href: "#studio" }] : [];
+    const out = [];
+    const n = waiting().filter((i) => LOOKING.includes(i.status)).length;
+    if (n) out.push({ key: "studio", lane: "today", tone: "info", title: `${n} ${n === 1 ? "Beitrag wartet" : "Beiträge warten"} auf Sichtung`, sub: "Digital Studio", where: "Studio", href: "#studio" });
+    const k = ideas().length;
+    if (k) out.push({ key: "studio-ideas", lane: "today", tone: "info", title: `${k} ${k === 1 ? "Idee wartet" : "Ideen warten"} auf dein Ok`, sub: "YouTube-Ablauf, Schritt 1", where: "Studio", href: "#studio" });
+    const late = items().filter((i) => inPipeline(i.channel) && i.day && christophsTurn(i.status) && isLate(i.status, i.day, today())).length;
+    if (late) out.push({ key: "studio-late", lane: "now", tone: "alert", title: `${late} YouTube-${late === 1 ? "Video ist" : "Videos sind"} im Verzug und ${late === 1 ? "wartet" : "warten"} auf dich`, sub: "Digital Studio", where: "Studio", href: "#studio" });
+    return out;
+  }
+
+  // ---------- YouTube-Ablauf: 4-week block (also shown in Social → Wochenplan) ----------
+  function pipelineHtml(monday = st().blockStart ?? mondayOf(today()), { nav = true } = {}) {
+    if (!st().value) return "";
+    const t = today();
+    const rows = pipelineBlock(items(), monday, t);
+    const cell = (d) => {
+      const it = d.items[0];
+      const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";
+      const tip = `${dm(d.date)} · ${d.slot?.format ?? "kein fester Platz"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
+      const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="noop"`;
+      return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.slot || d.items.length ? "" : " pl-free"}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${who}</button>`;
+    };
+    const legend = STEPS.filter(Boolean).map((s) => `<span class="pl-key pl-${s.color}"></span> ${s.n < 5 ? `${s.n} ` : ""}${esc(s.name)}`).join(" ");
+    return `<section class="card pl-block"><div class="blk-head"><b>YouTube-Ablauf</b>
+        ${nav ? `<button class="btn ghost" data-action="st-block" data-value="-28" aria-label="4 Wochen zurück">‹</button><span>4 Wochen ab ${esc(dm(monday))}</span><button class="btn ghost" data-action="st-block" data-value="28" aria-label="4 Wochen vor">›</button>` : `<span>4 Wochen ab ${esc(dm(monday))}</span>`}</div>
+      ${rows.map((r) => `<p class="st-ch">${esc(CHANNEL_NAME[r.channel] ?? r.channel)}</p><div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}
+        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map(cell).join("")}`).join("")}</div>`).join("")}
+      <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran</p>
+      <p class="muted small">Fristen vor dem Sendetag: Idee ${DEADLINE_DAYS[1]} Tage, Entwurf ${DEADLINE_DAYS[2]}, Video ${DEADLINE_DAYS[3]}, Feinschliff ${DEADLINE_DAYS[4]}.</p></section>`;
+  }
+
+  function ideasHtml() {
+    const list = ideas();
+    if (!list.length) return "";
+    return `<section class="card st-ideas"><h3>Ideen (${list.length}): dein Ok</h3>${list.map((i) => `<div class="st-idea">
+        <div><span class="muted small">${esc(CHANNEL_NAME[i.channel] ?? i.channel)} · ${esc(FORMAT_NAME[i.format] ?? i.format)} · ${esc(dm(i.day))}${i.day ? ` · Ok bis ${esc(dm(deadline(i.day, 1)))}` : ""}</span>
+          <b>${esc(i.title)}</b>${i.pitch ? `<p class="st-pkg-text">${esc(i.pitch)}</p>` : ""}</div>
+        <div class="st-idea-act"><button class="btn" data-action="st-idea-ok" data-id="${esc(i.id)}">Idee ok</button>
+          <button class="btn ghost" data-action="st-idea-drop" data-id="${esc(i.id)}">Andere Idee …</button></div></div>`).join("")}</section>`;
   }
   const itemForPost = (postId) => items().find((i) => i.social_post_id === postId) ?? null;
 
@@ -111,8 +151,8 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const weeks = [0, 1, 2, 3].map((w) => addDaysIso(monday, 7 * w));
     const week = (mon) => {
       const end = addDaysIso(mon, 6);
-      const inWeek = items().filter((i) => i.day && i.day >= mon && i.day <= end && shown.includes(i.channel));
-      const toSee = inWeek.filter((i) => i.status === "review1" || i.status === "review2");
+      const inWeek = items().filter((i) => i.day && i.day >= mon && i.day <= end && shown.includes(i.channel) && i.status !== "dropped");
+      const toSee = inWeek.filter((i) => LOOKING.includes(i.status));
       const rows = shown.map((c) => {
         const list = inWeek.filter((i) => i.channel === c).sort((a, b) => a.day.localeCompare(b.day));
         return `<div class="st-row"><span class="st-ch">${esc(CHANNEL_NAME[c] ?? c)}</span><div class="st-cards">${list.length ? list.map(card).join("") : `<span class="muted small">nichts im Studio</span>`}</div></div>`;
@@ -123,16 +163,28 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const noDay = items().filter((i) => !i.day && shown.includes(i.channel));
     return `<div class="toolbar"><div class="chips">${chips}</div>
         <div class="row-right"><button class="btn ghost" data-action="st-week" data-value="-7" aria-label="Woche zurück">‹</button><button class="btn ghost" data-action="st-week" data-value="7" aria-label="Woche vor">›</button>${s.weekStart ? `<button class="link" data-action="st-week" data-value="0">Diese Woche</button>` : ""}</div></div>
-      <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe.</p>
+      <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. YouTube-Videos haben davor Idee und Entwurf.</p>
+      ${s.filter === "all" || inPipeline(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
       ${weeks.map(week).join("")}
       ${noDay.length ? `<section class="card st-week"><b>Ohne Tag</b><div class="st-cards">${noDay.map(card).join("")}</div></section>` : ""}`;
   }
 
   function card(it) {
     const n = openCount((st().value?.markers ?? []).filter((m) => m.item_id === it.id));
-    return `<button class="st-card st-${it.status}" data-action="st-open" data-id="${esc(it.id)}">
+    const pl = inPipeline(it.channel) ? phaseOf(it.status) : null;
+    return `<button class="st-card st-${it.status}${pl ? ` pl-card-${pl.color}${isLate(it.status, it.day, today()) ? " pl-late" : ""}` : ""}" data-action="st-open" data-id="${esc(it.id)}">
       <span class="st-card-top"><span class="muted small">${esc(WEEK_DAYS[(new Date(`${it.day}T12:00:00Z`).getUTCDay() + 6) % 7] ?? "")} ${esc(dm(it.day))} · ${esc(FORMAT_NAME[it.format] ?? it.format)}</span>${n ? `<span class="count-chip calm">${n}</span>` : ""}</span>
-      <b>${esc(it.title || "(ohne Titel)")}</b><span class="st-state">${esc(STATUS[it.status])}${it.current_version > 1 ? ` · Fassung ${it.current_version}` : ""}</span></button>`;
+      <b>${esc(it.title || "(ohne Titel)")}</b><span class="st-state">${pl ? `Schritt ${pl.n} · ` : ""}${esc(STATUS[it.status])}${it.current_version > 1 ? ` · Fassung ${it.current_version}` : ""}</span></button>`;
+  }
+
+  // step 1: the idea as Claude proposed it
+  function ideaView(it) {
+    const done = it.status !== "idea";
+    return `<section class="card st-ideas"><h3>Idee</h3><p class="st-pkg-text">${esc(it.pitch || "(keine Beschreibung)")}</p>
+      ${it.idea_note ? `<p class="st-note"><b>Deine Notiz:</b> ${esc(it.idea_note)}</p>` : ""}
+      ${done ? `<p class="muted small">${esc(STATUS[it.status])}</p>` : `<div class="st-idea-act"><button class="btn" data-action="st-idea-ok" data-id="${esc(it.id)}">Idee ok</button>
+        <button class="btn ghost" data-action="st-idea-drop" data-id="${esc(it.id)}">Andere Idee …</button></div>
+        <p class="muted small">Bei «Idee ok» macht Claude einen einfachen Entwurf mit Gratis-Stimme. Ok bis ${esc(dm(deadline(it.day, 1)))}.</p>`}</section>`;
   }
 
   function itemView(it) {
@@ -146,11 +198,12 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
         <button class="btn ghost" data-action="st-round-step" data-value="1"${r.idx < r.ids.length - 1 ? "" : " disabled"}>Weiter ›</button>` : "";
     return `<div class="st-head"><button class="link" data-action="st-close">‹ Übersicht</button>${nav}</div>
       <div class="st-title"><div><span class="muted small">${esc(CHANNEL_NAME[it.channel] ?? it.channel)} · ${esc(FORMAT_NAME[it.format] ?? it.format)} · ${esc(dm(it.day))}</span>
-        <h2>${esc(it.title || "(ohne Titel)")}</h2></div><span class="pill st-${it.status}">${esc(STATUS[it.status])} · Fassung ${it.current_version}</span></div>
-      <div class="st-body${it.format === "video_long" ? " wide" : ""}">
+        <h2>${esc(it.title || "(ohne Titel)")}</h2></div><span class="pill st-${it.status}">${inPipeline(it.channel) ? `Schritt ${phaseOf(it.status).n} · ` : ""}${esc(STATUS[it.status])}${ver ? ` · Fassung ${it.current_version}` : ""}</span></div>
+      ${it.pitch || it.status === "idea" ? ideaView(it) : ""}
+      ${["idea", "idea_ok", "dropped"].includes(it.status) && !ver ? "" : `<div class="st-body${it.format === "video_long" ? " wide" : ""}">
         <div class="st-stage">${ver ? (isPages(it.format) ? pagesView(it, ver, ms) : playerView(it, ver, ms)) : `<p class="note">Noch keine Fassung. Sie kommt mit dem Import oder mit <code>npm run studio -- upload</code>.</p>`}</div>
         <aside class="st-side">${formView(it)}${markerList(it, ver, ms)}${actions(it, ms)}</aside>
-      </div>
+      </div>`}
       ${ver ? packageView(it, ver) : ""}`;
   }
 
@@ -233,6 +286,13 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
 
   function actions(it, ms) {
     const drafts = ms.filter((m) => m.status === "draft").length;
+    // step 2: the draft (Windows voice, simple pictures): input for the real video, no approval yet
+    if (it.status === "draft") {
+      return `<div class="st-actions"><button class="btn" data-action="st-finish">${drafts ? `Input abschicken (${drafts} Marker)` : "Entwurf passt: Video machen"}</button>
+        <p class="muted small">Der Entwurf ist noch nicht das Video: Stimme und Bilder sind nur zum Vorstellen. Sag hier, was anders werden soll.</p></div>`;
+    }
+    if (it.status === "idea_ok" || it.status === "draft_done") return `<p class="note small">${esc(STATUS[it.status])}.${openCount(ms) ? ` ${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkte"} von dir.` : ""}</p>`;
+    if (it.status === "idea" || it.status === "dropped") return "";
     if (it.status === "review1") {
       return `<div class="st-actions">${drafts ? `<button class="btn" data-action="st-finish">Sichtung abschliessen (${drafts} ${drafts === 1 ? "Marker" : "Marker"})</button>` : ""}
         <button class="btn ${drafts ? "ghost" : ""}" data-action="st-approve">${drafts ? "Trotzdem freigeben" : "Alles gut: freigeben"}</button></div>`;
@@ -366,7 +426,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
       case "st-close": s.itemId = null; s.round = null; video.pause(); location.hash = "#studio"; return true;
       case "st-round": {
         const mon = el.dataset.value, end = addDaysIso(mon, 6);
-        const list = roundOrder(items().filter((i) => i.day >= mon && i.day <= end && (i.status === "review1" || i.status === "review2") && (s.filter === "all" || i.channel === s.filter)));
+        const list = roundOrder(items().filter((i) => i.day >= mon && i.day <= end && LOOKING.includes(i.status) && (s.filter === "all" || i.channel === s.filter)));
         if (list.length) openItem(list[0].id, { ids: list.map((i) => i.id), idx: 0 });
         return true;
       }
@@ -406,8 +466,27 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
         return true;
       case "st-finish": {
         const it = item();
-        try { await data.finishReview(it); toast("Sichtung abgeschlossen. Claude setzt die Marker um."); await load(true); nextInRound(); } catch (err) { toast(errorText(err)); }
+        try {
+          await data.finishReview(it);
+          toast(it.status === "draft" ? "Danke. Claude macht jetzt das richtige Video." : "Sichtung abgeschlossen. Claude setzt die Marker um.");
+          await load(true);
+          nextInRound();
+        } catch (err) { toast(errorText(err)); }
         return true;
+      }
+      case "st-idea-ok": case "st-idea-drop": {
+        const it = items().find((i) => i.id === id);
+        if (!it) return true;
+        const ok = action === "st-idea-ok";
+        const note = ok ? "" : prompt("Was passt nicht? Claude schlägt dann eine andere Idee vor. (leer lassen geht auch)");
+        if (note === null) return true;
+        try { await data.judgeIdea(it, ok, note.trim()); toast(ok ? "Idee ok. Claude macht den Entwurf." : "Verworfen. Claude schlägt eine andere Idee vor."); await load(true); } catch (err) { toast(errorText(err)); }
+        return true;
+      }
+      case "st-block": {
+        const n = Number(el.dataset.value);
+        s.blockStart = addDaysIso(s.blockStart ?? mondayOf(today()), n);
+        break;
       }
       case "st-again": {
         const it = item();
@@ -498,5 +577,16 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     if (!id) { st().itemId = null; st().round = null; video.pause(); }
   };
 
-  return { load, view, afterRender, onClick, onKeydown, onPointer, onSubmit, onInput, badge, agenda, itemForPost, setItemFromRoute };
+  // Social → Wochenplan: the step of a YouTube day as a small tag (links into the studio)
+  function dayPhase(channel, date) {
+    if (!st().value || !inPipeline(channel)) return "";
+    const list = items().filter((i) => i.channel === channel && i.day === date && i.status !== "dropped");
+    const it = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
+    const p = phaseOf(it?.status ?? null);
+    const late = date >= today() && isLate(it?.status ?? null, date, today());
+    const tag = `<span class="pl-tag pl-${p.color}${late ? " pl-late" : ""}">${p.n < 5 ? `Schritt ${p.n} · ` : "✓ "}${esc(p.label)}</span>`;
+    return it ? `<a class="pl-taglink" href="#studio/${esc(it.id)}">${tag}</a>` : tag;
+  }
+
+  return { load, view, afterRender, onClick, onKeydown, onPointer, onSubmit, onInput, badge, agenda, itemForPost, setItemFromRoute, pipelineHtml, dayPhase };
 }

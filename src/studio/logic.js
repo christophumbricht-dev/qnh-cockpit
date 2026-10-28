@@ -1,6 +1,11 @@
 // Digital Studio: pure helpers (tested in tests/studio-logic.test.mjs). No DOM, no Supabase.
 
 export const STATUS = {
+  idea: "Idee wartet auf dich",
+  idea_ok: "Idee ok, Claude macht den Entwurf",
+  draft: "Entwurf wartet auf dich",
+  draft_done: "Claude macht das Video",
+  dropped: "Idee verworfen",
   review1: "wartet auf Sichtung 1",
   work: "in Arbeit",
   review2: "wartet auf Sichtung 2",
@@ -78,7 +83,8 @@ export function sceneJump(scenes, t, dir, duration) {
 // shows just the points that were «noch nicht»), plus new ones Christoph sets now; otherwise all
 export function markersFor(markers, item) {
   const mine = markers.filter((m) => m.item_id === item.id);
-  if (item.status !== "review2") return mine;
+  if (!["draft", "review1", "review2"].includes(item.status)) return mine;
+  // a look shows what was worked on for this version and the new drafts; earlier rounds stay behind
   return mine.filter((m) => m.done_version === item.current_version || (m.status === "draft" && m.version === item.current_version));
 }
 

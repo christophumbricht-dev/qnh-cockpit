@@ -2,6 +2,7 @@
 // Tested in tests/studio-cli.test.mjs.
 import { createHash } from "node:crypto";
 import { formatOf } from "../src/studio/logic.js";
+import { afterNewVersion, phaseOf } from "../src/studio/pipeline.js";
 
 export class CliError extends Error {}
 
@@ -55,8 +56,8 @@ export function summary(items, markers) {
   const of = (it) => markers.filter((m) => m.item_id === it.id);
   const todo = (m) => m.status === "open" || m.status === "not_yet";
   return {
-    christoph: items.filter((i) => i.status === "review1" || i.status === "review2"),
-    claude: items.filter((i) => i.status === "work").map((i) => ({ item: i, open: of(i).filter(todo) })),
+    christoph: items.filter((i) => phaseOf(i.status).who === "christoph"),
+    claude: items.filter((i) => phaseOf(i.status).who === "claude" && i.status !== "dropped").map((i) => ({ item: i, open: of(i).filter(todo) })),
     approved: items.filter((i) => i.status === "approved"),
   };
 }
@@ -77,9 +78,9 @@ export function rejectPatch(item, why) {
   return { status: "rejected", note: String(why).trim().slice(0, 2000), done_version: item.current_version + 1 };
 }
 
-// a new version arrives: review 1 stays review 1, after a review (work) it is review 2; an approved item that changes
-// needs a new approval (review 2)
-export const statusAfterNewVersion = (status) => (status === "review1" ? "review1" : "review2");
+// a new version arrives: an accepted idea becomes a draft, after the draft it is Sichtung 1, after a review (work)
+// Sichtung 2; an approved item that changes needs a new approval (src/studio/pipeline.js)
+export const statusAfterNewVersion = afterNewVersion;
 
 // the version row for a Social draft (reels, carousels, Shorts): media from the Social bucket
 export function versionFromPost(post, { scenes = [], fps = null, assumptions = [] } = {}) {
@@ -123,4 +124,57 @@ export function reviewFile(item, markers) {
 export function markerLine(m) {
   const where = m.target !== "medium" ? m.target : m.page != null ? `Seite ${m.page + 1}` : m.at != null ? `${m.at.toFixed(1)} s${m.scene_id ? ` (${m.scene_id} +${(m.offset_s ?? 0).toFixed(1)} s)` : ""}` : "ganzer Beitrag";
   return `${m.id}  ${where}${m.x != null ? ` @${m.x}%/${m.y}%` : ""}  [${m.category}${m.status === "not_yet" ? ", noch nicht" : ""}]  ${m.body}`;
+}
+
+// ---------- YouTube-Ablauf: ideas and drafts ----------
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// a new idea (step 1) → studio_items row
+export function ideaRow({ channel, day, title, pitch, format = "short", slug = null }) {
+  if (!/^[a-z0-9-]{2,30}\/(instagram|youtube|facebook)$/.test(channel ?? "")) throw new CliError("Kanal wie leesidelab/youtube angeben.");
+  if (!DAY.test(day ?? "")) throw new CliError("Datum als YYYY-MM-DD angeben.");
+  if (!String(title ?? "").trim()) throw new CliError("Titel fehlt.");
+  if (!String(pitch ?? "").trim()) throw new CliError("Bitte in ein, zwei Sätzen sagen, worum es geht.");
+  if (!["short", "video_long", "reel"].includes(format)) throw new CliError("--format short, video_long oder reel.");
+  return { channel, format, title: String(title).trim().slice(0, 200), pitch: String(pitch).trim().slice(0, 2000), day, status: "idea", slug: slugOf(slug ?? `${day}-${title}`) };
+}
+// what the chats do next with ideas: waiting on Christoph, accepted (make the draft), dropped without a replacement yet
+export function ideasOverview(items) {
+  const live = items.filter((i) => i.status !== "dropped");
+  return {
+    waiting: items.filter((i) => i.status === "idea"),
+    accepted: items.filter((i) => i.status === "idea_ok"),
+    replace: items.filter((i) => i.status === "dropped" && !live.some((x) => x.channel === i.channel && x.day === i.day)),
+  };
+}
+// draft: scene times from the spoken lengths (a short breath between sentences; the picture keeps moving)
+export function draftScenes(scenes, durations, gap = 0.4) {
+  let t = 0;
+  return scenes.map((s, i) => {
+    const len = Math.round((durations[i] + gap) * 1000) / 1000;
+    const out = { id: s.id, label: s.label ?? s.id, start: Math.round(t * 1000) / 1000, end: Math.round((t + len) * 1000) / 1000 };
+    t += len;
+    return out;
+  });
+}
+// entwurf.json: { title, scenes: [{ id, label, text, image? }], meta? }
+export function checkDraft(d) {
+  if (!d || !Array.isArray(d.scenes) || !d.scenes.length) throw new CliError("entwurf.json braucht «scenes»: [{ id, label, text }].");
+  const ids = new Set();
+  return d.scenes.map((s, i) => {
+    const id = String(s.id ?? `s${i + 1}`);
+    if (ids.has(id)) throw new CliError(`Szene «${id}» kommt zweimal vor.`);
+    ids.add(id);
+    if (!String(s.text ?? "").trim()) throw new CliError(`Szene «${id}»: «text» fehlt.`);
+    return { id, label: String(s.label ?? id), text: String(s.text).trim(), image: s.image ? String(s.image) : null };
+  });
+}
+// slate text: wrap the sentence for the picture
+export function wrap(text, width = 52) {
+  const lines = [];
+  let line = "";
+  for (const w of String(text).split(/\s+/)) {
+    if ((line + " " + w).trim().length > width && line) { lines.push(line); line = w; } else line = (line + " " + w).trim();
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
 }

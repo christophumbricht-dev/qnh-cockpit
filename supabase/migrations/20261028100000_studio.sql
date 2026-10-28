@@ -13,7 +13,10 @@ create table if not exists public.studio_items (
   title           text not null default '' check (char_length(title) <= 200),
   slug            text unique check (slug is null or slug ~ '^[a-z0-9][a-z0-9._-]{1,80}$'),             -- package folder / studio/<slug>
   day             date,
-  status          text not null default 'review1' check (status in ('review1', 'work', 'review2', 'approved')),
+  -- YouTube-Ablauf (src/studio/pipeline.js): idea → idea_ok → draft → draft_done → review1 → work → review2 → approved; dropped = idea declined
+  status          text not null default 'review1' check (status in ('idea', 'idea_ok', 'draft', 'draft_done', 'review1', 'work', 'review2', 'approved', 'dropped')),
+  pitch           text not null default '' check (char_length(pitch) <= 2000),                          -- the idea: what and why
+  idea_note       text check (idea_note is null or char_length(idea_note) <= 2000),                   -- Christoph on the idea
   current_version int not null default 1 check (current_version >= 1),
   social_post_id  uuid references public.social_posts (id) on delete set null,
   approved_hash   text check (approved_hash is null or char_length(approved_hash) <= 80),             -- approved before the draft existed

@@ -20,6 +20,13 @@ const items = [
   { id: "long", channel: "leesidelab/youtube", format: "video_long", title: "Föhn explained for pilots", slug: "foehn-long", day: addDaysIso(mon, 6), status: "review1", current_version: 1, social_post_id: null },
   { id: "reel", channel: "leesidelab/instagram", format: "reel", title: "Panel Puzzle 1: kalter Motor", slug: "2026-11-08-panel-1", day: addDaysIso(mon, 6), status: "review2", current_version: 2, social_post_id: null },
   { id: "car", channel: "downwind/instagram", format: "carousel", title: "3 Dinge, die dein Papier-Flugbuch nicht kann", slug: "2026-11-04-papier", day: addDaysIso(mon, 2), status: "review1", current_version: 1, social_post_id: null },
+  // YouTube-Ablauf: one item per step
+  { id: "yt1", channel: "leesidelab/youtube", format: "short", title: "Wind im Griff 3: Böen beim Aufsetzen", slug: "yt-wind-3", day: addDaysIso(mon, 1), status: "approved", current_version: 2, social_post_id: null },
+  { id: "yt2", channel: "leesidelab/youtube", format: "short", title: "Woher kommt das Wetter? Die Bise", slug: "yt-bise", day: addDaysIso(mon, 10), status: "work", current_version: 1, social_post_id: null },
+  { id: "yt3", channel: "leesidelab/youtube", format: "video_long", title: "Mountain waves explained", slug: "yt-waves", day: addDaysIso(mon, 13), status: "draft_done", current_version: 1, social_post_id: null, pitch: "Lee waves in 3D, rotor, the Andermatt accident as the case." },
+  { id: "yt4", channel: "leesidelab/youtube", format: "short", title: "Thermik am Morgen", slug: "yt-thermik", day: addDaysIso(mon, 16), status: "draft", current_version: 1, social_post_id: null, pitch: "Why the first thermals start over dry fields and rocks, and when they are strong enough." },
+  { id: "yt5", channel: "leesidelab/youtube", format: "short", title: "Nebel im Mittelland", slug: "yt-nebel", day: addDaysIso(mon, 23), status: "idea", current_version: 1, social_post_id: null, pitch: "Hochnebel over the Swiss plateau: how it forms in autumn, why it stays all day, what it means for VFR." },
+  { id: "yt6", channel: "leesidelab/youtube", format: "short", title: "Gewitter im Jura", slug: "yt-gewitter", day: addDaysIso(mon, 25), status: "idea", current_version: 1, social_post_id: null, pitch: "Afternoon thunderstorms along the Jura: where they start and how to see them early." },
 ];
 const versions = [
   { id: "v1", item_id: "long", version: 1, source: { kind: "r2", key: "studio/foehn-long/v1/video.mp4" }, scenes: SCENES, fps: 30, duration: 337,
@@ -28,6 +35,8 @@ const versions = [
       thumbnails: [{ path: "logos/leesidelab.svg" }, { name: "thumb_b.jpg" }] } },
   { id: "v2", item_id: "reel", version: 1, source: { kind: "storage", path: "demo/panel1.mp4" }, scenes: [], fps: 30, duration: 18.5, meta: { caption: "Oil pressure high, oil temp low. What's going on? 👇" } },
   { id: "v3", item_id: "reel", version: 2, source: { kind: "storage", path: "demo/panel1.mp4" }, scenes: [], fps: 30, duration: 18.5, meta: { caption: "Oil pressure high, oil temp low. What's going on? 👇", assumptions: ["Ölanzeigen 12 mm vom Höhenmesser"] } },
+  { id: "v5", item_id: "yt4", version: 1, source: { kind: "local", name: "yt-thermik/v1/video.mp4" }, scenes: [{ id: "a", label: "Morgens", start: 0, end: 12 }, { id: "b", label: "Felder und Fels", start: 12, end: 30 }], fps: 30, duration: 30,
+    meta: { caption: "Entwurf mit Windows-Stimme", assumptions: ["Entwurf: Stimme Microsoft Zira, Bilder als Skizzen"] } },
   { id: "v4", item_id: "car", version: 1, source: { kind: "storage", pages: ["logos/downwind.svg", "logos/leesidelab.svg", "logos/wolkenhof.svg"] }, scenes: [], meta: { caption: "3 Dinge, die dein Papier-Flugbuch nicht kann 👇" } },
 ];
 const markers = [
@@ -47,9 +56,9 @@ export async function saveMarker(m) {
 }
 export async function deleteMarker(mid) { markers.splice(markers.findIndex((x) => x.id === mid), 1); emit(); }
 export async function judgeMarker(mid, status) { markers.find((x) => x.id === mid).status = status; emit(); }
-export async function finishReview(iid) {
+export async function finishReview(iid, next = "work") {
   for (const m of markers) if (m.item_id === iid && m.status === "draft") m.status = "open";
-  items.find((i) => i.id === iid).status = "work";
+  items.find((i) => i.id === iid).status = next;
   emit();
 }
 export async function setItem(iid, patch) { Object.assign(items.find((i) => i.id === iid), patch); emit(); }

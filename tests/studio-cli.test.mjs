@@ -86,3 +86,34 @@ test("a studio approval carries over only for exactly the approved content", () 
   assert.equal(approvalCarriesOver({ ...item, status: "review2" }, version, draft), false);
   assert.equal(approvalCarriesOver({ ...item, approved_hash: "old" }, version, draft), false);
 });
+
+import { checkDraft, draftScenes, ideaRow, ideasOverview, wrap } from "../scripts/studio-lib.mjs";
+
+test("ideaRow checks channel, day, title and pitch", () => {
+  const r = ideaRow({ channel: "leesidelab/youtube", day: "2026-11-20", title: "Nebel im Mittelland", pitch: "Hochnebel" });
+  assert.deepEqual(r, { channel: "leesidelab/youtube", format: "short", title: "Nebel im Mittelland", pitch: "Hochnebel", day: "2026-11-20", status: "idea", slug: "2026-11-20-nebel-im-mittelland" });
+  assert.throws(() => ideaRow({ ...r, channel: "leesidelab" }), /Kanal/);
+  assert.throws(() => ideaRow({ ...r, day: "20.11.2026" }), /YYYY/);
+  assert.throws(() => ideaRow({ ...r, pitch: " " }), /worum/);
+  assert.throws(() => ideaRow({ ...r, format: "movie" }), /format/);
+});
+
+test("ideasOverview: a dropped idea needs a replacement until another idea takes its day", () => {
+  const items = [
+    { id: 1, channel: "c/youtube", day: "2026-11-20", status: "dropped" },
+    { id: 2, channel: "c/youtube", day: "2026-11-21", status: "dropped" },
+    { id: 3, channel: "c/youtube", day: "2026-11-21", status: "idea" },
+    { id: 4, channel: "c/youtube", day: "2026-11-22", status: "idea_ok" },
+  ];
+  const o = ideasOverview(items);
+  assert.deepEqual([o.waiting.map((i) => i.id), o.accepted.map((i) => i.id), o.replace.map((i) => i.id)], [[3], [4], [1]]);
+});
+
+test("draft: scene times from the spoken lengths, checks and wrapping", () => {
+  assert.deepEqual(draftScenes([{ id: "a" }, { id: "b", label: "B" }], [2, 3.25], 0.5),
+    [{ id: "a", label: "a", start: 0, end: 2.5 }, { id: "b", label: "B", start: 2.5, end: 6.25 }]);
+  assert.deepEqual(checkDraft({ scenes: [{ text: " Hi " }] }), [{ id: "s1", label: "s1", text: "Hi", image: null }]);
+  assert.throws(() => checkDraft({ scenes: [] }), /scenes/);
+  assert.throws(() => checkDraft({ scenes: [{ id: "a", text: "x" }, { id: "a", text: "y" }] }), /zweimal/);
+  assert.equal(wrap("one two three four", 9), "one two\nthree\nfour");
+});

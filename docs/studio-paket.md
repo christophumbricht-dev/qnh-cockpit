@@ -8,6 +8,34 @@ Im Digital Studio (Cockpit → Studio, `#studio`) schaut Christoph jeden Beitrag
 
 Jede Rückmeldung wird ausserdem eine Regel in `C:\QNH\03_Social\Abnahme-Regeln.md` (beim `resolve` mit `--regel`).
 
+## YouTube-Ablauf (seit 28.10.2026)
+
+YouTube-Videos (Kanal `leesidelab/youtube`, Liste `PIPELINE_CHANNELS` in `src/studio/pipeline.js`) laufen durch vier Schritte, geplant in 4-Wochen-Blöcken. Christoph sieht den Stand im Wochenplan (Social → Wochenplan) und im Studio als farbige Kästchen:
+
+| Schritt | Farbe | Claude | Christoph | fertig bis |
+|---|---|---|---|---|
+| 1 Idee | grau | schlägt vor: was, wann, welcher Kanal (`idee`) | «Idee ok» oder «Andere Idee» mit Notiz | 21 Tage vor Sendetag |
+| 2 Entwurf | blau | einfaches Video mit Windows-Stimme (`entwurf`), keine ElevenLabs | Input mit Markern oder «Entwurf passt» | 14 Tage vorher |
+| 3 Video | orange | das richtige Video (ElevenLabs erst nach Rückfrage) | Sichtung 1 | 7 Tage vorher |
+| 4 Feinschliff | gelb | setzt Sichtung 1 um | Sichtung 2 und Freigabe | 3 Tage vorher |
+| bereit | grün | | | |
+
+Rot umrandet = im Verzug. «du» im Kästchen = Christoph ist dran. Der Entwurf zählt nicht als Sichtung: die zwei Sichtungen gelten für das fertige Video.
+
+1. Ideen für den nächsten Block: `npm.cmd run studio -- idee leesidelab/youtube 2026-11-20 "Nebel im Mittelland" "Wie Hochnebel entsteht und was er für VFR heisst." [--format video_long]`. Alle Ideen eines Blocks auf einmal vorschlagen.
+2. `npm.cmd run studio -- ideen`: was wartet, was ok ist (Entwurf machen) und was verworfen wurde (neue Idee für denselben Tag vorschlagen, Christophs Notiz beachten).
+3. Entwurf: Ordner `studio/<slug>/` mit `entwurf.json`, dann `npm.cmd run studio -- entwurf "<ordner>"`. Baut `v<n>/video.mp4` (Windows-Stimme, Bild zoomt langsam, nie Standbild), `scenes.json`, `meta.json` und lädt hoch.
+
+```json
+{ "title": "Morning thermals",
+  "scenes": [
+    { "id": "intro", "label": "Morning", "text": "When do the first thermals start in the morning?" },
+    { "id": "fields", "label": "Dry fields and rock", "text": "Dry fields and bare rock heat up first.", "image": "skizze1.png" } ],
+  "meta": { "description": "…", "assumptions": ["…"] } }
+```
+
+4. Nach Christophs Input (`markers`, `resolve`, `reject` wie unten) das richtige Video bauen und als neue Fassung hochladen (`upload` oder Social-Import): es geht in Sichtung 1. Danach Feinschliff, Sichtung 2, Freigabe.
+
 ## Reels, Shorts, Karussells: nichts Neues
 
 Das normale Social-Paket (`docs/social-paket.md`) reicht. `npm run social -- import` legt für jeden importierten oder ersetzten Entwurf automatisch eine Studio-Fassung an. Optional im Paket:
