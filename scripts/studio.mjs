@@ -17,7 +17,8 @@
 //   npm run studio -- anfrage-erledigt <id>
 //   npm run studio -- auftraege                                 Christoph's instructions from «An Claude» (open first)
 //   npm run studio -- auftrag <id> --status doing|done|failed [--antwort "kurz auf Deutsch"]
-//   npm run studio -- uebernehmen [--von YYYY-MM-DD] [--wochen 4] [--dry]   take the Social plan into the Ablauf
+//   npm run studio -- uebernehmen [--von YYYY-MM-DD] [--wochen 4] [--alle] [--format short] [--dry]   take the Social plan into the Ablauf
+//                                                               (--alle: also Shorts with video, outside the Ablauf)
 //                                                               (placeholder → idea, draft → Sichtung 1, approved/out → ready)
 //                                                               studio package of a long video → new version
 //
@@ -31,7 +32,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { buildDraft } from "./studio-draft.mjs";
-import { inPipeline } from "../src/studio/pipeline.js";
+import { PIPELINE_CHANNELS, inPipeline } from "../src/studio/pipeline.js";
 import { isPlaceholder } from "../src/social/validate.js";
 import { addDaysIso, mondayOf } from "../src/social/weekplan.js";
 import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, requestRow, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
@@ -307,7 +308,9 @@ async function adopt(sb, a) {
     const format = !ph ? base.format
       : acc.platform === "youtube" && /lang(es)?\s*video|langvideo|long video/i.test(p.caption) ? "video_long"
       : /METAR|Karussell|carousel/i.test(p.caption) ? "carousel" : base.format;   // Saturday METAR is a carousel
-    if (!inPipeline(base.channel, format)) continue;
+    // --alle: also posts outside the Ablauf of these channels (YouTube Shorts) that have their video, for Sichtung 1 only
+    if (!inPipeline(base.channel, format) && !(a.alle && !ph && PIPELINE_CHANNELS.includes(base.channel))) continue;
+    if (a.format && format !== a.format) continue;   // e.g. --format short: only the Shorts
     if (items.some((i) => i.social_post_id === p.id)) continue;
     if (ph && items.some((i) => i.channel === base.channel && i.day === day && i.format === format && !i.social_post_id && i.status !== "dropped")) continue;
     const status = adoptStatus(p, isPlaceholder);
@@ -332,7 +335,7 @@ async function main() {
   const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
   if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner> | anfrage <slug|-> --titel … --saetze … --credits … | anfragen | anfrage-erledigt <id> | uebernehmen");
   try {
-    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry"]));
+    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry", "alle"]));
   } catch (err) {
     if (err instanceof CliError) fail(err.message);
     throw err;
