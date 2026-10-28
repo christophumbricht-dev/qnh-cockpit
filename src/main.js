@@ -53,7 +53,7 @@ const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...[...APPS, ...BR
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
-  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })) });
+  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), studioFor: (id) => studio.itemForPost(id) });
 const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id) });
 const scopeBadge = (id) => appBadge(id === "qnh" ? { name: "QNH", color: "#0B7285" } : appById(id) ?? { name: id, color: "#627d98" });
 const finance = createFinance({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: () => SCOPES, scopeBadge });

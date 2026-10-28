@@ -29,7 +29,7 @@ const STATUS_FILTERS = [
   ["ai", "KI-Info", (p) => p.ai_generated === true, "mit «KI-Info» markiert"],
 ];
 
-export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [] }) {
+export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], studioFor = () => null }) {
   S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null, reviewWeek: null };
   let unsubscribe = null;
   let reloadTimer;
@@ -764,6 +764,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     if (["draft", "approved", "failed"].includes(ed.status)) actions.push(`<button class="btn ghost" data-action="soc-publish-now" data-id="${ed.id}"${ed.busy ? " disabled" : ""}>Jetzt veröffentlichen …</button>`);
     if (!ed.isNew) actions.push(`<button class="btn ghost" data-action="soc-duplicate" data-id="${ed.id}">Duplizieren</button>`);
     if (ed.permalink) actions.push(`<a class="btn ghost" href="${esc(ed.permalink)}" target="_blank" rel="noopener">Auf ${esc(where)} öffnen</a>`);
+    // the same post in the Digital Studio (markers, versions, Claude's notes)
+    const inStudio = !ed.isNew && studioFor(ed.id);
+    if (inStudio) actions.push(`<a class="btn ghost" href="#studio/${esc(inStudio.id)}">Im Studio ansehen</a>`);
 
     const rv = S.social.review;
     const rvBar = rv && !ed.isNew ? (() => {

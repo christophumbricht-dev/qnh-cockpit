@@ -42,8 +42,9 @@ function csp(env) {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     // Instagram pictures of watched posts in Social → «Bei anderen» (Meta's CDN)
-    `img-src 'self' data: blob: https://flydownwind.ch https://*.cdninstagram.com https://*.fbcdn.net ${supabase.join(" ")}`,
-    `media-src 'self' blob: ${supabase.join(" ")}`,
+    // Digital Studio: long videos and thumbnails come from Cloudflare R2 through presigned links
+    `img-src 'self' data: blob: https://flydownwind.ch https://*.cdninstagram.com https://*.fbcdn.net https://*.r2.cloudflarestorage.com ${supabase.join(" ")}`,
+    `media-src 'self' blob: https://*.r2.cloudflarestorage.com ${supabase.join(" ")}`,
     `connect-src 'self' ${[...supabase, ...ws].join(" ")}`,
     "font-src 'self'",
     "object-src 'none'",

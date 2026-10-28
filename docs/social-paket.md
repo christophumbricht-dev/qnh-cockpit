@@ -100,6 +100,13 @@ Das Cockpit prüft alles beim Import und zeigt Fehler im Editor an. Ein Paket mi
 - Gesendet wird höchstens einmal und nur unter unseren eigenen ersten Kommentar.
 - Mit `quiz_answer` und `quiz_correct_replies` bekommt zusätzlich, wer die Frage richtig beantwortet, eine deiner vorbereiteten Antworten. Nie frei formuliert, nie auf ausgeblendete oder zurückgehaltene Kommentare. Alle anderen Antworten schreibst du selbst.
 
+### Für das Digital Studio (optional)
+Jeder importierte Entwurf erscheint auch im Studio (`docs/studio-paket.md`). Dafür kann das Paket mitbringen:
+- `scenes.json` neben `post.json`: `[{ "id", "label", "start", "end" }]` in Sekunden, für die Zeitleiste und damit Marker bei einer neuen Fassung mitwandern.
+- `"assumptions": ["…"]`: was Claude selbst entschieden hat und Christoph wissen soll.
+- `"fps": 30`: Bildrate für «ein Bild vor/zurück».
+- `"studio": "<slug>"`: gehört zu einem langen Video, das schon als Studio-Paket hochgeladen ist.
+
 ### Zurzeit ausgeschaltet (seit 23.10.2026)
 - `todo` wird beim Import ignoriert: keine Aufgaben nach dem Posten mehr.
 - Quiz- und Umfrage-Storys (Ordner mit `quiz` im Namen, Art `story`, z. B. `…-quiz-q` / `…-quiz-a`) werden nicht angelegt.
