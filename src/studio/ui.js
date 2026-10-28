@@ -5,14 +5,16 @@
 // playback is not interrupted; time and playhead are updated directly, not by re-rendering.
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { R2_FREE_BYTES, fmtGB, r2Flag, r2Usage } from "./logic.js";
-import { CATEGORIES, MARKER_STATUS, SCOPES, STATUS, TARGETS, anchor, arrowStep, fmtTime, isPages, keyAction, markersFor, openCount, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
+import { CATEGORIES, MARKER_STATUS, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
 import { DEADLINE_DAYS, LOOKING, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
 const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Leeside · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube" };
 const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", carousel: "Karussell", image: "Bild", story: "Story" };
-const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+// one formatter, and the day cached for a minute: today() runs for every card and cell of a render
+const ZURICH_DAY = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" });
+let todayCache = { at: 0, day: "" };
+const today = () => { const now = Date.now(); if (now - todayCache.at > 60_000) todayCache = { at: now, day: ZURICH_DAY.format(new Date(now)) }; return todayCache.day; };
 // playback speeds (Christoph 28.10.2026), remembered per device
 const RATES = [0.1, 0.25, 0.5, 1, 2, 3];
 const savedRate = () => { try { const r = Number(localStorage.getItem("qnh-studio-rate")); return RATES.includes(r) ? r : 1; } catch { return 1; } };
@@ -21,7 +23,9 @@ const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7)
 export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {} }) {
   S.studio = { value: undefined, loading: false, error: null, itemId: null, round: null, page: 0, form: null, filter: "all", weekStart: null, local: {}, urls: {}, mediaFor: null };
   const st = () => S.studio;
-  let unsubscribe = null, reloadTimer;
+  let unsubscribe = null, reloadTimer, again = false, ownWriteAt = 0, busy = false;
+  // per load: versions by item (sorted), open marker counts by item, R2 usage
+  let index = { versions: new Map(), open: new Map(), r2: { bytes: 0, files: 0 } };
   const video = document.createElement("video");
   video.playsInline = true;
   video.preload = "metadata";
@@ -31,23 +35,52 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   let rate = savedRate();
   // the browser resets the speed when a new file is loaded
   video.addEventListener("loadedmetadata", () => { video.playbackRate = rate; });
+  video.addEventListener("error", async () => {
+    const it = item(), ver = it && current(it);
+    if (!ver || ver.source?.kind !== "r2" || st().local[ver.id] || video.dataset.retried === ver.id) return;
+    video.dataset.retried = ver.id;
+    const at = video.currentTime;
+    data.forgetMedia(ver.source);
+    const url = await data.mediaUrl(ver.source);
+    if (url && st().mediaFor === ver.id) { st().urls[ver.id] = url; video.src = url; video.currentTime = at; }
+  });
 
   // ---------- data ----------
+  // a reload asked for while one runs is not lost: it runs once more right after
   async function load(force = false) {
-    if (st().loading || (st().value !== undefined && !force)) return;
+    if (st().loading) { if (force) again = true; return; }
+    if (st().value !== undefined && !force) return;
     st().loading = true;
     try {
       st().value = await data.loadStudio();
       st().error = null;
-      if (st().value && !unsubscribe) unsubscribe = data.subscribe(() => { clearTimeout(reloadTimer); reloadTimer = setTimeout(() => load(true), 500); });
+      buildIndex();
+      // realtime: reload half a second after a change, but not for the echo of Christoph's own click (already reloaded)
+      if (st().value && !unsubscribe) unsubscribe = data.subscribe(() => { if (Date.now() - ownWriteAt < 2500) return; clearTimeout(reloadTimer); reloadTimer = setTimeout(() => load(true), 500); });
     } catch (err) { st().error = err; }
     st().loading = false;
+    if (again) { again = false; return load(true); }
     if (!document.activeElement?.closest?.(".st-form")) render();
+  }
+  function buildIndex() {
+    const v = st().value;
+    const versions = new Map(), open = new Map();
+    for (const x of v?.versions ?? []) (versions.get(x.item_id) ?? versions.set(x.item_id, []).get(x.item_id)).push(x);
+    for (const list of versions.values()) list.sort((a, b) => a.version - b.version);
+    for (const m of v?.markers ?? []) if (m.status === "draft" || m.status === "open" || m.status === "not_yet") open.set(m.item_id, (open.get(m.item_id) ?? 0) + 1);
+    index = { versions, open, r2: r2Usage(v?.versions) };
+  }
+  // a write by Christoph, then a fresh load (the realtime echo of it is skipped)
+  async function wrote(fn) {
+    ownWriteAt = Date.now();
+    await fn();
+    ownWriteAt = Date.now();
+    await load(true);
   }
   const items = () => st().value?.items ?? [];
   const item = () => items().find((i) => i.id === st().itemId) ?? null;
-  const versionsOf = (it) => (st().value?.versions ?? []).filter((v) => v.item_id === it.id).sort((a, b) => a.version - b.version);
-  const current = (it) => versionsOf(it).find((v) => v.version === it.current_version) ?? versionsOf(it).at(-1) ?? null;
+  const versionsOf = (it) => index.versions.get(it.id) ?? [];
+  const current = (it) => { const list = versionsOf(it); return list.find((v) => v.version === it.current_version) ?? list.at(-1) ?? null; };
   const markersOf = (it) => sortMarkers(markersFor(st().value?.markers ?? [], it));
   // Christoph's turn: an idea to confirm, a draft or a version to look at
   const waiting = () => items().filter((i) => christophsTurn(i.status));
@@ -67,10 +100,11 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (n) out.push({ key: "studio", lane: "today", tone: "info", title: `${n} ${n === 1 ? "Beitrag wartet" : "Beiträge warten"} auf Sichtung`, sub: "Digital Studio", where: "Studio", href: "#studio" });
     const k = ideas().length;
     if (k) out.push({ key: "studio-ideas", lane: "today", tone: "info", title: `${k} ${k === 1 ? "Idee wartet" : "Ideen warten"} auf dein Ok`, sub: "Ablauf, Schritt 1", where: "Studio", href: "#studio" });
-    const late = items().filter((i) => inPipeline(i.channel, i.format) && i.day && christophsTurn(i.status) && isLate(i.status, i.day, today())).length;
+    const t = today();
+    const late = items().filter((i) => i.day && christophsTurn(i.status) && inPipeline(i.channel, i.format) && isLate(i.status, i.day, t)).length;
     if (late) out.push({ key: "studio-late", lane: "now", tone: "alert", title: `${late} ${late === 1 ? "Beitrag ist" : "Beiträge sind"} im Ablauf im Verzug und ${late === 1 ? "wartet" : "warten"} auf dich`, sub: "Digital Studio", where: "Studio", href: "#studio" });
     // R2 has no spending cap: flag it from 80 % of the free 10 GB, and loudly once it costs something
-    const r2 = r2Usage(st().value?.versions);
+    const r2 = index.r2;
     const flag = r2Flag(r2.bytes);
     if (flag) out.push(flag.level === "cost"
       ? { key: "studio-r2", lane: "now", tone: "alert", title: `Cloudflare R2 kostet jetzt etwa ${flag.usd.toFixed(2)} pro Monat`, sub: `${fmtGB(r2.bytes)} gespeichert, gratis sind ${fmtGB(R2_FREE_BYTES)}. Alte Fassungen löschen?`, where: "Studio", href: "#studio" }
@@ -78,21 +112,21 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     return out;
   }
 
-  // ---------- YouTube-Ablauf: 4-week block (also shown in Social → Wochenplan) ----------
-  function pipelineHtml(monday = st().blockStart ?? mondayOf(today()), { nav = true } = {}) {
+  // ---------- Ablauf: 4-week block ----------
+  function pipelineHtml(monday = st().blockStart ?? mondayOf(today())) {
     if (!st().value) return "";
     const t = today();
     const rows = pipelineBlock(items(), monday, t);
     const cell = (d, channel) => {
       const it = d.items[0];
       const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";
-      const tip = `${dm(d.date)} · ${d.items.length ? esc(FORMAT_NAME[d.items[0].format] ?? "") : d.slot ? `geplant: ${esc(d.slot.format)}` : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
+      const tip = `${dm(d.date)} · ${d.items.length ? FORMAT_NAME[d.items[0].format] ?? "" : d.slot ? `geplant: ${d.slot.format}` : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
       const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="st-day" data-channel="${esc(channel)}" data-value="${esc(d.date)}"`;
       return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.items.length ? "" : " pl-free"}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${who}</button>`;
     };
     const legend = STEPS.filter(Boolean).map((s) => `<span class="pl-key pl-${s.color}"></span> ${s.n < 5 ? `${s.n} ` : ""}${esc(s.name)}`).join(" ");
     return `<section class="card pl-block"><div class="blk-head"><b>Ablauf: Idee → Entwurf → Video → Feinschliff</b>
-        ${nav ? `<button class="btn ghost" data-action="st-block" data-value="-28" aria-label="4 Wochen zurück">‹</button><span>4 Wochen ab ${esc(dm(monday))}</span><button class="btn ghost" data-action="st-block" data-value="28" aria-label="4 Wochen vor">›</button>` : `<span>4 Wochen ab ${esc(dm(monday))}</span>`}</div>
+        <button class="btn ghost" data-action="st-block" data-value="-28" aria-label="4 Wochen zurück">‹</button><span>4 Wochen ab ${esc(dm(monday))}</span><button class="btn ghost" data-action="st-block" data-value="28" aria-label="4 Wochen vor">›</button></div>
       ${rows.map((r) => `<p class="st-ch">${esc(CHANNEL_NAME[r.channel] ?? r.channel)} · ${esc(r.label)}</p><div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}<span class="blk-dow">Woche</span>
         ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map((d) => cell(d, r.channel)).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
       <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran · rechts: Beiträge der Woche (rot = zu wenige Ideen)</p>
@@ -120,9 +154,11 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     // thumbnails of a long video: R2 keys or Social bucket paths
     const thumbs = ver.meta?.thumbnails ?? [];
     const turls = await Promise.all(thumbs.map((t) => data.mediaUrl(t?.key ? { kind: "r2", key: t.key } : t?.path ? { kind: "storage", path: t.path } : null)));
+    if (st().mediaFor !== key) return;   // another post was opened meanwhile
     turls.forEach((u, i) => { st().urls[`${key}#t${i}`] = u; });
     if (isPages(it.format)) { if (turls.length) render(); return; }
     const url = st().local[key] ?? await data.mediaUrl(ver.source);
+    if (st().mediaFor !== key) return;
     st().urls[key] = url;
     if (url && video.src !== url) { video.src = url; video.load(); }
     if (!url) video.removeAttribute("src");
@@ -136,6 +172,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       const f = input.files?.[0];
       if (!f) return;
       const url = URL.createObjectURL(f);
+      if (st().local[ver.id]) URL.revokeObjectURL(st().local[ver.id]);
       st().local[ver.id] = url;
       st().urls[ver.id] = url;
       st().mediaFor = ver.id;
@@ -179,17 +216,17 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     return `<div class="toolbar"><div class="chips">${chips}</div>
         <div class="row-right"><button class="btn ghost" data-action="st-week" data-value="-7" aria-label="Woche zurück">‹</button><button class="btn ghost" data-action="st-week" data-value="7" aria-label="Woche vor">›</button>${s.weekStart ? `<button class="link" data-action="st-week" data-value="0">Diese Woche</button>` : ""}</div></div>
       <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. Lange YouTube-Videos und alles auf Instagram haben davor Idee und Entwurf.</p>
-      ${(() => { const r2 = r2Usage(s.value.versions); const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
+      ${(() => { const r2 = index.r2; const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
       ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
       ${weeks.map(week).join("")}
       ${noDay.length ? `<section class="card st-week"><b>Ohne Tag</b><div class="st-cards">${noDay.map(card).join("")}</div></section>` : ""}`;
   }
 
   function card(it) {
-    const n = openCount((st().value?.markers ?? []).filter((m) => m.item_id === it.id));
+    const n = index.open.get(it.id) ?? 0;
     const pl = inPipeline(it.channel, it.format) ? phaseOf(it.status) : null;
-    return `<button class="st-card st-${it.status}${pl ? ` pl-card-${pl.color}${isLate(it.status, it.day, today()) ? " pl-late" : ""}` : ""}" data-action="st-open" data-id="${esc(it.id)}">
-      <span class="st-card-top"><span class="muted small">${esc(WEEK_DAYS[(new Date(`${it.day}T12:00:00Z`).getUTCDay() + 6) % 7] ?? "")} ${esc(dm(it.day))} · ${esc(FORMAT_NAME[it.format] ?? it.format)}</span>${n ? `<span class="count-chip calm">${n}</span>` : ""}</span>
+    return `<button class="st-card st-${it.status}${pl ? ` pl-card-${pl.color}${it.day && isLate(it.status, it.day, today()) ? " pl-late" : ""}` : ""}" data-action="st-open" data-id="${esc(it.id)}">
+      <span class="st-card-top"><span class="muted small">${it.day ? WEEK_DAYS[(new Date(`${it.day}T12:00:00Z`).getUTCDay() + 6) % 7] : ""} ${esc(dm(it.day))} · ${esc(FORMAT_NAME[it.format] ?? it.format)}</span>${n ? `<span class="count-chip calm">${n}</span>` : ""}</span>
       <b>${esc(it.title || "(ohne Titel)")}</b><span class="st-state">${pl ? `Schritt ${pl.n} · ` : ""}${esc(STATUS[it.status])}${it.current_version > 1 ? ` · Fassung ${it.current_version}` : ""}</span></button>`;
   }
 
@@ -200,7 +237,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       ${it.idea_note ? `<p class="st-note"><b>Deine Notiz:</b> ${esc(it.idea_note)}</p>` : ""}
       ${done ? `<p class="muted small">${esc(STATUS[it.status])}</p>` : `<div class="st-idea-act"><button class="btn" data-action="st-idea-ok" data-id="${esc(it.id)}">Idee ok</button>
         <button class="btn ghost" data-action="st-idea-drop" data-id="${esc(it.id)}">Andere Idee …</button></div>
-        <p class="muted small">Bei «Idee ok» macht Claude einen einfachen Entwurf mit Gratis-Stimme. Ok bis ${esc(dm(deadline(it.day, 1)))}.</p>`}</section>`;
+        <p class="muted small">Bei «Idee ok» macht Claude einen einfachen Entwurf mit Gratis-Stimme.${it.day ? ` Ok bis ${esc(dm(deadline(it.day, 1)))}.` : ""}</p>`}</section>`;
   }
 
   function itemView(it) {
@@ -400,29 +437,10 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     }).join("")}</ul>`;
   }
 
+  // the buttons sit in the top bar (topAction); here only the count of Christoph's points while Claude works
   function actions(it, ms) {
-    // the buttons for draft, Sichtung 1 and 2 sit in the top bar (topAction); here only what Claude is doing
-    if (["draft", "review1", "review2", "approved"].includes(it.status)) return "";
-    const drafts = ms.filter((m) => m.status === "draft").length;
-    // step 2: the draft (Windows voice, simple pictures): input for the real video, no approval yet
-    if (it.status === "draft") {
-      return `<div class="st-actions"><button class="btn" data-action="st-finish">${drafts ? `Input abschicken (${drafts} Marker)` : "Entwurf passt: Video machen"}</button>
-        <p class="muted small">Der Entwurf ist noch nicht das Video: Stimme und Bilder sind nur zum Vorstellen. Sag hier, was anders werden soll.</p></div>`;
-    }
-    if (it.status === "idea_ok" || it.status === "draft_done") return openCount(ms) ? `<p class="note small">${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkte"} von dir.</p>` : "";
-    if (it.status === "idea" || it.status === "dropped") return "";
-    if (it.status === "review1") {
-      return `<div class="st-actions">${drafts ? `<button class="btn" data-action="st-finish">Sichtung abschliessen (${drafts} ${drafts === 1 ? "Marker" : "Marker"})</button>` : ""}
-        <button class="btn ${drafts ? "ghost" : ""}" data-action="st-approve">${drafts ? "Trotzdem freigeben" : "Alles gut: freigeben"}</button></div>`;
-    }
-    if (it.status === "work") return `<p class="note small">${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkte"} von dir in Arbeit.</p>`;
-    if (it.status === "review2") {
-      const notYet = ms.filter((m) => m.status === "not_yet").length;
-      const unjudged = ms.filter((m) => m.status === "done" || m.status === "rejected").length;
-      return `<div class="st-actions">${notYet || drafts ? `<button class="btn" data-action="st-again">Noch nicht freigeben (${notYet + drafts} ${notYet + drafts === 1 ? "Punkt" : "Punkte"} zurück an Claude)</button>` : ""}
-        <button class="btn${notYet || drafts ? " ghost" : ""}" data-action="st-approve"${notYet ? " disabled" : ""}>Freigeben${unjudged ? ` (${unjudged} ohne Urteil)` : ""}</button></div>`;
-    }
-    return `<p class="ok small">Freigegeben${it.approved_at ? ` am ${esc(new Date(it.approved_at).toLocaleDateString("de-CH"))}` : ""}.</p>`;
+    const n = ["idea_ok", "draft_done", "work"].includes(it.status) ? openCount(ms) : 0;
+    return n ? `<p class="note small">${n} ${n === 1 ? "Punkt" : "Punkte"} von dir in Arbeit.</p>` : "";
   }
 
   // D4: the whole package of the version: title/thumbnail choice, texts, chapters, shorts, Claude's assumptions
@@ -526,7 +544,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   // ---------- events ----------
   const inText = (el) => !!el?.closest?.("input, textarea, select, [contenteditable='true']");
   function onKeydown(e) {
-    if (S.tab !== "studio" || !item() || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (S.tab !== "studio" || S.sheet || S.search?.open || !item() || e.ctrlKey || e.metaKey || e.altKey) return false;
     const a = keyAction({ key: e.key, inText: inText(e.target), format: item().format, paused: video.paused });
     if (!a) return false;
     e.preventDefault();
@@ -543,7 +561,14 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     location.hash = `#studio/${id}`;
   }
 
+  const WRITES = new Set(["st-approve", "st-finish", "st-again", "st-idea-ok", "st-idea-drop", "st-judge", "st-del", "st-choose"]);
   async function onClick(action, el) {
+    if (!WRITES.has(action)) return handleClick(action, el);
+    if (busy) return true;
+    busy = true;
+    try { return await handleClick(action, el); } finally { busy = false; }
+  }
+  async function handleClick(action, el) {
     const s = st();
     const id = el.dataset.id;
     switch (action) {
@@ -589,24 +614,23 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       case "st-choose": {
         const it = item(), ver = it && current(it);
         if (!ver) return true;
-        try { await data.setVersionMeta(ver.id, { ...ver.meta, [el.dataset.kind]: Number(el.dataset.value) }); await load(true); } catch (err) { toast(errorText(err)); }
+        try { await wrote(() => data.setVersionMeta(ver.id, { ...ver.meta, [el.dataset.kind]: Number(el.dataset.value) })); } catch (err) { toast(errorText(err)); }
         return true;
       }
       case "st-cancel": s.form = null; break;
       case "st-edit": { const m = (s.value?.markers ?? []).find((x) => x.id === id); if (m) s.form = { ...m }; break; }
       case "st-del":
         if (!confirm("Diesen Marker löschen?")) return true;
-        try { await data.deleteMarker(id); await load(true); } catch (err) { toast(errorText(err)); }
+        try { await wrote(() => data.deleteMarker(id)); } catch (err) { toast(errorText(err)); }
         return true;
       case "st-judge":
-        try { await data.judgeMarker(id, el.dataset.value); await load(true); } catch (err) { toast(errorText(err)); }
+        try { await wrote(() => data.judgeMarker(id, el.dataset.value)); } catch (err) { toast(errorText(err)); }
         return true;
       case "st-finish": {
         const it = item();
         try {
-          await data.finishReview(it);
+          await wrote(() => data.finishReview(it));
           toast(it.status === "draft" ? "Danke. Claude macht jetzt das richtige Video." : "Sichtung abgeschlossen. Claude setzt die Marker um.");
-          await load(true);
           nextInRound();
         } catch (err) { toast(errorText(err)); }
         return true;
@@ -617,7 +641,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         const ok = action === "st-idea-ok";
         const note = ok ? "" : prompt("Was passt nicht? Claude schlägt dann eine andere Idee vor. (leer lassen geht auch)");
         if (note === null) return true;
-        try { await data.judgeIdea(it, ok, note.trim()); toast(ok ? "Idee ok. Claude macht den Entwurf." : "Verworfen. Claude schlägt eine andere Idee vor."); await load(true); } catch (err) { toast(errorText(err)); }
+        try { await wrote(() => data.judgeIdea(it, ok, note.trim())); toast(ok ? "Idee ok. Claude macht den Entwurf." : "Verworfen. Claude schlägt eine andere Idee vor."); } catch (err) { toast(errorText(err)); }
         return true;
       }
       case "st-block": {
@@ -628,9 +652,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       case "st-again": {
         const it = item();
         try {
-          await data.finishReview(it);   // new drafts become open; «noch nicht» stays for Claude
+          await wrote(() => data.finishReview(it));   // new drafts become open; «noch nicht» stays for Claude
           toast("Zurück an Claude. Die nächste Fassung zeigt nur diese Punkte.");
-          await load(true);
           nextInRound();
         } catch (err) { toast(errorText(err)); }
         return true;
@@ -653,17 +676,21 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   async function approve(it) {
     if (!it) return;
     const ver = current(it);
-    if (it.social_post_id) {
-      const ok = await approvePost(it.social_post_id);
-      if (!ok) return;
-      await data.setItem(it.id, { status: "approved", approved_at: new Date().toISOString() });
-    } else {
-      if (!confirm("Freigeben? Der Entwurf existiert noch nicht. Der Import übernimmt deine Freigabe, aber nur, wenn der Inhalt genau dieser Fassung entspricht.")) return;
-      await data.setItem(it.id, { status: "approved", approved_at: new Date().toISOString(), approved_hash: ver?.hash ?? null });
-      toast("Freigabe gemerkt.");
+    const done = { status: "approved", approved_at: new Date().toISOString() };
+    try {
+      if (it.social_post_id) {
+        if (!(await approvePost(it.social_post_id))) return;
+        // the post is approved now; the studio step must follow, one retry if the network hiccups
+        await wrote(() => data.setItem(it.id, done).catch(() => data.setItem(it.id, done)));
+      } else {
+        if (!confirm("Freigeben? Der Entwurf existiert noch nicht. Der Import übernimmt deine Freigabe, aber nur, wenn der Inhalt genau dieser Fassung entspricht.")) return;
+        await wrote(() => data.setItem(it.id, { ...done, approved_hash: ver?.hash ?? null }));
+        toast("Freigabe gemerkt.");
+      }
+      nextInRound();
+    } catch (err) {
+      toast(`${errorText(err)}${it.social_post_id ? " Der Beitrag selbst ist freigegeben, im Studio nochmals «Freigeben» tippen." : ""}`);
     }
-    await load(true);
-    nextInRound();
   }
 
   // click into the paused picture: the spot of the marker being written (x/y in percent)
@@ -697,9 +724,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const body = form.elements["st-body"].value.trim();
     if (!f || !body) return true;
     try {
-      await data.saveMarker({ ...f, body });
+      await wrote(() => data.saveMarker({ ...f, body }));
       st().form = null;
-      await load(true);
     } catch (err) { toast(errorText(err)); }
     render();
     return true;
@@ -714,17 +740,5 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (!id) { st().itemId = null; st().round = null; video.pause(); }
   };
 
-  // Social → Wochenplan: the step of a YouTube day as a small tag (links into the studio)
-  function dayPhase(channel, date) {
-    if (!st().value) return "";
-    const list = items().filter((i) => i.channel === channel && inPipeline(i.channel, i.format) && i.day === date && i.status !== "dropped");
-    const it = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
-    if (!it) return "";
-    const p = phaseOf(it?.status ?? null);
-    const late = date >= today() && isLate(it.status, date, today());
-    const tag = `<span class="pl-tag pl-${p.color}${late ? " pl-late" : ""}">${p.n < 5 ? `Schritt ${p.n} · ` : "✓ "}${esc(p.label)}</span>`;
-    return `<a class="pl-taglink" href="#studio/${esc(it.id)}">${esc(FORMAT_NAME[it.format] ?? "")}: ${tag}</a>`;
-  }
-
-  return { load, view, afterRender, onClick, onKeydown, onPointer, onSubmit, onInput, badge, agenda, itemForPost, setItemFromRoute, pipelineHtml, dayPhase };
+  return { load, view, afterRender, onClick, onKeydown, onPointer, onSubmit, onInput, badge, agenda, itemForPost, setItemFromRoute };
 }

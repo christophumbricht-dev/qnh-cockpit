@@ -51,8 +51,8 @@ export function buildDraft(folder) {
         writeFileSync(join(tmp, `t${i}.txt`), wrap(s.text));
         writeFileSync(join(tmp, `l${i}.txt`), s.label);
         ff(["-f", "lavfi", "-i", "color=c=0x102A43:s=1920x1080", "-frames:v", "1", "-vf",
-          `drawtext=fontfile='${FONT}':textfile='${join(tmp, `l${i}.txt`).replace(/\\/g, "/").replace(":", "\\:")}':fontcolor=0x3BC9DB:fontsize=64:x=(w-text_w)/2:y=300,` +
-          `drawtext=fontfile='${FONT}':textfile='${join(tmp, `t${i}.txt`).replace(/\\/g, "/").replace(":", "\\:")}':fontcolor=0xF6F4EF:fontsize=46:line_spacing=18:x=(w-text_w)/2:y=460`, pic]);
+          `drawtext=fontfile='${FONT}':textfile='${join(tmp, `l${i}.txt`).replace(/\\/g, "/").replace(":", "\\:")}':expansion=none:fontcolor=0x3BC9DB:fontsize=64:x=(w-text_w)/2:y=300,` +
+          `drawtext=fontfile='${FONT}':textfile='${join(tmp, `t${i}.txt`).replace(/\\/g, "/").replace(":", "\\:")}':expansion=none:fontcolor=0xF6F4EF:fontsize=46:line_spacing=18:x=(w-text_w)/2:y=460`, pic]);
       }
       const clip = join(tmp, `c${i}.mp4`);
       const frames = Math.ceil(len * FPS);

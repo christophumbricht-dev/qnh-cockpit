@@ -53,8 +53,7 @@ const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...[...APPS, ...BR
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
-  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), studioFor: (id) => studio.itemForPost(id),
-  studioBlock: (monday) => studio.pipelineHtml(monday, { nav: false }), studioPhase: (channel, date) => studio.dayPhase(channel, date) });
+  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), studioFor: (id) => studio.itemForPost(id) });
 const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id),
   handleFor: (channel) => { const [app, platform] = channel.split("/"); const a = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform); return a?.handle || app; },
   // a day without a studio item: the Social post of that day (e.g. a YouTube Short), else the list
@@ -214,7 +213,6 @@ function shell() {
     const n = todos(a).length;
     return navItem(`#${a.id}`, isAppPage() && S.appId === a.id, appBadge(a), a.name, n, "desk-only", ` style="--app:${esc(a.color)}"`);
   }).join("");
-  const appsBadge = APPS.reduce((n, a) => n + todos(a).length, 0);
   const channels = socialConfigured() ? (S.social?.value?.accounts ?? []).filter((x) => x.active !== false) : [];
   const channelItems = channels.map((c) => `<a class="nav-sub desk-only${S.tab === "social" && !S.social.byTopic && S.social.filter === c.app_id ? " on" : ""}" href="#social/${esc(c.app_id)}">${icon(c.platform === "youtube" ? "play" : "camera")}<span class="nav-label">${esc(c.platform === "youtube" ? c.handle || appById(c.app_id)?.name || "YouTube" : `@${c.handle}`)}</span></a>`).join("");
   const finBadge = financeConfigured() ? finance.badge() : 0;
@@ -228,11 +226,10 @@ function shell() {
         ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "desk-only hot") : ""}
         <p class="side-label">Apps</p>
         ${appItems}
-        ${navItem("#apps", S.tab === "apps" || isAppPage(), icon("grid"), "Apps", appsBadge, "phone-only")}
         ${qnhReady() && socialConfigured() ? `<p class="side-label">Social</p>
           ${navItem("#social", S.tab === "social" && !S.social.byTopic && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge())}
           ${navItem("#social/themen", S.tab === "social" && !!S.social.byTopic, icon("grid"), "Themen", 0, "desk-only")}
-          ${navItem("#studio", S.tab === "studio", icon("play"), "Studio", studio.badge(), "desk-only")}
+          ${navItem("#studio", S.tab === "studio", icon("play"), "Studio", studio.badge())}
           ${channelItems}` : ""}
         ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "phone-only hot") : ""}
         ${qnhReady() ? navItem("#hangar", S.tab === "hangar", icon("folder"), "Hangar", 0, "desk-only nav-bottom") : ""}
@@ -283,7 +280,7 @@ function sheet() {
       ${socialConfigured() && S.social?.value?.accounts?.length ? item('data-action="go-new-post"', "chat", "Beitrag", "Instagram oder YouTube") : ""}
       ${socialConfigured() ? item('data-action="quick-package"', "folder", "Paket importieren", "Ordner oder ZIP mit post.json") : ""}`
     : `<h2>Menü</h2>
-      ${qnhReady() ? item('data-action="go" data-value="#studio"', "play", "Digital Studio", studio.badge() ? `${studio.badge()} warten auf Sichtung` : "Beiträge sichten") : ""}
+      ${item('data-action="go" data-value="#apps"', "grid", "Apps", "Downwind, SecondSeat")}
       ${item('data-action="go" data-value="#hangar"', "folder", "Hangar", "Links und Ablage")}
       ${item('data-action="search-open"', "search", "Suchen")}
       ${item('data-action="theme"', darkNow() ? "sun" : "moon", darkNow() ? "Helles Farbschema" : "Dunkles Farbschema")}
@@ -1147,9 +1144,9 @@ root.addEventListener("toggle", (e) => {
 }, true);
 // scroll does not bubble: listen in the capture phase (carousel preview swipe)
 root.addEventListener("scroll", (e) => social.onScroll(e), true);
-root.addEventListener("dragstart", (e) => qnh.onDragStart(e) || social.onDragStart(e));
+root.addEventListener("dragstart", (e) => qnh.onDragStart(e));
 root.addEventListener("dragover", (e) => qnh.onDragOver(e) || finance.onDragOver(e) || social.onDragOver(e));
-root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col], [data-cal-day]")?.classList.remove("over"));
+root.addEventListener("dragleave", (e) => e.target.closest?.("[data-drop], [data-rm-col]")?.classList.remove("over"));
 root.addEventListener("drop", (e) => qnh.onDrop(e) || finance.onDrop(e) || social.onDrop(e));
 
 root.addEventListener("change", async (e) => {

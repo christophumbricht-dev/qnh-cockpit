@@ -5,7 +5,6 @@ import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
 import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, youtubeIsLong, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
-import { WEEKPLAN, WEEK_DAYS, addDaysIso, blockGrid, mondayOf, weekGrid, weekScore } from "./weekplan.js";
 import { sparkSvg } from "../charts.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
@@ -29,8 +28,8 @@ const STATUS_FILTERS = [
   ["ai", "KI-Info", (p) => p.ai_generated === true, "mit «KI-Info» markiert"],
 ];
 
-export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], studioFor = () => null, studioBlock = () => "", studioPhase = () => "" }) {
-  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), month: null, review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null, reviewWeek: null };
+export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], studioFor = () => null }) {
+  S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null };
   let unsubscribe = null;
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
@@ -128,64 +127,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       ${st.mode !== "list" ? "" : accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
         : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
-      ${st.mode === "list" || st.mode === "calendar" ? searchBar(shown) : ""}
-      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "calendar" ? calendarView(shown) : st.mode === "week" ? weekView() : listView(shown)}`;
-  }
-
-  // ---------- Wochenplan: the standard week per channel next to what is really planned (weekplan.js) ----------
-  const WK_STATE = { ok: "✓ bereit", draft: "Entwurf", placeholder: "Video fehlt", failed: "Fehler", empty: "noch leer" };
-  function weekView() {
-    const st = S.social;
-    const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
-    const monday = st.weekStart ?? thisMonday;
-    const today = utcToZurichLocal(new Date().toISOString()).slice(0, 10);
-    const swissDay = (iso) => utcToZurichLocal(iso).slice(0, 10);
-    const rows = weekGrid(WEEKPLAN.filter((c) => st.filter === "all" || c.app_id === st.filter), posts(), accounts(), monday, { swissDay, isPlaceholder });
-    const dm = (iso) => `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.`;
-    const kw = (() => { const d = new Date(`${addDaysIso(monday, 3)}T12:00:00Z`); const y = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return 1 + Math.round(((d - y) / 864e5 - 3 + ((y.getUTCDay() + 6) % 7)) / 7); })();
-    const name = (p) => String(p.title || p.caption || "Story").split("\n").find(Boolean)?.replace(/^PLATZHALTER · /, "").slice(0, 60) ?? "";
-    const card = (row) => {
-      const a = row.account;
-      const sc = weekScore(row);
-      const head = `<div class="channel-head">${appBadge(row.channel.app_id)}<div><b>${esc(a ? (a.platform === "youtube" ? a.handle || appName(a.app_id) : `@${a.handle}`) : appName(row.channel.app_id))}</b><span class="muted small">${esc(PLATFORM[row.channel.platform] ?? row.channel.platform)}${a ? "" : " · noch nicht verbunden"}</span></div><span class="wk-score${sc.ok === sc.total ? " full" : ""}" title="Tage mit freigegebenem Beitrag">${sc.ok}/${sc.total}</span></div>`;
-      const days = row.days.map((d) => `<li class="wk-day wk-${d.state}${d.date === today ? " wk-today" : ""}">
-          <span class="wk-when"><b>${WEEK_DAYS[d.slot.day]}</b> ${dm(d.date)}<span class="muted">${esc(d.slot.time)}</span></span>
-          <span class="wk-what"><b>${esc(d.slot.format)}</b>${d.slot.alt ? `<span class="muted small">oder ${esc(d.slot.alt)}</span>` : ""}
-            ${d.posts.map((p) => `<button class="link wk-post" data-action="soc-open" data-id="${esc(p.id)}">${esc(name(p))}</button>${p.status === "draft" && !isPlaceholder(p) ? `<button class="btn small wk-approve" data-action="soc-open" data-id="${esc(p.id)}">Ansehen und freigeben ›</button>` : ""}`).join("")}</span>
-          <span class="wk-state">${WK_STATE[d.state]}</span>${studioPhase(`${row.channel.app_id}/${row.channel.platform}`, d.date)}</li>`).join("");
-      return `<section class="channel-card wk-card">${head}<ul class="wk-days">${days}</ul></section>`;
-    };
-    // 4-week block: one row per week, one cell per day (green = every channel ready, orange = a draft waits for
-    // approval, red = a video is missing); a row opens that week below
-    const plan = WEEKPLAN.filter((c) => st.filter === "all" || c.app_id === st.filter);
-    const blockStart = st.blockStart ?? thisMonday;
-    const block = blockGrid(plan, posts(), accounts(), blockStart, 4, { swissDay, isPlaceholder });
-    const tone = (s) => (s === "ok" ? "ok" : s === "draft" ? "draft" : "miss");
-    const chName = (c) => `${appName(c.app_id)} ${PLATFORM[c.platform] ?? c.platform}`;
-    const blockHtml = `<section class="blk">
-        <div class="blk-head"><button class="btn ghost" data-action="soc-block" data-value="-28" aria-label="4 Wochen zurück">‹</button>
-          <b>4 Wochen ab ${dm(blockStart)}${blockStart.slice(0, 4)}</b>
-          <button class="btn ghost" data-action="soc-block" data-value="28" aria-label="4 Wochen vor">›</button>
-          ${blockStart !== thisMonday ? `<button class="link" data-action="soc-block" data-value="0">ab dieser Woche</button>` : ""}</div>
-        <div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}
-          ${block.map((w) => `<button class="blk-week${w.monday === monday ? " on" : ""}" data-action="soc-week-set" data-value="${esc(w.monday)}">${dm(w.monday)}</button>${w.days.map((d) =>
-            `<button class="blk-cell blk-${tone(d.state)}${d.date === today ? " today" : ""}" data-action="soc-week-set" data-value="${esc(w.monday)}" title="${esc(`${dm(d.date)}\n${d.channels.map((c) => `${chName(c.channel)}: ${WK_STATE[c.state]}`).join("\n")}`)}" aria-label="${esc(`${dm(d.date)}: ${d.channels.map((c) => `${chName(c.channel)} ${WK_STATE[c.state]}`).join(", ")}`)}"></button>`).join("")}`).join("")}
-        </div>
-        <p class="muted small blk-legend"><span class="blk-key blk-ok"></span> alles freigegeben <span class="blk-key blk-draft"></span> Entwurf wartet auf Freigabe <span class="blk-key blk-miss"></span> Video fehlt</p>
-      </section>`;
-    // drafts of this week that the review round would show (same filters as the round itself)
-    const prevWeek = st.reviewWeek;
-    st.reviewWeek = monday;
-    const weekDrafts = reviewQueue().length;
-    st.reviewWeek = prevWeek;
-    // YouTube-Ablauf (Idee → Entwurf → Video → Feinschliff → bereit) for the same 4 weeks, from the studio
-    return `${blockHtml}${studioBlock(blockStart)}<div class="wk-nav"><button class="btn ghost" data-action="soc-week" data-value="-7" aria-label="Woche zurück">‹</button>
-        <b>KW ${kw} · ${dm(monday)} bis ${dm(addDaysIso(monday, 6))}${monday.slice(0, 4)}</b>
-        <button class="btn ghost" data-action="soc-week" data-value="7" aria-label="Woche vor">›</button>
-        ${monday !== thisMonday ? `<button class="link" data-action="soc-week" data-value="0">Diese Woche</button>` : ""}
-        ${weekDrafts ? `<button class="btn wk-review" data-action="soc-review-week" data-value="${esc(monday)}">Diese Woche freigeben (${weekDrafts})</button>` : ""}</div>
-      <p class="muted small">Standardwoche pro Kanal (Ziel: jeden Tag auf jedem Kanal) und was in dieser Woche wirklich geplant ist. «Video fehlt» = Platzhalter, das Paket kommt noch.</p>
-      <div class="channels wk-grid">${rows.map(card).join("")}</div>`;
+      ${st.mode === "list" ? searchBar(shown) : ""}
+      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : listView(shown)}`;
   }
 
   // ---------- search + status filter ----------
@@ -384,52 +327,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return `${head}${blocks}<p class="hint">Zahlen von Instagram und YouTube, einmal täglich abgeholt (Instagram: Verzögerung bis 48 h). Nach einer Spalte sortieren: Spaltentitel antippen.</p>`;
   }
 
-  // ---------- calendar (month view, Swiss time) ----------
   function savedMode() {
     try { const m = localStorage.getItem(MODE_KEY); return ["list", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
   }
-  const dayKey = (iso) => (iso ? utcToZurichLocal(iso).slice(0, 10) : null);
-  const todayKey = () => dayKey(new Date().toISOString());
-
-  function calendarView(list) {
-    const st = S.social;
-    const month = st.month ?? todayKey().slice(0, 7);
-    const [y, mo] = month.split("-").map(Number);
-    const startDow = (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7; // Monday first
-    let cells = Array.from({ length: 42 }, (_, i) => new Date(Date.UTC(y, mo - 1, 1 + i - startDow)).toISOString().slice(0, 10));
-    if (cells[35].slice(0, 7) !== month) cells = cells.slice(0, 35);
-    const byDay = new Map();
-    for (const p of list) {
-      const k = dayKey(p.published_at ?? p.scheduled_at);
-      if (k) byDay.set(k, [...(byDay.get(k) ?? []), p]);
-    }
-    const title = new Intl.DateTimeFormat("de-CH", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, mo - 1, 15)));
-    const shift = (n) => new Date(Date.UTC(y, mo - 1 + n, 1)).toISOString().slice(0, 7);
-    const today = todayKey();
-    const unplanned = list.filter((p) => !p.scheduled_at && !p.published_at).length;
-    const dayHtml = (k) => {
-      const dayPosts = (byDay.get(k) ?? []).sort((a, b) => String(a.published_at ?? a.scheduled_at).localeCompare(String(b.published_at ?? b.scheduled_at)));
-      const chips = dayPosts.map((p) => {
-        const a = account(p.account_id);
-        const movable = ["draft", "failed", "approved"].includes(p.status);
-        const time = utcToZurichLocal(p.published_at ?? p.scheduled_at).slice(11, 16);
-        return `<button class="cal-post ${p.status}" data-action="soc-open" data-id="${p.id}"${movable ? ` draggable="true" data-cal-post="${p.id}"` : ""} title="${esc((firstLines(p.caption, 1) || KINDS[p.kind]) + (todoOpen(p.todo) ? `\n\nVon Hand: ${p.todo}` : ""))}"><b>${esc(time)}</b>${todoOpen(p.todo) ? " ✋" : ""} ${esc(a?.platform === "youtube" ? "YouTube" : KINDS[p.kind])} · @${esc(a?.handle ?? "")}</button>`;
-      }).join("");
-      const cls = `cal-day${k.slice(0, 7) !== month ? " other" : ""}${k === today ? " today" : ""}${k < today ? " past" : ""}`;
-      const add = k >= today ? `<button class="cal-add" data-action="soc-new-on" data-value="${k}" aria-label="Neuer Beitrag am ${k}">+</button>` : "";
-      return `<div class="${cls}" data-cal-day="${k}"><span class="cal-num">${Number(k.slice(8))}</span>${add}${chips}</div>`;
-    };
-    return `<div class="cal-head">
-        <button class="icon-mini" data-action="soc-month" data-value="${shift(-1)}" aria-label="Vormonat">‹</button>
-        <h3>${esc(title)}</h3>
-        <button class="icon-mini" data-action="soc-month" data-value="${shift(1)}" aria-label="Nächster Monat">›</button>
-        <button class="chip" data-action="soc-month" data-value="${today.slice(0, 7)}">Heute</button>
-        ${unplanned ? `<span class="muted small">${unplanned} ohne Datum – siehe Liste</span>` : ""}
-      </div>
-      <div class="cal">${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((d) => `<div class="cal-dow">${d}</div>`).join("")}${cells.map(dayHtml).join("")}</div>
-      <p class="hint">Entwürfe und geplante Beiträge auf einen anderen Tag ziehen (die Uhrzeit bleibt). «+» legt einen Beitrag für diesen Tag an.</p>`;
-  }
-
   // second half of approved → draft → approved (the time of an approved post is frozen): if it fails, the post
   // stays a draft and would silently not go out – say so plainly
   async function approveAgain(id, iso) {
@@ -456,27 +356,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       await load(true);
       return true;
     } catch (err) { toast(errorText(err)); return false; }
-  }
-
-  async function reschedule(id, day) {
-    const p = posts().find((x) => x.id === id);
-    if (!p || p.status === "published" || p.status === "publishing") return;
-    const time = p.scheduled_at ? utcToZurichLocal(p.scheduled_at).slice(11, 16) : "18:00";
-    const iso = zurichToUtc(`${day}T${time}`);
-    if (new Date(iso).getTime() < Date.now()) return toast("Dieser Zeitpunkt liegt in der Vergangenheit.");
-    try {
-      if (p.status === "approved") {
-        if (!confirm(`Geplanten Beitrag auf ${formatZurich(iso)} verschieben? Er bleibt freigegeben.`)) return;
-        await data.setStatus(id, "draft");
-        await approveAgain(id, iso);
-      } else {
-        await data.updatePost(id, { scheduled_at: iso });
-      }
-      toast(`Verschoben auf ${formatZurich(iso)}`);
-      await load(true);
-    } catch (err) {
-      toast(errorText(err));
-    }
   }
 
   // post list: a still image only (videos would be downloaded just to show a frame)
@@ -647,17 +526,10 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return ta === tb ? String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")) : ta - tb;
   }
 
-  // review round of one week (from the Wochenplan): only drafts planned Monday to Sunday of that week
-  function inReviewWeek(p) {
-    const w = S.social.reviewWeek;
-    if (!w) return true;
-    const day = p.scheduled_at ? utcToZurichLocal(p.scheduled_at).slice(0, 10) : "";
-    return day >= w && day <= addDaysIso(w, 6);
-  }
   function reviewQueue() {
     const st = S.social;
     return posts()
-      .filter((p) => p.status === "draft" && !isPlaceholder(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic) && inReviewWeek(p))
+      .filter((p) => p.status === "draft" && !isPlaceholder(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
       .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {
@@ -665,7 +537,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const next = reviewQueue().find((p) => p.id !== currentId && !st.review.skipped.has(p.id));
     if (next) return openEditor(next);
     toast(`Freigabe-Runde fertig: ${st.review.done} freigegeben${st.review.skipped.size ? `, ${st.review.skipped.size} für später` : ""}.`);
-    st.review = null; st.reviewTopic = null; st.reviewWeek = null;
+    st.review = null; st.reviewTopic = null;
     st.editor = null;
     render();
   }
@@ -1194,39 +1066,13 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           toast(bad.length ? `@${bad[0].account}: ${bad[0].error}` : "Statistik aktualisiert");
         } catch (err) { toast(errorText(err)); }
         st.stats = null; await loadStats(true); return true;
-      case "soc-block": {
-        const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
-        const n = Number(el.dataset.value);
-        st.blockStart = n === 0 ? null : addDaysIso(st.blockStart ?? thisMonday, n);
-        render();
-        return true;
-      }
-      case "soc-week-set": {
-        const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
-        st.weekStart = el.dataset.value === thisMonday ? null : el.dataset.value;
-        render();
-        document.querySelector(".wk-nav")?.scrollIntoView({ behavior: "smooth", block: "start" });
-        return true;
-      }
-      case "soc-week": {
-        const thisMonday = mondayOf(utcToZurichLocal(new Date().toISOString()).slice(0, 10));
-        const n = Number(el.dataset.value);
-        st.weekStart = n === 0 ? null : addDaysIso(st.weekStart ?? thisMonday, n);
-        render();
-        return true;
-      }
       case "soc-mode": st.mode = el.dataset.value; try { localStorage.setItem(MODE_KEY, st.mode); } catch {} render(); return true;
-      case "soc-month": st.month = el.dataset.value; render(); return true;
-      case "soc-new-on":
-        openEditor(null);
-        if (S.social.editor) { S.social.editor.scheduledLocal = `${el.dataset.value}T18:00`; render(); }
-        return true;
       case "soc-new": openEditor(null); return true;
       case "soc-open": openEditor(posts().find((p) => p.id === id)); return true;
       case "soc-duplicate": openEditor(posts().find((p) => p.id === id) ?? (ed && { ...ed, media: ed.items, scheduled_at: zurichToUtc(ed.scheduledLocal), cover_path: ed.cover?.path }), { duplicate: true }); return true;
       case "soc-close":
         if (ed?.dirty && !confirm("Änderungen verwerfen?")) return true;
-        st.editor = null; st.review = null; st.reviewTopic = null; st.reviewWeek = null; render(); load(true); return true;
+        st.editor = null; st.review = null; st.reviewTopic = null; render(); load(true); return true;
       case "soc-copy":
         try { await navigator.clipboard.writeText(el.dataset.value); toast("Link kopiert – im Story-Editor beim Link-Sticker einfügen"); }
         catch { prompt("Link kopieren:", el.dataset.value); }
@@ -1263,21 +1109,14 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       case "soc-save-todo":
         await busy(ed, async () => { const row = await data.setTodo(ed.id, ed.todo ?? ""); if (row?.updated_at) ed.updated_at = row.updated_at; ed.dirty = false; toast("Notiz gespeichert"); await load(true); });
         return true;
-      case "soc-review-week":
-        st.reviewTopic = null;
-        st.reviewWeek = el.dataset.value;
-        st.review = { skipped: new Set(), done: 0 };
-        if (reviewQueue()[0]) openEditor(reviewQueue()[0]); else { st.review = null; st.reviewWeek = null; }
-        return true;
       case "soc-review-topic":
         st.reviewTopic = el.dataset.value;
       // falls through: same review round, only this topic
       case "soc-review": {
-        if (action === "soc-review") { st.reviewTopic = null; st.reviewWeek = null; }
-        if (action === "soc-review-topic") st.reviewWeek = null;
+        if (action === "soc-review") st.reviewTopic = null;
         st.review = { skipped: new Set(), done: 0 };
         const first = reviewQueue()[0];
-        if (first) openEditor(first); else { st.review = null; st.reviewTopic = null; st.reviewWeek = null; }
+        if (first) openEditor(first); else { st.review = null; st.reviewTopic = null; }
         return true;
       }
       case "soc-review-skip":
@@ -1441,22 +1280,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return false;
   }
 
-  function onDragStart(e) {
-    const chip = e.target.closest?.("[data-cal-post]");
-    if (!chip) return false;
-    e.dataTransfer.setData("text/x-post", chip.dataset.calPost);
-    e.dataTransfer.effectAllowed = "move";
-    return true;
-  }
-
   function onDrop(e) {
-    const day = e.target.closest?.("[data-cal-day]");
-    if (day && [...(e.dataTransfer?.types ?? [])].includes("text/x-post")) {
-      e.preventDefault();
-      day.classList.remove("over");
-      reschedule(e.dataTransfer.getData("text/x-post"), day.dataset.calDay);
-      return true;
-    }
     const zone = e.target.closest?.("[data-drop]");
     if (!zone) return false;
     e.preventDefault();
@@ -1465,12 +1289,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return true;
   }
   function onDragOver(e) {
-    const day = e.target.closest?.("[data-cal-day]");
-    if (day && [...(e.dataTransfer?.types ?? [])].includes("text/x-post")) {
-      e.preventDefault();
-      day.classList.add("over");
-      return true;
-    }
     const zone = e.target.closest?.("[data-drop]");
     if (!zone) return false;
     e.preventDefault();
@@ -1515,7 +1333,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
-  const setMode = (mode) => { if (["list", "week", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
+  const setMode = (mode) => { if (["list", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
   // checklist of one post for «Heute» (same checkboxes as in the list, action soc-todo-check)
   function todoChecklist(id) {
     const p = posts().find((x) => x.id === id);
@@ -1545,6 +1363,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     </div>`;
   }
   const todoProgress = (t) => { const l = todoLines(t); return { done: l.filter((x) => x.done).length, total: l.length }; };
-  return { approvePost, todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+  return { approvePost, todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, badge, onClick, onInput, onChange, onDrop, onDragOver, setMode,
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }

@@ -9,22 +9,27 @@ import { afterReview } from "./pipeline.js";
 
 const sb = () => client(QNH);
 const must = (r) => { if (r.error) throw Object.assign(new Error(r.error.message), { code: r.error.code }); return r.data; };
+// how far back the studio loads: the 4-week block may start a week back, the overview a month back
+export const LOAD_DAYS_BACK = 45;
+const swissToday = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
 
-// null = not set up yet (migration missing)
+// null = not set up yet (migration missing). One request: the items of the window (and those without a day) with
+// their versions and markers embedded, so the request never grows with a list of ids.
 export async function loadStudio() {
   if (DEMO) return demo.load();
-  const items = await sb().from("studio_items").select("*").order("day", { ascending: true, nullsFirst: false }).limit(500);
-  if (items.error && /does not exist|could not find/i.test(items.error.message)) return null;
-  const ids = must(items).map((i) => i.id);
-  if (!ids.length) return { items: [], versions: [], markers: [] };
-  const [versions, markers] = await Promise.all([
-    sb().from("studio_versions").select("*").in("item_id", ids).order("version"),
-    sb().from("studio_markers").select("*").in("item_id", ids).order("created_at"),
-  ]);
-  return { items: items.data, versions: must(versions), markers: must(markers) };
+  const from = new Date(Date.parse(`${swissToday()}T12:00:00Z`) - LOAD_DAYS_BACK * 864e5).toISOString().slice(0, 10);
+  const r = await sb().from("studio_items").select("*, studio_versions(*), studio_markers(*)")
+    .or(`day.gte.${from},day.is.null`).order("day", { ascending: true, nullsFirst: false }).limit(1000);
+  if (r.error && /does not exist|could not find/i.test(r.error.message)) return null;
+  const rows = must(r);
+  const versions = [], markers = [];
+  const items = rows.map(({ studio_versions: v = [], studio_markers: m = [], ...item }) => { versions.push(...v); markers.push(...m); return item; });
+  markers.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  return { items, versions, markers };
 }
 
 const r2Cache = new Map();   // key → { url, until }
+export const forgetMedia = (source) => { if (source?.key) r2Cache.delete(source.key); };
 // → playable URL or null (null: open the file from the PC)
 export async function mediaUrl(source) {
   if (!source) return null;
@@ -61,11 +66,13 @@ export async function judgeMarker(id, status) {
   if (DEMO) return demo.judgeMarker(id, status);
   must(await sb().from("studio_markers").update({ status }).eq("id", id));
 }
-// «Sichtung abschliessen»: his drafts become open for Claude; a draft goes on to the real video, a version to «in Arbeit»
+// «Sichtung abschliessen»: the item moves on first (only from the status Christoph was looking at, so a second
+// click or another device does nothing), then his drafts become open for Claude
 export async function finishReview(item) {
   if (DEMO) return demo.finishReview(item.id, afterReview(item.status));
+  const moved = must(await sb().from("studio_items").update({ status: afterReview(item.status) }).eq("id", item.id).eq("status", item.status).select("id"));
+  if (!moved.length) return;
   must(await sb().from("studio_markers").update({ status: "open" }).eq("item_id", item.id).eq("status", "draft"));
-  must(await sb().from("studio_items").update({ status: afterReview(item.status) }).eq("id", item.id));
 }
 // the idea: ok (Claude makes the draft) or dropped with a note (Claude proposes another one)
 export async function judgeIdea(item, ok, note = "") {
@@ -77,7 +84,6 @@ export async function setItem(id, patch) {
   if (DEMO) return demo.setItem(id, patch);
   must(await sb().from("studio_items").update(patch).eq("id", id));
 }
-
 // Christoph's choice of title / thumbnail (chosen_title, chosen_thumbnail) lives in the version's meta
 export async function setVersionMeta(id, meta) {
   if (DEMO) return demo.setVersionMeta(id, meta);

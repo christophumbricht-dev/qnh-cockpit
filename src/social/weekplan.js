@@ -1,5 +1,5 @@
 // Standardwoche (26.10.2026, Christoph: «jeden Tag auf jedem Kanal»): what goes out on which weekday, per channel.
-// Social → «Wochenplan» shows it next to what is really planned in that week (pure, tested in tests/weekplan.test.mjs).
+// The Digital Studio shows each day's planned format in its Ablauf block (src/studio/pipeline.js; tests/weekplan.test.mjs).
 // Changing the plan: edit WEEKPLAN here (and the matching section in C:\QNH\CLAUDE.md / the channel plans).
 
 export const WEEK_DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -48,47 +48,3 @@ export const addDaysIso = (iso, n) => {
 };
 // Monday (YYYY-MM-DD) of the week of a Swiss calendar day
 export const mondayOf = (day) => addDaysIso(day, -((new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7));
-
-const RANK = { failed: 0, empty: 1, placeholder: 2, draft: 3, ok: 4 };
-// what a post means for its slot: «ok» (approved/out), draft, placeholder (video missing), failed
-export function postState(p, isPlaceholder) {
-  if (p.status === "failed") return "failed";
-  if (p.status === "approved" || p.status === "publishing" || p.status === "published") return "ok";
-  return isPlaceholder(p) ? "placeholder" : "draft";
-}
-
-// the plan for the week starting `monday`, filled with the posts of that week. `swissDay(iso)` → YYYY-MM-DD.
-// → [{ channel, account, days: [{ slot, date, posts, state }] }]; state = the weakest of the day's posts, «empty» if none
-export function weekGrid(plan, posts, accounts, monday, { swissDay, isPlaceholder }) {
-  return plan.map((channel) => {
-    const account = accounts.find((a) => a.app_id === channel.app_id && a.platform === channel.platform) ?? null;
-    const mine = account ? posts.filter((p) => p.account_id === account.id && p.status !== "cancelled" && p.scheduled_at) : [];
-    const days = channel.slots.map((slot) => {
-      const date = addDaysIso(monday, slot.day);
-      const list = mine.filter((p) => swissDay(p.scheduled_at) === date).sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
-      const states = list.map((p) => postState(p, isPlaceholder));
-      const state = states.length ? states.reduce((a, b) => (RANK[b] < RANK[a] ? b : a)) : "empty";
-      return { slot, date, posts: list, state };
-    });
-    return { channel, account, days };
-  });
-}
-
-// 4-week block (Christoph 27.10.2026: plan in blocks of 4 weeks, each starting on a Monday): one row per week,
-// one cell per day; a day is as good as its weakest channel (channels without an account are left out)
-// → [{ monday, days: [{ date, state, channels: [{ channel, state }] }] }]
-export function blockGrid(plan, posts, accounts, monday, weeks, opts) {
-  return Array.from({ length: weeks }, (_, w) => {
-    const m = addDaysIso(monday, 7 * w);
-    const rows = weekGrid(plan, posts, accounts, m, opts).filter((r) => r.account);
-    const days = Array.from({ length: 7 }, (_, d) => {
-      const channels = rows.map((r) => ({ channel: r.channel, state: r.days.find((x) => x.slot.day === d)?.state })).filter((c) => c.state);
-      const state = channels.length ? channels.map((c) => c.state).reduce((a, b) => (RANK[b] < RANK[a] ? b : a)) : "empty";
-      return { date: addDaysIso(m, d), state, channels };
-    });
-    return { monday: m, days };
-  });
-}
-
-// how full the week is per channel: { ok, total } (a day counts when its posts are approved or out)
-export const weekScore = (row) => ({ ok: row.days.filter((d) => d.state === "ok").length, total: row.days.length });

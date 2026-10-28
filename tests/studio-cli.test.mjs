@@ -91,7 +91,7 @@ import { checkDraft, draftScenes, ideaRow, ideasOverview, wrap } from "../script
 
 test("ideaRow checks channel, day, title and pitch", () => {
   const r = ideaRow({ channel: "leesidelab/youtube", day: "2026-11-20", title: "Nebel im Mittelland", pitch: "Hochnebel" });
-  assert.deepEqual(r, { channel: "leesidelab/youtube", format: "short", title: "Nebel im Mittelland", pitch: "Hochnebel", day: "2026-11-20", status: "idea", slug: "2026-11-20-nebel-im-mittelland" });
+  assert.deepEqual(r, { channel: "leesidelab/youtube", format: "video_long", title: "Nebel im Mittelland", pitch: "Hochnebel", day: "2026-11-20", status: "idea", slug: "2026-11-20-nebel-im-mittelland" });
   assert.throws(() => ideaRow({ ...r, channel: "leesidelab" }), /Kanal/);
   assert.throws(() => ideaRow({ ...r, day: "20.11.2026" }), /YYYY/);
   assert.throws(() => ideaRow({ ...r, pitch: " " }), /worum/);

@@ -32,7 +32,8 @@ import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pic
   statusAfterNewVersion, summary, versionFromPost, workMarkers } from "./studio-lib.mjs";
 
 const PAKETE = join(ROOT, "pakete");
-const STATUS = { review1: "wartet auf Sichtung 1", work: "in Arbeit (Claude)", review2: "wartet auf Sichtung 2", approved: "freigegeben" };
+const STATUS = { idea: "Idee wartet auf Christoph", idea_ok: "Idee ok: Claude macht den Entwurf", draft: "Entwurf wartet auf Christoph", draft_done: "Entwurf ok: Claude macht das Video",
+  review1: "wartet auf Sichtung 1", work: "in Arbeit (Claude)", review2: "wartet auf Sichtung 2", approved: "freigegeben", dropped: "Idee verworfen" };
 const must = (r) => { if (r.error) throw new CliError(r.error.message); return r.data; };
 const missingTables = (e) => /does not exist|could not find/i.test(e?.message ?? "");
 
@@ -172,9 +173,13 @@ export async function studioFromImport(sb, { folder, dir, post, account, videoBy
   const last = versions.at(-1) ?? null;
 
   if (item && !item.social_post_id && approvalCarriesOver(item, last, { videoHash: videoBytes ? sha256(videoBytes) : null, caption: post.caption, title: post.title })) {
-    must(await sb.from("studio_items").update({ social_post_id: post.id }).eq("id", item.id));
-    must(await sb.from("social_posts").update({ status: "approved" }).eq("id", post.id).eq("status", "draft"));
-    return "Studio-Freigabe übernommen (gleicher Inhalt)";
+    const { data: ok, error } = await sb.from("social_posts").update({ status: "approved" }).eq("id", post.id).eq("status", "draft").select("id");
+    if (!error && ok?.length) {
+      must(await sb.from("studio_items").update({ social_post_id: post.id }).eq("id", item.id));
+      return "Studio-Freigabe übernommen (gleicher Inhalt)";
+    }
+    // not approved (a check of the post failed): the item stays approved-but-unlinked, Christoph approves in Social
+    return `Studio-Freigabe NICHT übernommen (${error?.message ?? "Entwurf nicht mehr im Status Entwurf"}): bitte in Social freigeben`;
   }
   if (last?.hash === packageHash) return null;
   const scenes = existsSync(join(dir, "scenes.json")) ? checkScenes(JSON.parse(readFileSync(join(dir, "scenes.json"), "utf8"))) : [];
@@ -184,7 +189,7 @@ export async function studioFromImport(sb, { folder, dir, post, account, videoBy
   const n = (last?.version ?? 0) + 1;
   must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, ...ver, hash: packageHash }));
   const day = itemFromPost(post, account, folder).day;
-  must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), day }).eq("id", item.id));
+  must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), ...(day ? { day } : {}) }).eq("id", item.id));
   return n === 1 ? "im Studio" : `Studio Fassung ${n}`;
 }
 
@@ -242,7 +247,7 @@ async function adopt(sb, a) {
     const base = itemFromPost(p, acc, `${day}-${p.id.slice(0, 6)}`);
     // a placeholder has no video yet: a long YouTube video is recognised by its text
     const format = !ph ? base.format
-      : acc.platform === "youtube" && /lang(es)?s*video|langvideo|long video/i.test(p.caption) ? "video_long"
+      : acc.platform === "youtube" && /lang(es)?\s*video|langvideo|long video/i.test(p.caption) ? "video_long"
       : /METAR|Karussell|carousel/i.test(p.caption) ? "carousel" : base.format;   // Saturday METAR is a carousel
     if (!inPipeline(base.channel, format)) continue;
     if (items.some((i) => i.social_post_id === p.id)) continue;

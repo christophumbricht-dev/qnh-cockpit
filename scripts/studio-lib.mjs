@@ -129,7 +129,7 @@ export function markerLine(m) {
 // ---------- YouTube-Ablauf: ideas and drafts ----------
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // a new idea (step 1) → studio_items row
-export function ideaRow({ channel, day, title, pitch, format = "short", slug = null }) {
+export function ideaRow({ channel, day, title, pitch, format = String(channel ?? "").endsWith("/youtube") ? "video_long" : "reel", slug = null }) {
   if (!/^[a-z0-9-]{2,30}\/(instagram|youtube|facebook)$/.test(channel ?? "")) throw new CliError("Kanal wie leesidelab/youtube angeben.");
   if (!DAY.test(day ?? "")) throw new CliError("Datum als YYYY-MM-DD angeben.");
   if (!String(title ?? "").trim()) throw new CliError("Titel fehlt.");

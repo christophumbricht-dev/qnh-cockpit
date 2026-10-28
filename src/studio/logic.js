@@ -15,7 +15,6 @@ export const MARKER_STATUS = { draft: "Entwurf", open: "offen", done: "erledigt"
 export const CATEGORIES = { picture: "Bild", sound: "Ton", text: "Text", fact: "Fakt", other: "Sonstiges" };
 export const TARGETS = { medium: "Video / Bild", caption: "Caption", title: "Titel", description: "Beschreibung", first_comment: "Erster Kommentar", quiz: "Quiz-Antworten", thumbnail: "Titelbild", general: "Ganzer Beitrag" };
 export const SCOPES = { post: "nur dieser Beitrag", channel: "ganzer Kanal", all: "alle Kanäle" };
-export const isVideo = (format) => ["video_long", "reel", "short", "story"].includes(format);
 export const isPages = (format) => format === "carousel" || format === "image";
 
 // 75.25 → "01:15.2"
