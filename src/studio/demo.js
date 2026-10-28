@@ -24,7 +24,8 @@ const items = [
 const versions = [
   { id: "v1", item_id: "long", version: 1, source: { kind: "r2", key: "studio/foehn-long/v1/video.mp4" }, scenes: SCENES, fps: 30, duration: 337,
     meta: { titles: ["Föhn explained for pilots", "Why the north gets 8 °C warmer: föhn for pilots"], thumbnails: [], description: "Föhn in 3D: why the south gets the rain …",
-      chapters: SCENES.map((s) => `${Math.floor(s.start / 60)}:${String(s.start % 60).padStart(2, "0")} ${s.label}`).join("\n"), shorts: [], assumptions: ["Musik gleichmässig −15 dB unter der Stimme", "Ortsnamen bleiben (Entscheid 28.10.)"] } },
+      chapters: SCENES.map((s) => `${Math.floor(s.start / 60)}:${String(s.start % 60).padStart(2, "0")} ${s.label}`).join("\n"), shorts: [], assumptions: ["Musik gleichmässig −15 dB unter der Stimme", "Ortsnamen bleiben (Entscheid 28.10.)"],
+      thumbnails: [{ path: "logos/leesidelab.svg" }, { name: "thumb_b.jpg" }] } },
   { id: "v2", item_id: "reel", version: 1, source: { kind: "storage", path: "demo/panel1.mp4" }, scenes: [], fps: 30, duration: 18.5, meta: { caption: "Oil pressure high, oil temp low. What's going on? 👇" } },
   { id: "v3", item_id: "reel", version: 2, source: { kind: "storage", path: "demo/panel1.mp4" }, scenes: [], fps: 30, duration: 18.5, meta: { caption: "Oil pressure high, oil temp low. What's going on? 👇", assumptions: ["Ölanzeigen 12 mm vom Höhenmesser"] } },
   { id: "v4", item_id: "car", version: 1, source: { kind: "storage", pages: ["logos/downwind.svg", "logos/leesidelab.svg", "logos/wolkenhof.svg"] }, scenes: [], meta: { caption: "3 Dinge, die dein Papier-Flugbuch nicht kann 👇" } },
@@ -52,4 +53,5 @@ export async function finishReview(iid) {
   emit();
 }
 export async function setItem(iid, patch) { Object.assign(items.find((i) => i.id === iid), patch); emit(); }
+export async function setVersionMeta(vid, meta) { versions.find((v) => v.id === vid).meta = meta; emit(); }
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }

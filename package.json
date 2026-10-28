@@ -17,6 +17,7 @@
     "test:all": "npm test && npm run test:functions && npm run check:secrets",
     "roadmap": "node scripts/roadmap.mjs",
     "social": "node scripts/social.mjs",
+    "studio": "node scripts/studio.mjs",
     "finanzen": "node scripts/finanzen.mjs"
   },
   "dependencies": {

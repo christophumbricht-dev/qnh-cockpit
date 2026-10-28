@@ -71,6 +71,12 @@ export async function setItem(id, patch) {
   must(await sb().from("studio_items").update(patch).eq("id", id));
 }
 
+// Christoph's choice of title / thumbnail (chosen_title, chosen_thumbnail) lives in the version's meta
+export async function setVersionMeta(id, meta) {
+  if (DEMO) return demo.setVersionMeta(id, meta);
+  must(await sb().from("studio_versions").update({ meta }).eq("id", id));
+}
+
 export function subscribe(onChange) {
   if (DEMO) return demo.subscribe(onChange);
   const ch = sb().channel("studio").on("postgres_changes", { event: "*", schema: "public", table: "studio_markers" }, onChange)

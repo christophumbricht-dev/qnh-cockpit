@@ -22,6 +22,7 @@ import { placeholder } from "./social-placeholder.mjs";
 import { stats } from "./social-stats.mjs";
 import { mb, prepareVideo } from "./social-video.mjs";
 import { comments } from "./social-comments.mjs";
+import { studioFromImport } from "./studio.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
 import { IMPORT, PackageError, isQuizStory, parsePackage } from "../src/social/package.js";
 import { KINDS, formatZurich, hoursLabel, validatePost, zurichToUtc } from "../src/social/validate.js";
@@ -119,7 +120,7 @@ async function save(sb, p, id, isNew) {
   const q = isNew
     ? sb.from("social_posts").insert({ id, ...row, source: "package" })
     : sb.from("social_posts").update(row).eq("id", id);
-  const { data, error } = await q.select("id, account_id, status, updated_at, scheduled_at").single();
+  const { data, error } = await q.select("*").single();   // the whole row: the studio version is made from it
   if (error) throw new Error(error.message);
   return data;
 }
@@ -288,6 +289,14 @@ async function main() {
         for (const ph of replacedPlaceholders(posts, saved)) {
           const { error } = await sb.from("social_posts").update({ status: "cancelled" }).eq("id", ph.id);
           if (!error) { ph.status = "cancelled"; r.note = [r.note, "Platzhalter ersetzt"].filter(Boolean).join(" · "); }
+        }
+        // every imported or replaced draft with media becomes a studio version (docs/studio-paket.md)
+        if (r.action !== "link" && saved.media?.length) {
+          try {
+            const note = await studioFromImport(sb, { folder: r.folder, dir: join(DIR, r.folder), post: saved, account: accounts.find((x) => x.id === saved.account_id),
+              videoBytes: r.items.find((it) => /^video\//.test(it.type))?.bytes ?? null, packageHash: r.hash });
+            if (note) r.note = [r.note, note].filter(Boolean).join(" · ");
+          } catch (err) { r.note = [r.note, `Studio: ${err.message}`].filter(Boolean).join(" · "); }
         }
         r.done = true;
         r.status = saved.status;

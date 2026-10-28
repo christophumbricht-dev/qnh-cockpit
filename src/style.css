@@ -1158,3 +1158,5 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .st-row { grid-template-columns: 1fr; }
   .st-frame.vertical { max-height: 60vh; }
 }
+.st-thumbpick { padding: 3px; border: 2px solid transparent; border-radius: 8px; background: var(--surface-2); cursor: pointer; min-width: 120px; min-height: 70px; }
+.st-thumbpick.on { border-color: var(--brand); }

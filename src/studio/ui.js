@@ -58,10 +58,15 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
   // ---------- media ----------
   async function ensureMedia(it) {
     const ver = current(it);
-    if (!ver || isPages(it.format)) return;
+    if (!ver) return;
     const key = ver.id;
     if (st().mediaFor === key) return;
     st().mediaFor = key;
+    // thumbnails of a long video: R2 keys or Social bucket paths
+    const thumbs = ver.meta?.thumbnails ?? [];
+    const turls = await Promise.all(thumbs.map((t) => data.mediaUrl(t?.key ? { kind: "r2", key: t.key } : t?.path ? { kind: "storage", path: t.path } : null)));
+    turls.forEach((u, i) => { st().urls[`${key}#t${i}`] = u; });
+    if (isPages(it.format)) { if (turls.length) render(); return; }
     const url = st().local[key] ?? await data.mediaUrl(ver.source);
     st().urls[key] = url;
     if (url && video.src !== url) { video.src = url; video.load(); }
@@ -246,10 +251,11 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
   function packageView(it, ver) {
     const m = ver.meta ?? {};
     const block = (target, label, text) => text ? `<div class="st-pkg-item"><div class="st-pkg-head"><b>${esc(label)}</b><button class="link" data-action="st-mark-target" data-value="${target}">Marker</button></div><p class="st-pkg-text">${esc(text)}</p></div>` : "";
-    const titles = (m.titles ?? []).length ? `<div class="st-pkg-item"><div class="st-pkg-head"><b>Titel</b><button class="link" data-action="st-mark-target" data-value="title">Marker</button></div>
-      ${m.titles.map((t, i) => `<label class="st-choice"><input type="radio" name="st-title" value="${i}"${(it.meta_choice?.title ?? m.chosen_title ?? 0) === i ? " checked" : ""} disabled> ${esc(t)}</label>`).join("")}</div>` : "";
-    const thumbs = (m.thumbnails ?? []).length ? `<div class="st-pkg-item"><div class="st-pkg-head"><b>Titelbild</b><button class="link" data-action="st-mark-target" data-value="thumbnail">Marker</button></div>
-      <div class="st-strip">${m.thumbnails.map((t) => `<img class="st-thumbimg" src="${esc(t.url ?? t)}" alt="Titelbild">`).join("")}</div></div>` : "";
+    const locked = it.status === "approved";
+    const titles = (m.titles ?? []).length ? `<div class="st-pkg-item"><div class="st-pkg-head"><b>Titel${m.titles.length > 1 ? " (auswählen)" : ""}</b><button class="link" data-action="st-mark-target" data-value="title">Marker</button></div>
+      ${m.titles.map((t, i) => `<label class="st-choice"><input type="radio" name="st-title" data-action="st-choose" data-kind="chosen_title" data-value="${i}"${(m.chosen_title ?? 0) === i ? " checked" : ""}${locked ? " disabled" : ""}> ${esc(t)}</label>`).join("")}</div>` : "";
+    const thumbs = (m.thumbnails ?? []).length ? `<div class="st-pkg-item"><div class="st-pkg-head"><b>Titelbild${m.thumbnails.length > 1 ? " (auswählen)" : ""}</b><button class="link" data-action="st-mark-target" data-value="thumbnail">Marker</button></div>
+      <div class="st-strip">${m.thumbnails.map((t, i) => { const u = st().urls[`${ver.id}#t${i}`]; return `<button class="st-thumbpick${(m.chosen_thumbnail ?? 0) === i ? " on" : ""}" data-action="st-choose" data-kind="chosen_thumbnail" data-value="${i}"${locked ? " disabled" : ""}>${u ? `<img class="st-thumbimg" src="${esc(u)}" alt="Titelbild ${i + 1}">` : `<span class="muted small">${esc(t?.name ?? `Bild ${i + 1}`)}<br>(nur am PC)</span>`}</button>`; }).join("")}</div></div>` : "";
     const shorts = (m.shorts ?? []).length ? `<div class="st-pkg-item"><b>Shorts daraus</b><ul class="small">${m.shorts.map((s) => `<li>${esc(s.title ?? s.label ?? "")}${s.start != null ? ` · ${fmtTime(s.start)} bis ${fmtTime(s.end)}` : ""}</li>`).join("")}</ul></div>` : "";
     const assumptions = (m.assumptions ?? []).length ? `<div class="st-pkg-item"><b>Annahmen von Claude</b><ul class="small">${m.assumptions.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></div>` : "";
     const body = [titles, thumbs, block("caption", "Caption", m.caption), block("description", "Beschreibung", m.description), block("description", "Kapitel", m.chapters),
@@ -383,6 +389,12 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
       case "st-page": s.page = Number(el.dataset.value); break;
       case "st-mark-target": { const it = item(); if (it) startMarker(it, el.dataset.value); return true; }
       case "st-cat": if (s.form) s.form.category = el.dataset.value; break;
+      case "st-choose": {
+        const it = item(), ver = it && current(it);
+        if (!ver) return true;
+        try { await data.setVersionMeta(ver.id, { ...ver.meta, [el.dataset.kind]: Number(el.dataset.value) }); await load(true); } catch (err) { toast(errorText(err)); }
+        return true;
+      }
       case "st-cancel": s.form = null; break;
       case "st-edit": { const m = (s.value?.markers ?? []).find((x) => x.id === id); if (m) s.form = { ...m }; break; }
       case "st-del":
