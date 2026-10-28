@@ -60,4 +60,6 @@ function csp(env) {
 
 export default defineConfig(({ mode }) => ({
   plugins: [pdfjsWasm(), csp(loadEnv(mode, process.cwd(), "VITE_"))],
+  // build time, shown in the studio so Christoph can tell whether the browser has the new version
+  define: { __BUILD__: JSON.stringify(new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date())) },
 }));

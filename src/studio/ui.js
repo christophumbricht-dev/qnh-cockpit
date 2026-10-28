@@ -349,7 +349,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       <div class="chips st-rates" role="group" aria-label="Geschwindigkeit">${RATES.map((r) => `<button class="chip${r === rate ? " on" : ""}" data-action="st-rate" data-value="${r}">${r * 100} %</button>`).join("")}</div>
       ${rate < 0.5 || rate > 2 ? `<p class="small warn-text">Bei ${rate * 100} % spielen Safari und das iPhone keinen Ton ab, Chrome nur verzerrt. Für den Ton 100 % wählen.</p>` : ""}
       ${url && ver.source?.kind !== "local" ? `<p class="small"><button class="link" data-action="st-local">Video stattdessen vom PC öffnen</button></p>` : ""}
-      <p class="muted small st-keys">Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
+      <p class="small" id="st-audio"></p>
+      <p class="muted small st-keys">Version ${typeof __BUILD__ === "string" ? __BUILD__ : "dev"} · Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
   }
 
   function pagesView(it, ver, ms) {
@@ -462,6 +463,13 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (play) play.textContent = video.paused ? "▶" : "❚❚";
     const snd = document.getElementById("st-sound");
     if (snd) snd.textContent = video.muted || video.volume === 0 ? "🔇" : "🔊";
+    // after a moment of playing: does the browser really decode sound? (Chrome counts bytes, Safari lists tracks)
+    const au = document.getElementById("st-audio");
+    if (au && !video.paused && video.currentTime > 0.8) {
+      const bytes = video.webkitAudioDecodedByteCount;
+      const has = bytes != null ? bytes > 0 : video.audioTracks ? video.audioTracks.length > 0 : video.mozHasAudio ?? null;
+      au.textContent = video.muted ? "Ton ist ausgeschaltet (🔇 antippen)." : has === false ? "Dieses Video hat keine Tonspur, oder der Browser spielt sie bei dieser Geschwindigkeit nicht ab." : has ? `Ton läuft (Lautstärke ${Math.round(video.volume * 100)} %). Hörst du nichts, Lautstärke am Gerät oder Stummschaltung des Tabs prüfen.` : "";
+    }
     for (const s of document.querySelectorAll(".st-spot[data-at]")) s.classList.toggle("near", Math.abs(Number(s.dataset.at) - t) < 1.5);
   }
   for (const ev of ["timeupdate", "play", "pause", "seeked", "loadedmetadata", "volumechange"]) video.addEventListener(ev, tick);
