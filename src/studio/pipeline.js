@@ -11,7 +11,7 @@ import { WEEKPLAN, addDaysIso } from "../social/weekplan.js";
 // Instagram of Leeside and Downwind with every format, reel, carousel, picture or story (7 a week each; «es soll alles
 // durchs Studio durch»). formats null = all formats.
 export const PIPELINE = [
-  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "lange Videos" },
+  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "lange Videos, Ziel 2 pro Woche (plus Shorts)" },
   { channel: "leesidelab/instagram", formats: null, perWeek: 7, label: "Instagram" },
   { channel: "downwind/instagram", formats: null, perWeek: 7, label: "Instagram" },
 ];
