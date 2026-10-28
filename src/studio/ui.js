@@ -58,9 +58,9 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const n = waiting().filter((i) => LOOKING.includes(i.status)).length;
     if (n) out.push({ key: "studio", lane: "today", tone: "info", title: `${n} ${n === 1 ? "Beitrag wartet" : "Beiträge warten"} auf Sichtung`, sub: "Digital Studio", where: "Studio", href: "#studio" });
     const k = ideas().length;
-    if (k) out.push({ key: "studio-ideas", lane: "today", tone: "info", title: `${k} ${k === 1 ? "Idee wartet" : "Ideen warten"} auf dein Ok`, sub: "YouTube-Ablauf, Schritt 1", where: "Studio", href: "#studio" });
+    if (k) out.push({ key: "studio-ideas", lane: "today", tone: "info", title: `${k} ${k === 1 ? "Idee wartet" : "Ideen warten"} auf dein Ok`, sub: "Ablauf, Schritt 1", where: "Studio", href: "#studio" });
     const late = items().filter((i) => inPipeline(i.channel, i.format) && i.day && christophsTurn(i.status) && isLate(i.status, i.day, today())).length;
-    if (late) out.push({ key: "studio-late", lane: "now", tone: "alert", title: `${late} YouTube-${late === 1 ? "Video ist" : "Videos sind"} im Verzug und ${late === 1 ? "wartet" : "warten"} auf dich`, sub: "Digital Studio", where: "Studio", href: "#studio" });
+    if (late) out.push({ key: "studio-late", lane: "now", tone: "alert", title: `${late} ${late === 1 ? "Beitrag ist" : "Beiträge sind"} im Ablauf im Verzug und ${late === 1 ? "wartet" : "warten"} auf dich`, sub: "Digital Studio", where: "Studio", href: "#studio" });
     // R2 has no spending cap: flag it from 80 % of the free 10 GB, and loudly once it costs something
     const r2 = r2Usage(st().value?.versions);
     const flag = r2Flag(r2.bytes);
@@ -78,16 +78,16 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const cell = (d) => {
       const it = d.items[0];
       const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";
-      const tip = `${dm(d.date)} · ${d.items.length ? "langes Video" : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
+      const tip = `${dm(d.date)} · ${d.items.length ? esc(FORMAT_NAME[d.items[0].format] ?? "") : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
       const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="noop"`;
       return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.items.length ? "" : " pl-free"}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${who}</button>`;
     };
     const legend = STEPS.filter(Boolean).map((s) => `<span class="pl-key pl-${s.color}"></span> ${s.n < 5 ? `${s.n} ` : ""}${esc(s.name)}`).join(" ");
-    return `<section class="card pl-block"><div class="blk-head"><b>YouTube-Ablauf</b>
+    return `<section class="card pl-block"><div class="blk-head"><b>Ablauf: Idee → Entwurf → Video → Feinschliff</b>
         ${nav ? `<button class="btn ghost" data-action="st-block" data-value="-28" aria-label="4 Wochen zurück">‹</button><span>4 Wochen ab ${esc(dm(monday))}</span><button class="btn ghost" data-action="st-block" data-value="28" aria-label="4 Wochen vor">›</button>` : `<span>4 Wochen ab ${esc(dm(monday))}</span>`}</div>
-      ${rows.map((r) => `<p class="st-ch">${esc(CHANNEL_NAME[r.channel] ?? r.channel)} · lange Videos</p><div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}<span class="blk-dow">Woche</span>
-        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map(cell).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="lange Videos in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
-      <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran · rechts: lange Videos der Woche (rot = zu wenige Ideen)</p>
+      ${rows.map((r) => `<p class="st-ch">${esc(CHANNEL_NAME[r.channel] ?? r.channel)} · ${esc(r.label)}</p><div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}<span class="blk-dow">Woche</span>
+        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map(cell).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
+      <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran · rechts: Beiträge der Woche (rot = zu wenige Ideen)</p>
       <p class="muted small">Fristen vor dem Sendetag: Idee ${DEADLINE_DAYS[1]} Tage, Entwurf ${DEADLINE_DAYS[2]}, Video ${DEADLINE_DAYS[3]}, Feinschliff ${DEADLINE_DAYS[4]}.</p></section>`;
   }
 
@@ -170,7 +170,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const noDay = items().filter((i) => !i.day && shown.includes(i.channel));
     return `<div class="toolbar"><div class="chips">${chips}</div>
         <div class="row-right"><button class="btn ghost" data-action="st-week" data-value="-7" aria-label="Woche zurück">‹</button><button class="btn ghost" data-action="st-week" data-value="7" aria-label="Woche vor">›</button>${s.weekStart ? `<button class="link" data-action="st-week" data-value="0">Diese Woche</button>` : ""}</div></div>
-      <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. YouTube-Videos haben davor Idee und Entwurf.</p>
+      <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. Lange YouTube-Videos und Leeside-Reels haben davor Idee und Entwurf.</p>
       ${(() => { const r2 = r2Usage(s.value.versions); const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
       ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
       ${weeks.map(week).join("")}
@@ -594,7 +594,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
     const p = phaseOf(it?.status ?? null);
     const late = date >= today() && isLate(it.status, date, today());
     const tag = `<span class="pl-tag pl-${p.color}${late ? " pl-late" : ""}">${p.n < 5 ? `Schritt ${p.n} · ` : "✓ "}${esc(p.label)}</span>`;
-    return `<a class="pl-taglink" href="#studio/${esc(it.id)}">Langes Video: ${tag}</a>`;
+    return `<a class="pl-taglink" href="#studio/${esc(it.id)}">${esc(FORMAT_NAME[it.format] ?? "")}: ${tag}</a>`;
   }
 
   return { load, view, afterRender, onClick, onKeydown, onPointer, onSubmit, onInput, badge, agenda, itemForPost, setItemFromRoute, pipelineHtml, dayPhase };

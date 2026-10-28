@@ -178,3 +178,15 @@ export function wrap(text, width = 52) {
   if (line) lines.push(line);
   return lines.join("\n");
 }
+
+// the import finds the idea a package belongs to: one candidate of the same channel, day and format; with several,
+// the one furthest along (a draft before an accepted idea before a mere proposal), never a guess between equals
+const ORDER = ["idea", "idea_ok", "draft", "draft_done", "review1", "work", "review2"];
+export function pickIdea(candidates) {
+  const list = (candidates ?? []).filter((i) => ORDER.includes(i.status));
+  if (list.length <= 1) return list[0] ?? null;
+  const rank = (i) => ORDER.indexOf(i.status);
+  const top = Math.max(...list.map(rank));
+  const best = list.filter((i) => rank(i) === top);
+  return best.length === 1 ? best[0] : null;
+}

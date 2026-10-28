@@ -23,7 +23,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { buildDraft } from "./studio-draft.mjs";
-import { CliError, approvalCarriesOver, ideaRow, ideasOverview, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
+import { inPipeline } from "../src/studio/pipeline.js";
+import { CliError, approvalCarriesOver, ideaRow, ideasOverview, pickIdea, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
   statusAfterNewVersion, summary, versionFromPost, workMarkers } from "./studio-lib.mjs";
 
 const PAKETE = join(ROOT, "pakete");
@@ -154,6 +155,15 @@ export async function studioFromImport(sb, { folder, dir, post, account, videoBy
   let item = must(items).find((i) => i.social_post_id === post.id) ?? null;
   if (!item && raw.studio) item = must(await sb.from("studio_items").select("*").eq("slug", slugOf(raw.studio)).maybeSingle());
   item ??= must(items).find((i) => i.slug === slugOf(folder)) ?? null;
+  // Ablauf (src/studio/pipeline.js): the confirmed idea of the same channel, day and format is this post
+  if (!item) {
+    const want = itemFromPost(post, account, folder);
+    if (inPipeline(want.channel, want.format) && want.day) {
+      const open = must(await sb.from("studio_items").select("*").eq("channel", want.channel).eq("day", want.day).eq("format", want.format)
+        .is("social_post_id", null).not("status", "in", "(dropped,approved)"));
+      item = pickIdea(open);
+    }
+  }
   const versions = item ? must(await sb.from("studio_versions").select("*").eq("item_id", item.id).order("version")) : [];
   const last = versions.at(-1) ?? null;
 

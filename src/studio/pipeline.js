@@ -7,8 +7,12 @@
 // Red is only for «late»: a step not done by its deadline (days before the air date). Pure, tested in tests/studio-pipeline.test.mjs.
 import { addDaysIso } from "../social/weekplan.js";
 
-// what runs through the Ablauf: only the long YouTube videos (Christoph 28.10.2026: «die Shorts nicht»), 2 a week
-export const PIPELINE = [{ channel: "leesidelab/youtube", format: "video_long", perWeek: 2 }];
+// what runs through the Ablauf (Christoph 28.10.2026): the long YouTube videos (2 a week, the Shorts not) and the
+// Leeside Instagram reels (6 a week; Saturday is the METAR carousel)
+export const PIPELINE = [
+  { channel: "leesidelab/youtube", format: "video_long", perWeek: 2, label: "lange Videos" },
+  { channel: "leesidelab/instagram", format: "reel", perWeek: 6, label: "Reels" },
+];
 export const PIPELINE_CHANNELS = PIPELINE.map((p) => p.channel);
 export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && p.format === format);
 
@@ -64,10 +68,10 @@ export const christophsTurn = (status) => phaseOf(status).who === "christoph";
 // has fewer than perWeek items and its idea deadline (21 days before its Monday) has passed
 // → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late }] }] }]
 export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE) {
-  return pipeline.map(({ channel, format, perWeek }) => {
+  return pipeline.map(({ channel, format, perWeek, label }) => {
     const mine = items.filter((i) => i.channel === channel && i.format === format && i.status !== "dropped" && i.day);
     return {
-      channel, perWeek,
+      channel, perWeek, label,
       weeks: Array.from({ length: weeks }, (_, w) => {
         const m = addDaysIso(monday, 7 * w);
         const days = Array.from({ length: 7 }, (_, d) => {

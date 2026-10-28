@@ -117,3 +117,12 @@ test("draft: scene times from the spoken lengths, checks and wrapping", () => {
   assert.throws(() => checkDraft({ scenes: [{ id: "a", text: "x" }, { id: "a", text: "y" }] }), /zweimal/);
   assert.equal(wrap("one two three four", 9), "one two\nthree\nfour");
 });
+
+import { pickIdea } from "../scripts/studio-lib.mjs";
+test("pickIdea: the one idea of that day, else the furthest along, never a guess", () => {
+  assert.equal(pickIdea([]), null);
+  assert.equal(pickIdea([{ id: 1, status: "idea_ok" }]).id, 1);
+  assert.equal(pickIdea([{ id: 1, status: "idea" }, { id: 2, status: "draft" }]).id, 2);
+  assert.equal(pickIdea([{ id: 1, status: "draft" }, { id: 2, status: "draft" }]), null);
+  assert.equal(pickIdea([{ id: 1, status: "dropped" }]), null);
+});
