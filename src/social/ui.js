@@ -439,6 +439,23 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
   }
 
+  // Digital Studio «Freigeben»: the same checks and confirmation as the editor's «Freigeben»
+  async function approvePost(id) {
+    const ed = editorFor(id);
+    if (!ed) { toast("Beitrag nicht gefunden."); return false; }
+    const { errors } = checks(ed, true);
+    if (errors.length) { toast(errors[0]); return false; }
+    const twin = twinOf({ ...ed, remote_media_id: posts().find((p) => p.id === id)?.remote_media_id });
+    if (twin && !confirm(`Achtung: Dieser Beitrag sieht aus wie einer, der schon auf Instagram ist${twin.posted_at ? ` (${formatZurichDate(twin.posted_at)})` : ""}. Trotzdem freigeben?`)) return false;
+    if (!confirm(confirmText("Diesen Beitrag freigeben? Er wird zur geplanten Zeit automatisch veröffentlicht.", ed))) return false;
+    try {
+      await data.setStatus(id, "approved", zurichToUtc(ed.scheduledLocal));
+      toast(`Freigegeben für ${formatZurich(zurichToUtc(ed.scheduledLocal))}`);
+      await load(true);
+      return true;
+    } catch (err) { toast(errorText(err)); return false; }
+  }
+
   async function reschedule(id, day) {
     const p = posts().find((x) => x.id === id);
     if (!p || p.status === "published" || p.status === "publishing") return;
@@ -1114,7 +1131,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const ed = S.social.editor;
     if (ed && ed.id === id) return ed;
     const p = posts().find((x) => x.id === id);
-    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, kids: p.made_for_kids === true, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
+    return p ? { id: p.id, isNew: false, status: p.status, account_id: p.account_id, kind: p.kind, title: p.title ?? "", caption: p.caption, first_comment: p.first_comment, first_comment_reply: p.first_comment_reply ?? "", first_comment_reply_after_hours: p.first_comment_reply_after_hours, quiz_answer: p.quiz_answer, quiz_correct_replies: p.quiz_correct_replies, kids: p.made_for_kids === true, ai: p.ai_generated === true, scheduledLocal: utcToZurichLocal(p.scheduled_at), items: p.media, busy: false } : null;
   };
 
   async function publishNow(id) {
@@ -1523,6 +1540,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     </div>`;
   }
   const todoProgress = (t) => { const l = todoLines(t); return { done: l.filter((x) => x.done).length, total: l.length }; };
-  return { todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
+  return { approvePost, todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, badge, onClick, onInput, onChange, onDrop, onDragOver, onDragStart, setMode,
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }

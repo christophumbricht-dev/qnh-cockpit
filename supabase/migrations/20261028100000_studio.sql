@@ -85,3 +85,7 @@ create policy "studio_versions: admins" on public.studio_versions for all to aut
 drop policy if exists "studio_markers: admins" on public.studio_markers;
 create policy "studio_markers: admins" on public.studio_markers for all to authenticated
   using ((select public.is_qnh_admin())) with check ((select public.is_qnh_admin()));
+
+-- the cockpit reloads when a chat resolves a marker or a new version arrives
+do $$ begin alter publication supabase_realtime add table public.studio_items; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.studio_markers; exception when duplicate_object then null; end $$;

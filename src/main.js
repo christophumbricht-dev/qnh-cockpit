@@ -10,6 +10,7 @@ import { formatZurich, isPlaceholder } from "./social/validate.js";
 import { createQnh } from "./qnh/ui.js";
 import { qnhReady } from "./qnh/data.js";
 import { createStore } from "./store/ui.js";
+import { createStudio } from "./studio/ui.js";
 import { createFinance } from "./finance/ui.js";
 import { financeConfigured } from "./finance/data.js";
 import { billDue, money, moneyList, monthlyTotals, owedPrivately, sumBy, upcoming, zurichToday } from "./finance/calc.js";
@@ -53,11 +54,12 @@ const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), error
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
   appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })) });
+const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id) });
 const scopeBadge = (id) => appBadge(id === "qnh" ? { name: "QNH", color: "#0B7285" } : appById(id) ?? { name: id, color: "#627d98" });
 const finance = createFinance({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: () => SCOPES, scopeBadge });
 const app = () => appById(S.appId);
 const live = (a) => !a.offline && api.configured(a);
-const GLOBAL_TABS = ["today", "social", "roadmap-all", "hangar", "finance", "apps"];
+const GLOBAL_TABS = ["today", "social", "studio", "roadmap-all", "hangar", "finance", "apps"];
 const isAppPage = () => !GLOBAL_TABS.includes(S.tab);
 const appTabs = (a) => ["overview", ...(a.offline ? [] : a.tabs ?? []), ...(a.store ? ["store"] : []), "roadmap"];
 
@@ -113,6 +115,7 @@ function ensureData(force = false) {
   if (socialConfigured() && (api.DEMO || S.users[QNH.id])) social.load(force);
   if (qnhReady() && (api.DEMO || S.users[QNH.id])) {
     qnh.load(force);
+    studio.load(force);
     store.load(APPS, force);
     if (financeConfigured()) finance.load(force);
   }
@@ -137,6 +140,7 @@ function route() {
     else if (second === "themen") { S.social.filter = "all"; social.setMode("list"); }
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
   }
+  else if (first === "studio") { S.tab = "studio"; studio.setItemFromRoute(second || null); }
   else if (first === "apps") S.tab = "apps";
   else if (first === "roadmap") S.tab = "roadmap-all";
   else if (first === "hangar") S.tab = "hangar";
@@ -178,6 +182,7 @@ function render(force = false) {
   if (focused) root.querySelector(`[name="${focused}"]`)?.focus();
   sheetFocus();
   social.afterRender();
+  if (S.tab === "studio") studio.afterRender();
 }
 
 // initials for the account button on the phone («christoph.umbricht@…» → «CU»)
@@ -216,6 +221,7 @@ function shell() {
         ${qnhReady() && socialConfigured() ? `<p class="side-label">Social</p>
           ${navItem("#social", S.tab === "social" && !S.social.byTopic && (!channels.length || S.social.filter === "all"), icon("chat"), [channels.length ? "Alle Kanäle" : "Social", "Social"], social.badge())}
           ${navItem("#social/themen", S.tab === "social" && !!S.social.byTopic, icon("grid"), "Themen", 0, "desk-only")}
+          ${navItem("#studio", S.tab === "studio", icon("play"), "Studio", studio.badge(), "desk-only")}
           ${channelItems}` : ""}
         ${qnhReady() && financeConfigured() ? navItem("#finanzen", S.tab === "finance", icon("wallet"), "Finanzen", finBadge, "phone-only hot") : ""}
         ${qnhReady() ? navItem("#hangar", S.tab === "hangar", icon("folder"), "Hangar", 0, "desk-only nav-bottom") : ""}
@@ -266,6 +272,7 @@ function sheet() {
       ${socialConfigured() && S.social?.value?.accounts?.length ? item('data-action="go-new-post"', "chat", "Beitrag", "Instagram oder YouTube") : ""}
       ${socialConfigured() ? item('data-action="quick-package"', "folder", "Paket importieren", "Ordner oder ZIP mit post.json") : ""}`
     : `<h2>Menü</h2>
+      ${qnhReady() ? item('data-action="go" data-value="#studio"', "play", "Digital Studio", studio.badge() ? `${studio.badge()} warten auf Sichtung` : "Beiträge sichten") : ""}
       ${item('data-action="go" data-value="#hangar"', "folder", "Hangar", "Links und Ablage")}
       ${item('data-action="search-open"', "search", "Suchen")}
       ${item('data-action="theme"', darkNow() ? "sun" : "moon", darkNow() ? "Helles Farbschema" : "Dunkles Farbschema")}
@@ -303,6 +310,9 @@ function pageHead() {
   }
   if (S.tab === "finance") {
     return `<header class="page-head"><div class="ph-title">${icon("wallet", "ph-icon")}<div><h1>Finanzen</h1><p class="muted">Kosten, Abos und Rechnungen – bezahlt wird im E-Banking, hier behältst du den Überblick.</p></div></div></header>`;
+  }
+  if (S.tab === "studio") {
+    return `<header class="page-head"><div class="ph-title">${icon("play", "ph-icon")}<div><h1>Digital Studio</h1><p class="muted">Jeder Beitrag höchstens zweimal ansehen: Marker setzen, dann freigeben.</p></div></div></header>`;
   }
   if (S.tab === "social") {
     const v = S.social?.value;
@@ -345,6 +355,7 @@ function tileValue(a, t, stats) {
 function view() {
   if (S.tab === "today") return todayView();
   if (S.tab === "social") return social.view();
+  if (S.tab === "studio") return api.DEMO || S.users[QNH.id] ? studio.view() : `<p class="note">Für das Studio bei QNH Core anmelden (Seite «Heute»).</p>`;
   if (S.tab === "roadmap-all") return qnh.roadmapView(null);
   if (S.tab === "hangar") return qnh.hangarView();
   if (S.tab === "apps") return `<div class="app-cards apps-page">${APPS.map(appCard).join("")}</div>`;
@@ -454,6 +465,7 @@ function agenda() {
   for (const a of APPS) for (const t of todos(a)) items.push({ key: `app:${a.id}:${t.href}:${t.label}`, lane: t.lane ?? "today", tone: t.tone, title: t.label, where: a.name, scope: a.id, href: t.href });
   for (const t of store.todos(APPS)) items.push({ key: `store:${t.app.id}:${t.label}`, lane: t.tone === "alert" ? "now" : "today", tone: t.tone, title: t.label, where: t.app.name, scope: t.app.id, href: t.href });
   items.push(...socialItems(today), ...qnh.agenda(today));
+  if (qnhReady()) items.push(...studio.agenda());
   if (financeConfigured()) items.push(...finance.agenda(today));
   return buildAgenda(items);
 }
@@ -1080,6 +1092,7 @@ root.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (/^(rm|hg)-/.test(form.dataset.form)) return qnh.onSubmit(form);
   if (form.dataset.form.startsWith("fin-")) return finance.onSubmit(form);
+  if (form.dataset.form.startsWith("st-")) return studio.onSubmit(form);
   const a = appById(form.dataset.app);
   const l = (S.login[a.id] ??= { step: "email", email: "" });
   l.busy = true;
@@ -1112,6 +1125,7 @@ root.addEventListener("input", (e) => {
     return refreshPalette();
   }
   if (finance.onInput(e)) return;
+  if (studio.onInput(e)) return;
   social.onInput(e);
 });
 // «Heute»: remember folded-out checklist rows, so ticking (which re-renders) keeps them open
@@ -1133,6 +1147,7 @@ root.addEventListener("change", async (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (studio.onKeydown(e)) return;
   if (social.onKeydown(e)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
@@ -1170,6 +1185,8 @@ root.addEventListener("click", async (e) => {
   const { action, id, status, value } = el.dataset;
   if (action === "noop") return;
   if (action.startsWith("soc-")) return social.onClick(action, el);
+  if (action === "st-spot" || action === "st-scrub") return studio.onPointer(e);
+  if (action.startsWith("st-")) return studio.onClick(action, el);
   if (action === "go-focus") { qnh.startFocus("all"); if (location.hash === "#roadmap") render(); else location.hash = "#roadmap"; return; }
   if (/^(rm|hg)-/.test(action)) return qnh.onClick(action, el);
   if (action.startsWith("store-")) return store.onClick(el, APPS);
