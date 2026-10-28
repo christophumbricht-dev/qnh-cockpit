@@ -11,6 +11,8 @@
 //   npm run studio -- idee <kanal> <YYYY-MM-DD> "Titel" "Worum es geht" [--format short|video_long]   step 1
 //   npm run studio -- ideen                                     waiting / accepted (make the draft) / dropped (propose another)
 //   npm run studio -- entwurf <studio/<slug>>                  step 2: entwurf.json → draft video (Windows voice) → upload
+//   npm run studio -- uebernehmen [--von YYYY-MM-DD] [--wochen 4] [--dry]   take the Social plan into the Ablauf
+//                                                               (placeholder → idea, draft → Sichtung 1, approved/out → ready)
 //                                                               studio package of a long video → new version
 //
 // The Social import (npm run social -- import) adds a studio version for every draft it creates or replaces
@@ -24,7 +26,9 @@ import { execFileSync } from "node:child_process";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { buildDraft } from "./studio-draft.mjs";
 import { inPipeline } from "../src/studio/pipeline.js";
-import { CliError, approvalCarriesOver, ideaRow, ideasOverview, pickIdea, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
+import { isPlaceholder } from "../src/social/validate.js";
+import { addDaysIso, mondayOf } from "../src/social/weekplan.js";
+import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
   statusAfterNewVersion, summary, versionFromPost, workMarkers } from "./studio-lib.mjs";
 
 const PAKETE = join(ROOT, "pakete");
@@ -218,12 +222,54 @@ async function draft(sb, a) {
   await upload(sb, { ...a, _: [out], slug: a.slug ?? basename(dir) });
 }
 
+async function adopt(sb, a) {
+  const zurich = (iso) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date(iso));
+  const from = a.von ?? mondayOf(zurich(new Date().toISOString()));
+  const to = addDaysIso(from, 7 * Number(a.wochen ?? 4) - 1);
+  const [{ data: accounts, error: e1 }, { data: posts, error: e2 }] = await Promise.all([
+    sb.from("social_accounts").select("id, app_id, platform"),
+    sb.from("social_posts").select("*").neq("status", "cancelled").gte("scheduled_at", addDaysIso(from, -1)).lte("scheduled_at", addDaysIso(to, 1)),
+  ]);
+  if (e1 || e2) throw new CliError((e1 ?? e2).message);
+  const { items } = await loadAll(sb);
+  const made = [];
+  for (const p of posts.sort((x, y) => x.scheduled_at.localeCompare(y.scheduled_at))) {
+    const day = zurich(p.scheduled_at);
+    if (day < from || day > to) continue;
+    const acc = accounts.find((x) => x.id === p.account_id);
+    if (!acc) continue;
+    const ph = isPlaceholder(p);
+    const base = itemFromPost(p, acc, `${day}-${p.id.slice(0, 6)}`);
+    // a placeholder has no video yet: a long YouTube video is recognised by its text
+    const format = !ph ? base.format
+      : acc.platform === "youtube" && /lang(es)?s*video|langvideo|long video/i.test(p.caption) ? "video_long"
+      : /METAR|Karussell|carousel/i.test(p.caption) ? "carousel" : base.format;   // Saturday METAR is a carousel
+    if (!inPipeline(base.channel, format)) continue;
+    if (items.some((i) => i.social_post_id === p.id)) continue;
+    if (ph && items.some((i) => i.channel === base.channel && i.day === day && i.format === format && !i.social_post_id && i.status !== "dropped")) continue;
+    const status = adoptStatus(p, isPlaceholder);
+    const row = ph
+      ? { channel: base.channel, format, ...placeholderText(p.caption), day, status, slug: slugOf(`${day}-${placeholderText(p.caption).title}`.slice(0, 70) + `-${p.id.slice(0, 4)}`) }
+      : { ...base, format, status, ...(status === "approved" ? { approved_at: p.updated_at } : {}) };
+    made.push({ row, post: p, ph });
+  }
+  for (const m of made) console.log(`  ${m.row.day}  ${m.row.channel.padEnd(20)} ${m.row.format.padEnd(10)} ${m.row.status.padEnd(9)} ${m.row.title}`);
+  if (a.dry) return console.log(`
+${made.length} Einträge würden übernommen (Probelauf, nichts geschrieben).`);
+  for (const m of made) {
+    const it = must(await sb.from("studio_items").insert(m.row).select().single());
+    if (!m.ph && (m.post.media ?? []).length) must(await sb.from("studio_versions").insert({ item_id: it.id, version: 1, ...versionFromPost(m.post), hash: null }));
+  }
+  console.log(`
+✓ ${made.length} Einträge ins Studio übernommen (${from} bis ${to}).`);
+}
+
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft };
+  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt };
   if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner>");
   try {
-    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich"]));
+    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry"]));
   } catch (err) {
     if (err instanceof CliError) fail(err.message);
     throw err;

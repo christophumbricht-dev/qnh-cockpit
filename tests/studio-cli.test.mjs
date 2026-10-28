@@ -126,3 +126,16 @@ test("pickIdea: the one idea of that day, else the furthest along, never a guess
   assert.equal(pickIdea([{ id: 1, status: "draft" }, { id: 2, status: "draft" }]), null);
   assert.equal(pickIdea([{ id: 1, status: "dropped" }]), null);
 });
+
+import { adoptStatus, placeholderText } from "../scripts/studio-lib.mjs";
+test("adoptStatus maps the Social plan to the Ablauf", () => {
+  const ph = (p) => String(p.caption).startsWith("PLATZHALTER") && !(p.media ?? []).length;
+  assert.equal(adoptStatus({ status: "draft", caption: "PLATZHALTER · Föhn", media: [] }, ph), "idea");
+  assert.equal(adoptStatus({ status: "draft", caption: "Föhn", media: [{ path: "a.mp4" }] }, ph), "review1");
+  assert.equal(adoptStatus({ status: "failed", caption: "x", media: [{ path: "a.mp4" }] }, ph), "review1");
+  assert.equal(adoptStatus({ status: "approved", caption: "x", media: [{}] }, ph), "approved");
+  assert.equal(adoptStatus({ status: "published", caption: "x", media: [{}] }, ph), "approved");
+  assert.equal(adoptStatus({ status: "cancelled", caption: "x" }, ph), null);
+  assert.deepEqual(placeholderText("PLATZHALTER · Föhn Teil 2\nWarum der Norden warm wird"), { title: "Föhn Teil 2", pitch: "Warum der Norden warm wird" });
+  assert.deepEqual(placeholderText("PLATZHALTER · Unfall-Reel"), { title: "Unfall-Reel", pitch: "Unfall-Reel" });
+});

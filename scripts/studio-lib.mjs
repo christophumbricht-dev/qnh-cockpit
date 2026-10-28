@@ -190,3 +190,19 @@ export function pickIdea(candidates) {
   const best = list.filter((i) => rank(i) === top);
   return best.length === 1 ? best[0] : null;
 }
+
+// ---------- take over the current Social plan into the Ablauf (npm run studio -- uebernehmen) ----------
+// a planned post → Ablauf status: placeholder = idea waiting for Christoph's Ok (step 1), a draft with media = the
+// finished post for Sichtung 1 (step 3), approved or out = ready (green); cancelled posts are left out
+export function adoptStatus(post, isPlaceholder) {
+  if (post.status === "cancelled") return null;
+  if (isPlaceholder(post)) return "idea";
+  if (["approved", "publishing", "published"].includes(post.status)) return "approved";
+  return (post.media ?? []).length ? "review1" : "idea";
+}
+// placeholder caption «PLATZHALTER · Föhn Teil 2: …» → the idea's title and pitch
+export function placeholderText(caption) {
+  const text = String(caption ?? "").replace(/^PLATZHALTER\s*[·:–-]?\s*/, "").trim();
+  const [first, ...rest] = text.split("\n");
+  return { title: (first || "Idee").slice(0, 200), pitch: (rest.join("\n").trim() || first || "").slice(0, 2000) };
+}
