@@ -1237,3 +1237,24 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .st-top { margin-left: auto; }
 .st-head { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 0; }
 .pl-cell.pl-free { opacity: .45; cursor: pointer; }
+
+/* Studio: where the post stands */
+.st-steps { list-style: none; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin: 4px 0 14px; padding: 0; counter-reset: s; }
+.st-step { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 13px; line-height: 1.25; min-width: 0; }
+.st-step > span:last-child { display: grid; min-width: 0; }
+.st-step small { color: var(--muted); font-size: 11px; }
+.st-dot { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+.st-step.done { opacity: .75; }
+.st-step.done .st-dot { background: var(--pl-green); border-color: transparent; color: #102a43; }
+.st-step.now { border-width: 2px; }
+.st-step.now.pl-grey { border-color: var(--pl-grey); } .st-step.now.pl-blue { border-color: var(--pl-blue); }
+.st-step.now.pl-orange { border-color: var(--pl-orange); } .st-step.now.pl-yellow { border-color: var(--pl-yellow); } .st-step.now.pl-green { border-color: var(--pl-green); }
+.st-step.now .st-dot { color: #102a43; border-color: transparent; }
+.st-step.now.pl-grey .st-dot { background: var(--pl-grey); } .st-step.now.pl-blue .st-dot { background: var(--pl-blue); }
+.st-step.now.pl-orange .st-dot { background: var(--pl-orange); } .st-step.now.pl-yellow .st-dot { background: var(--pl-yellow); } .st-step.now.pl-green .st-dot { background: var(--pl-green); }
+.st-steps.late .st-step.now { box-shadow: 0 0 0 2px var(--pl-late); }
+.st-top { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+@media (max-width: 860px) {
+  .st-steps { grid-auto-flow: row; grid-auto-columns: auto; }
+  .st-step.next { display: none; }
+}

@@ -215,6 +215,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     return `<div class="st-head"><button class="link" data-action="st-close">‹ Übersicht</button>${nav}${topAction(it, ms)}</div>
       <div class="st-title"><div><span class="muted small">${esc(CHANNEL_NAME[it.channel] ?? it.channel)} · ${esc(FORMAT_NAME[it.format] ?? it.format)} · ${esc(dm(it.day))}</span>
         <h2>${esc(it.title || "(ohne Titel)")}</h2></div><span class="pill st-${it.status}">${inPipeline(it.channel, it.format) ? `Schritt ${phaseOf(it.status).n} · ` : ""}${esc(STATUS[it.status])}${ver ? ` · Fassung ${it.current_version}` : ""}</span></div>
+      ${it.status !== "dropped" ? stepper(it) : ""}
       ${it.pitch || it.status === "idea" ? ideaView(it) : ""}
       ${["idea", "idea_ok", "dropped"].includes(it.status) && !ver ? "" : `<div class="st-body${it.format === "video_long" ? " wide" : ""}">
         <div class="st-stage">${ver ? (isPages(it.format) ? pagesView(it, ver, ms) : playerView(it, ver, ms)) : `<p class="note">Noch keine Fassung. Sie kommt mit dem Import oder mit <code>npm run studio -- upload</code>.</p>`}</div>
@@ -224,18 +225,47 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   }
 
   // the one button that moves the post on, always at the top (also without any marker: «approve as it is»)
+  // the buttons that move the post on, always at the top; each says what happens next (Christoph 28.10.2026)
   function topAction(it, ms) {
     const drafts = ms.filter((m) => m.status === "draft").length;
     const notYet = ms.filter((m) => m.status === "not_yet").length;
-    if (it.status === "idea") return `<button class="btn st-top" data-action="st-idea-ok" data-id="${esc(it.id)}">✓ Idee ok</button>`;
-    if (it.status === "draft") return `<button class="btn st-top" data-action="st-finish">${drafts ? `Input abschicken (${drafts})` : "✓ Entwurf passt"}</button>`;
-    if (it.status === "review1" || it.status === "review2") {
-      return drafts || notYet
-        ? `<button class="btn st-top" data-action="${it.status === "review1" ? "st-finish" : "st-again"}">${drafts + notYet} ${drafts + notYet === 1 ? "Punkt" : "Punkte"} an Claude</button>`
-        : `<button class="btn st-top" data-action="st-approve">✓ Freigeben</button>`;
+    const n = drafts + notYet;
+    const pts = (k) => `${k} ${k === 1 ? "Punkt" : "Punkte"}`;
+    const btn = (action, label, ghost = false, id = "") => `<button class="btn${ghost ? " ghost" : ""}" data-action="${action}"${id ? ` data-id="${esc(id)}"` : ""}>${label}</button>`;
+    const wrap = (html) => `<div class="st-top">${html}</div>`;
+    const full = inPipeline(it.channel, it.format);
+    switch (it.status) {
+      case "idea": return wrap(btn("st-idea-drop", "Andere Idee …", true, it.id) + btn("st-idea-ok", "✓ Idee ok: Entwurf machen", false, it.id));
+      case "draft": return wrap(drafts
+        ? btn("st-finish", `${pts(drafts)} an Claude: Video machen`)
+        : btn("st-finish", "✓ Entwurf passt: Video machen"));
+      case "review1": return wrap(n
+        ? btn("st-approve", "Trotzdem freigeben", true) + btn("st-finish", `${pts(n)} an Claude: Feinschliff`)
+        : btn("st-approve", full ? "✓ Passt so: freigeben (ohne Feinschliff)" : "✓ Passt so: freigeben"));
+      case "review2": return wrap(n
+        ? btn("st-again", `${pts(n)} nochmals an Claude`)
+        : btn("st-approve", "✓ Freigeben: geht raus"));
+      case "approved": return wrap(`<span class="pill st-approved">✓ freigegeben${it.day ? `, ${it.day < today() ? "ging" : "geht"} am ${esc(dm(it.day))} raus` : ""}</span>`);
+      case "idea_ok": case "draft_done": case "work": return wrap(`<span class="muted small">Claude ist dran</span>`);
+      default: return "";
     }
-    if (it.status === "approved") return `<span class="pill st-approved st-top">✓ freigegeben</span>`;
-    return "";
+  }
+
+  // where the post stands: the steps of the Ablauf (or only the two looks for posts outside it), whose turn it is
+  function stepper(it) {
+    const full = inPipeline(it.channel, it.format);
+    const steps = full
+      ? [["Idee", ["idea"], []], ["Entwurf", ["draft"], ["idea_ok"]], ["Video · Sichtung 1", ["review1"], ["draft_done"]], ["Feinschliff · Sichtung 2", ["review2"], ["work"]], ["bereit", [], []]]
+      : [["Sichtung 1", ["review1"], []], ["Feinschliff · Sichtung 2", ["review2"], ["work"]], ["bereit", [], []]];
+    const idx = it.status === "approved" ? steps.length - 1 : steps.findIndex(([, mine, claude]) => mine.includes(it.status) || claude.includes(it.status));
+    // idea_ok belongs to the draft step (Claude makes it)
+    const cur = it.status === "idea_ok" ? (full ? 1 : idx) : idx;
+    const late = it.day && it.status !== "approved" && isLate(it.status, it.day, today());
+    return `<ol class="st-steps${late ? " late" : ""}" aria-label="Stand">${steps.map(([label, mine], i) => {
+      const state = i < cur || it.status === "approved" ? "done" : i === cur ? "now" : "next";
+      const who = state === "now" && it.status !== "approved" ? (mine.includes(it.status) ? "du bist dran" : "Claude ist dran") : "";
+      return `<li class="st-step ${state} pl-${full ? STEPS[Math.min(i + 1, 5)].color : i === steps.length - 1 ? "green" : i ? "yellow" : "orange"}"><span class="st-dot">${state === "done" ? "✓" : i + 1}</span><span><b>${esc(label)}</b>${who ? `<small>${who}</small>` : ""}</span></li>`;
+    }).join("")}</ol>${late ? `<p class="small error">Im Verzug: dieser Schritt hätte bis ${esc(dm(deadline(it.day, phaseOf(it.status).n)))} fertig sein sollen.</p>` : ""}`;
   }
 
   // ---------- device frames: the post as the viewer sees it (Christoph 28.10.2026) ----------
@@ -355,6 +385,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   }
 
   function actions(it, ms) {
+    // the buttons for draft, Sichtung 1 and 2 sit in the top bar (topAction); here only what Claude is doing
+    if (["draft", "review1", "review2", "approved"].includes(it.status)) return "";
     const drafts = ms.filter((m) => m.status === "draft").length;
     // step 2: the draft (Windows voice, simple pictures): input for the real video, no approval yet
     if (it.status === "draft") {
