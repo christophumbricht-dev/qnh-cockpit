@@ -26,6 +26,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   video.playsInline = true;
   video.preload = "metadata";
   video.className = "st-video";
+  video.muted = false;
+  video.volume = 1;
   let rate = savedRate();
   // the browser resets the speed when a new file is loaded
   video.addEventListener("loadedmetadata", () => { video.playbackRate = rate; });
@@ -176,7 +178,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const noDay = items().filter((i) => !i.day && shown.includes(i.channel));
     return `<div class="toolbar"><div class="chips">${chips}</div>
         <div class="row-right"><button class="btn ghost" data-action="st-week" data-value="-7" aria-label="Woche zurück">‹</button><button class="btn ghost" data-action="st-week" data-value="7" aria-label="Woche vor">›</button>${s.weekStart ? `<button class="link" data-action="st-week" data-value="0">Diese Woche</button>` : ""}</div></div>
-      <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. Lange YouTube-Videos und Leeside-Reels haben davor Idee und Entwurf.</p>
+      <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. Lange YouTube-Videos und alles auf Instagram haben davor Idee und Entwurf.</p>
       ${(() => { const r2 = r2Usage(s.value.versions); const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
       ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
       ${weeks.map(week).join("")}
@@ -297,9 +299,11 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <button class="btn ghost" data-action="st-key" data-value="frameBack" title="Ein Bild zurück (Komma, in der Pause)">‹ Bild</button>
         <button class="btn ghost" data-action="st-key" data-value="frameFwd" title="Ein Bild vor (Punkt, in der Pause)">Bild ›</button>
         <button class="btn st-mark" data-action="st-key" data-value="mark" title="Marker (M)">● Marker</button>
+        <button class="btn ghost" data-action="st-sound" id="st-sound" title="Ton ein/aus">${video.muted ? "🔇 Ton aus" : "🔊 Ton an"}</button>
         ${url && ver.source?.kind !== "local" ? `<button class="link" data-action="st-local">Datei vom PC</button>` : ""}
       </div>
       <div class="chips st-rates" role="group" aria-label="Geschwindigkeit">${RATES.map((r) => `<button class="chip${r === rate ? " on" : ""}" data-action="st-rate" data-value="${r}">${r * 100} %</button>`).join("")}</div>
+      ${rate < 0.5 || rate > 2 ? `<p class="small warn-text">Bei ${rate * 100} % spielen Safari und das iPhone keinen Ton ab, Chrome nur verzerrt. Für den Ton 100 % wählen.</p>` : ""}
       <p class="muted small st-keys">Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
   }
 
@@ -409,9 +413,11 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (ph && dur) ph.style.left = `${(t / dur) * 100}%`;
     const play = document.getElementById("st-play");
     if (play) play.textContent = video.paused ? "▶" : "❚❚";
+    const snd = document.getElementById("st-sound");
+    if (snd) snd.textContent = video.muted || video.volume === 0 ? "🔇 Ton aus" : "🔊 Ton an";
     for (const s of document.querySelectorAll(".st-spot[data-at]")) s.classList.toggle("near", Math.abs(Number(s.dataset.at) - t) < 1.5);
   }
-  for (const ev of ["timeupdate", "play", "pause", "seeked", "loadedmetadata"]) video.addEventListener(ev, tick);
+  for (const ev of ["timeupdate", "play", "pause", "seeked", "loadedmetadata", "volumechange"]) video.addEventListener(ev, tick);
   let raf = 0;
   video.addEventListener("play", () => { const f = () => { tick(); if (!video.paused) raf = requestAnimationFrame(f); }; raf = requestAnimationFrame(f); });
   video.addEventListener("pause", () => cancelAnimationFrame(raf));
@@ -505,6 +511,10 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       }
       case "st-key": act(el.dataset.value); return true;
       case "st-day": openDay(el.dataset.channel, el.dataset.value); return true;
+      case "st-sound":
+        video.muted = !video.muted;
+        if (!video.muted && video.volume === 0) video.volume = 1;
+        break;
       case "st-rate":
         rate = Number(el.dataset.value);
         video.playbackRate = rate;
