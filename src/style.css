@@ -1258,3 +1258,22 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .st-steps { grid-auto-flow: row; grid-auto-columns: auto; }
   .st-step.next { display: none; }
 }
+
+/* Studio: iPhone true to scale (screen 1179 × 2556 px, 19.5:9) and one-line controls (Christoph 28.10.2026) */
+.dev-phone { width: 320px; max-width: 100%; padding: 11px; border-radius: 54px; }
+.dev-phone .dev-screen { position: relative; aspect-ratio: 1179 / 2556; border-radius: 44px; overflow: hidden; display: flex; flex-direction: column; }
+.dev-phone .dev-feed { background: #fff !important; }
+.dev-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.dev-full .dev-content { justify-content: flex-start; background: #000; }
+.dev-full .st-frame.vertical, .dev-storyscreen .st-frame.vertical { width: 100%; aspect-ratio: 9 / 16; max-height: none; flex: none; }
+.dev-storyscreen .dev-content { justify-content: center; }
+.ios-status { flex: none; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 26px 0 30px; font: 600 13px/1 -apple-system, "Segoe UI", sans-serif; color: #fff; background: #000; position: relative; }
+.dev-feed .ios-status { color: #111; background: #fff; }
+.ios-island { position: absolute; left: 50%; top: 10px; width: 92px; height: 26px; margin-left: -46px; border-radius: 14px; background: #000; }
+.ig-tabs { flex: none; height: 48px; display: flex; justify-content: space-around; align-items: center; font-size: 19px; background: #000; color: #fff; border-top: 1px solid #222; }
+.dev-feed .ig-tabs { background: #fff; color: #111; border-top-color: #ddd; }
+.st-controls { flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+.st-controls .btn { padding: 7px 9px; min-width: 0; flex: none; font-size: 13px; }
+.st-controls .st-mark { margin-left: auto; }
+.st-claude { margin: 0 0 12px; }
+.st-claude.late { border-left: 3px solid var(--pl-late); }

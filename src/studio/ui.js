@@ -216,6 +216,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       <div class="st-title"><div><span class="muted small">${esc(CHANNEL_NAME[it.channel] ?? it.channel)} · ${esc(FORMAT_NAME[it.format] ?? it.format)} · ${esc(dm(it.day))}</span>
         <h2>${esc(it.title || "(ohne Titel)")}</h2></div><span class="pill st-${it.status}">${inPipeline(it.channel, it.format) ? `Schritt ${phaseOf(it.status).n} · ` : ""}${esc(STATUS[it.status])}${ver ? ` · Fassung ${it.current_version}` : ""}</span></div>
       ${it.status !== "dropped" ? stepper(it) : ""}
+      ${claudeNote(it)}
       ${it.pitch || it.status === "idea" ? ideaView(it) : ""}
       ${["idea", "idea_ok", "dropped"].includes(it.status) && !ver ? "" : `<div class="st-body${it.format === "video_long" ? " wide" : ""}">
         <div class="st-stage">${ver ? (isPages(it.format) ? pagesView(it, ver, ms) : playerView(it, ver, ms)) : `<p class="note">Noch keine Fassung. Sie kommt mit dem Import oder mit <code>npm run studio -- upload</code>.</p>`}</div>
@@ -249,6 +250,18 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       case "idea_ok": case "draft_done": case "work": return wrap(`<span class="muted small">Claude ist dran</span>`);
       default: return "";
     }
+  }
+
+// which Claude chat does the work for a channel (table «Zuständiger Chat» in C:QNHCLAUDE.md)
+  const CHAT = { "leesidelab/instagram": "Leesidelab Instagram channel", "leesidelab/youtube": "Set QNH GmbH", "downwind/instagram": "Downwind Social", "wolkenhof/youtube": "Wolkenhof 2" };
+  const WHAT = { idea_ok: "den Entwurf", draft_done: "das Video", work: "den Feinschliff" };
+  // when Claude is on: what, by when (deadline of the step) and which chat; the chats look at the studio at every start
+  function claudeNote(it) {
+    const what = WHAT[it.status];
+    if (!what) return "";
+    const by = it.day ? deadline(it.day, phaseOf(it.status).n) : null;
+    const late = it.day && isLate(it.status, it.day, today());
+    return `<p class="note small st-claude${late ? " late" : ""}">Claude macht ${what}${by ? ` bis ${esc(dm(by))}` : ""}${late ? " (im Verzug)." : by ? "" : "."} Zuständig: Chat «${esc(CHAT[it.channel] ?? "Set QNH GmbH")}». Er schaut beim nächsten Start ins Studio, die neue Fassung erscheint dann hier.</p>`;
   }
 
   // where the post stands: the steps of the Ablauf (or only the two looks for posts outside it), whose turn it is
@@ -293,13 +306,15 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       return `<div class="dev-laptop"><div class="dev-lid"><div class="dev-screen dev-yt">${frame}
           <div class="yt-meta"><b>${esc(chosenTitle(ver) || it.title)}</b><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span>${desc ? `<p>${esc(desc)}</p>` : ""}</div></div></div><div class="dev-base"></div></div>`;
     }
-    if (fullScreen(it)) return `<div class="dev-phone"><div class="dev-screen">${frame}</div></div>`;
+    const status = `<div class="ios-status" aria-hidden="true"><span>9:41</span><i class="ios-island"></i><span>▮▮▮ ▭</span></div>`;
+    const tabs = it.channel.endsWith("/instagram") && it.format !== "story" ? `<div class="ig-tabs" aria-hidden="true"><span>⌂</span><span>⌕</span><span>⊕</span><span>▶</span><span>◯</span></div>` : "";
+    if (fullScreen(it)) return `<div class="dev-phone"><div class="dev-screen dev-full${it.format === "story" ? " dev-storyscreen" : ""}">${status}<div class="dev-content">${frame}</div>${tabs}</div></div>`;
     const cap = String(ver?.meta?.caption ?? "");
-    return `<div class="dev-phone"><div class="dev-screen dev-feed">
+    return `<div class="dev-phone"><div class="dev-screen dev-feed">${status}<div class="dev-content">
         <div class="ig-head"><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span><span>⋯</span></div>${frame}
         <div class="ig-act"><span>♡ 💬 ➤</span><span>⌑</span></div>
         <div class="ig-cap"><b>${esc(handle)}</b> ${esc(cap.slice(0, 220))}${cap.length > 220 ? " … mehr" : ""}</div>
-        ${ver?.meta?.first_comment ? `<div class="ig-com"><b>${esc(handle)}</b> ${esc(ver.meta.first_comment.slice(0, 120))}</div>` : ""}</div></div>`;
+        ${ver?.meta?.first_comment ? `<div class="ig-com"><b>${esc(handle)}</b> ${esc(ver.meta.first_comment.slice(0, 120))}</div>` : ""}</div>${tabs}</div></div>`;
   }
 
   function playerView(it, ver, ms) {
@@ -326,14 +341,14 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <button class="btn ghost" data-action="st-key" data-value="stop" title="Stopp">■</button>
         <button class="btn ghost" data-action="st-key" data-value="fwd" title="Vor (Pfeil rechts)">+${arrowStep(it.format)} s</button>
         <button class="btn ghost" data-action="st-key" data-value="sceneFwd" title="Nächste Szene">⏭</button>
-        <button class="btn ghost" data-action="st-key" data-value="frameBack" title="Ein Bild zurück (Komma, in der Pause)">‹ Bild</button>
-        <button class="btn ghost" data-action="st-key" data-value="frameFwd" title="Ein Bild vor (Punkt, in der Pause)">Bild ›</button>
+        <button class="btn ghost" data-action="st-key" data-value="frameBack" title="Ein Bild zurück (Komma, in der Pause)">‹|</button>
+        <button class="btn ghost" data-action="st-key" data-value="frameFwd" title="Ein Bild vor (Punkt, in der Pause)">|›</button>
+        <button class="btn ghost" data-action="st-sound" id="st-sound" title="Ton ein/aus">${video.muted ? "🔇" : "🔊"}</button>
         <button class="btn st-mark" data-action="st-key" data-value="mark" title="Marker (M)">● Marker</button>
-        <button class="btn ghost" data-action="st-sound" id="st-sound" title="Ton ein/aus">${video.muted ? "🔇 Ton aus" : "🔊 Ton an"}</button>
-        ${url && ver.source?.kind !== "local" ? `<button class="link" data-action="st-local">Datei vom PC</button>` : ""}
       </div>
       <div class="chips st-rates" role="group" aria-label="Geschwindigkeit">${RATES.map((r) => `<button class="chip${r === rate ? " on" : ""}" data-action="st-rate" data-value="${r}">${r * 100} %</button>`).join("")}</div>
       ${rate < 0.5 || rate > 2 ? `<p class="small warn-text">Bei ${rate * 100} % spielen Safari und das iPhone keinen Ton ab, Chrome nur verzerrt. Für den Ton 100 % wählen.</p>` : ""}
+      ${url && ver.source?.kind !== "local" ? `<p class="small"><button class="link" data-action="st-local">Video stattdessen vom PC öffnen</button></p>` : ""}
       <p class="muted small st-keys">Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
   }
 
@@ -393,13 +408,13 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       return `<div class="st-actions"><button class="btn" data-action="st-finish">${drafts ? `Input abschicken (${drafts} Marker)` : "Entwurf passt: Video machen"}</button>
         <p class="muted small">Der Entwurf ist noch nicht das Video: Stimme und Bilder sind nur zum Vorstellen. Sag hier, was anders werden soll.</p></div>`;
     }
-    if (it.status === "idea_ok" || it.status === "draft_done") return `<p class="note small">${esc(STATUS[it.status])}.${openCount(ms) ? ` ${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkte"} von dir.` : ""}</p>`;
+    if (it.status === "idea_ok" || it.status === "draft_done") return openCount(ms) ? `<p class="note small">${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkte"} von dir.</p>` : "";
     if (it.status === "idea" || it.status === "dropped") return "";
     if (it.status === "review1") {
       return `<div class="st-actions">${drafts ? `<button class="btn" data-action="st-finish">Sichtung abschliessen (${drafts} ${drafts === 1 ? "Marker" : "Marker"})</button>` : ""}
         <button class="btn ${drafts ? "ghost" : ""}" data-action="st-approve">${drafts ? "Trotzdem freigeben" : "Alles gut: freigeben"}</button></div>`;
     }
-    if (it.status === "work") return `<p class="note small">Claude arbeitet an ${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkten"}. Die neue Fassung kommt hierher zurück.</p>`;
+    if (it.status === "work") return `<p class="note small">${openCount(ms)} ${openCount(ms) === 1 ? "Punkt" : "Punkte"} von dir in Arbeit.</p>`;
     if (it.status === "review2") {
       const notYet = ms.filter((m) => m.status === "not_yet").length;
       const unjudged = ms.filter((m) => m.status === "done" || m.status === "rejected").length;
@@ -446,7 +461,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const play = document.getElementById("st-play");
     if (play) play.textContent = video.paused ? "▶" : "❚❚";
     const snd = document.getElementById("st-sound");
-    if (snd) snd.textContent = video.muted || video.volume === 0 ? "🔇 Ton aus" : "🔊 Ton an";
+    if (snd) snd.textContent = video.muted || video.volume === 0 ? "🔇" : "🔊";
     for (const s of document.querySelectorAll(".st-spot[data-at]")) s.classList.toggle("near", Math.abs(Number(s.dataset.at) - t) < 1.5);
   }
   for (const ev of ["timeupdate", "play", "pause", "seeked", "loadedmetadata", "volumechange"]) video.addEventListener(ev, tick);
