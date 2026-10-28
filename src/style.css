@@ -1201,3 +1201,4 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .wk-day { min-height: 72px; }
 }
 .warn-text { color: var(--warn); }
+.st-rates { margin: 8px 0 0; }

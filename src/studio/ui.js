@@ -13,6 +13,9 @@ import { DEADLINE_DAYS, LOOKING, PIPELINE_CHANNELS, STEPS, christophsTurn, deadl
 const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Leeside · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube" };
 const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", carousel: "Karussell", image: "Bild", story: "Story" };
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+// playback speeds (Christoph 28.10.2026), remembered per device
+const RATES = [0.1, 0.25, 0.5, 1, 2, 3];
+const savedRate = () => { try { const r = Number(localStorage.getItem("qnh-studio-rate")); return RATES.includes(r) ? r : 1; } catch { return 1; } };
 const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.` : "ohne Tag");
 
 export function createStudio({ S, render, toast, errorText, approvePost }) {
@@ -23,6 +26,9 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
   video.playsInline = true;
   video.preload = "metadata";
   video.className = "st-video";
+  let rate = savedRate();
+  // the browser resets the speed when a new file is loaded
+  video.addEventListener("loadedmetadata", () => { video.playbackRate = rate; });
 
   // ---------- data ----------
   async function load(force = false) {
@@ -243,6 +249,7 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
         <button class="btn st-mark" data-action="st-key" data-value="mark" title="Marker (M)">● Marker</button>
         ${url && ver.source?.kind !== "local" ? `<button class="link" data-action="st-local">Datei vom PC</button>` : ""}
       </div>
+      <div class="chips st-rates" role="group" aria-label="Geschwindigkeit">${RATES.map((r) => `<button class="chip${r === rate ? " on" : ""}" data-action="st-rate" data-value="${r}">${r * 100} %</button>`).join("")}</div>
       <p class="muted small st-keys">Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
   }
 
@@ -446,6 +453,11 @@ export function createStudio({ S, render, toast, errorText, approvePost }) {
         return true;
       }
       case "st-key": act(el.dataset.value); return true;
+      case "st-rate":
+        rate = Number(el.dataset.value);
+        video.playbackRate = rate;
+        try { localStorage.setItem("qnh-studio-rate", String(rate)); } catch { /* private mode */ }
+        break;
       case "st-local": { const it = item(); if (it) pickLocal(current(it)); return true; }
       case "st-seek": {
         const v = String(el.dataset.value);
