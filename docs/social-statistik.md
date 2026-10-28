@@ -30,3 +30,18 @@ Dafür braucht es einmalig:
 2. Im Cockpit pro YouTube-Kanal «YouTube verbinden» neu ausführen und alle Häkchen setzen (neue Berechtigung yt-analytics.readonly).
 
 Fehlt eines davon, laufen die übrigen Zahlen weiter; der Lauf meldet dann einen Hinweis (`note`).
+
+## Grafiken, Kosten pro Zuschauer, Ziel (seit 28.10.2026)
+
+Pro Konto zeigt die Statistik drei Verläufe, je einen pro Diagramm, mit Wert beim Darüberfahren und «Als Tabelle»:
+- Instagram: Follower, Aufrufe pro Tag, erreichte Konten pro Tag.
+- YouTube: Abonnenten, Aufrufe pro Tag, Wiedergabezeit der letzten 28 Tage.
+
+**Kosten und Nutzen:** Die laufenden Kosten aus Finanzen mit dem Bereich der App (zum Beispiel «leesidelab»), pro Monat, pro 1'000 Aufrufe und pro neuem Follower, auf 30 Tage gerechnet. Nur CHF wird eingerechnet, andere Währungen stehen daneben (keine Umrechnung). Gemeinsame QNH-Kosten zählen nicht mit.
+
+**Ziel: Geld verdienen:** die offiziellen Schwellen, mit Prognose beim aktuellen Tempo (`src/social/growth.js`, Stand Oktober 2026).
+- YouTube Etappe 1: 500 Abonnenten, 3 Uploads in 90 Tagen, dazu 3'000 Stunden lange Videos (12 Monate) oder 3 Mio. Shorts-Aufrufe (90 Tage).
+- YouTube Werbeeinnahmen: 1'000 Abonnenten, dazu 4'000 Stunden oder 10 Mio. Shorts-Aufrufe. Für neue Bewerbungen ab 1.2.2027 sind es 8'000 Stunden.
+- Instagram Geschenke: 500 Follower.
+
+Die Stunden und Shorts-Aufrufe holt `stats.ts` täglich aus YouTube Analytics (`watch_minutes_long_365d`, `shorts_views_90d`, nach Inhaltsart getrennt).

@@ -1221,3 +1221,15 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .ib-state { margin-left: auto; font-weight: 600; }
 .ib-body { margin: 6px 0; white-space: pre-wrap; }
 .ib-reply { white-space: pre-wrap; }
+
+/* Social → Statistik: charts, money, goal */
+.stats-charts { margin: 4px 0 14px; }
+.stats-sub { margin: 14px 0 8px; font-size: 15px; }
+.goal { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; }
+.goal.done { border-color: var(--ok); }
+.goal ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.goal-part { display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(80px, 2fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.goal-bar { display: block; height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.goal-bar i { display: block; height: 100%; background: #1098AD; border-radius: 99px; }
+.goal-part.done .goal-bar i { background: var(--ok); }
+@media (max-width: 600px) { .goal-part { grid-template-columns: 1fr; gap: 4px; } }

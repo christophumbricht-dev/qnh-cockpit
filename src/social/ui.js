@@ -5,7 +5,9 @@ import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
 import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, youtubeIsLong, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
-import { sparkSvg } from "../charts.js";
+import { chartSvg } from "../charts.js";
+import { GOALS, GOAL_LABEL, costPer, costPerMonth, dailyGain, daySeries, forecast, metric, stageProgress } from "./growth.js";
+import { money } from "../finance/calc.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
 import { createOutreach } from "./outreach-ui.js";
@@ -303,7 +305,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       const media = [...latest.values()].filter((m) => !m.posted_at || m.posted_at >= since)
         .sort((a, b) => (Number(b.metrics[st.statsSort]) || 0) - (Number(a.metrics[st.statsSort]) || 0));
       const delta = last.followers_count != null && first.followers_count != null ? last.followers_count - first.followers_count : null;
-      const followerSeries = series.map((d) => d.metrics.followers_count).filter((v) => v != null);
       const tile = (label, value, sub = "") => `<div class="stat-tile"><span class="muted small">${label}</span><b>${value}</b>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>`;
       if (!series.length && !media.length) return `<section class="card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3><p class="muted">Noch keine Zahlen. Sie werden täglich um ca. 06:23 abgeholt – oder jetzt mit «Jetzt aktualisieren».</p></section>`;
       return `<section class="card stats-card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3>
@@ -319,12 +320,87 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           ${tile("Views", num(sum("views")))}
           ${tile("Interaktionen", num(sum("total_interactions")), `${num(sum("profile_links_taps"))} Link-Taps`)}`}
         </div>
-        ${followerSeries.length > 1 ? `<div class="stats-spark"><span class="muted small">Follower-Verlauf</span>${sparkSvg(followerSeries, "line")}</div>` : `<p class="muted small">Follower-Verlauf erscheint ab dem zweiten Tag. Manche Werte liefert Instagram erst ab 100 Followern.</p>`}
+        ${chartsHtml(acc, series)}
+        ${moneyHtml(acc, series, delta)}
+        ${goalHtml(acc, last, series, media, delta)}
         ${media.length ? `<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Beitrag</th>${(acc.platform === "youtube" ? YT_STAT_COLS : STAT_COLS).map(([k, l]) => `<th><button class="link${st.statsSort === k ? " on" : ""}" data-action="soc-stats-sort" data-value="${k}">${l}${st.statsSort === k ? " ▾" : ""}</button></th>`).join("")}</tr></thead>
           <tbody>${media.map((m) => `<tr><td><a href="${esc(m.permalink ?? "#")}" target="_blank" rel="noopener">${esc(m.caption.split("\n")[0].slice(0, 60) || "(ohne Text)")}</a><br><span class="muted small">${esc(KIND_LABEL[m.kind] ?? m.kind)} · ${m.posted_at ? esc(formatZurichDate(m.posted_at)) : ""}</span></td>${(acc.platform === "youtube" ? YT_STAT_COLS : STAT_COLS).map(([k]) => `<td>${statCell(k, m.metrics[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">Keine Beiträge in diesem Zeitraum.</p>`}
       </section>`;
     }).join("");
     return `${head}${blocks}<p class="hint">Zahlen von Instagram und YouTube, einmal täglich abgeholt (Instagram: Verzögerung bis 48 h). Nach einer Spalte sortieren: Spaltentitel antippen.</p>`;
+  }
+
+  // ---------- Statistik: charts, cost per viewer, way to monetisation (growth.js) ----------
+  // one series per chart (single validated colour, hover values, table view), like «Verlauf» of the apps
+  function chartCard(title, headline, sub, periods, kind) {
+    if (periods.length < 2) return "";
+    return `<figure class="chart-card"><figcaption><span class="chart-title">${esc(title)}</span><span class="chart-num">${esc(headline)}</span><span class="chart-sub">${esc(sub)}</span></figcaption>
+      ${chartSvg({ periods, weekly: false, key: "value", kind, label: title })}
+      <details><summary>Als Tabelle</summary><table>${periods.map((p) => `<tr><td>${esc(`${Number(p.from.slice(8, 10))}.${Number(p.from.slice(5, 7))}.`)}</td><td>${num(p.value)}</td></tr>`).join("")}</table></details></figure>`;
+  }
+  function chartsHtml(acc, rows) {
+    const yt = acc.platform === "youtube";
+    const fol = daySeries(rows, metric("followers_count"));
+    const views = yt ? daySeries(rows, dailyGain("views_total")) : daySeries(rows, metric("views"));
+    const third = yt ? daySeries(rows, (r) => (r.metrics?.watch_minutes_28d == null ? null : Math.round(r.metrics.watch_minutes_28d / 60)))
+      : daySeries(rows, metric("reach"));
+    const total = (p) => num(p.reduce((n, x) => n + x.value, 0));
+    const cards = [
+      chartCard(yt ? "Abonnenten" : "Follower", num(fol.at(-1)?.value ?? 0), "aktuell", fol, "line"),
+      chartCard("Aufrufe pro Tag", total(views), "im Zeitraum", views, "bar"),
+      yt ? chartCard("Wiedergabezeit", `${num(third.at(-1)?.value ?? 0)} h`, "letzte 28 Tage, laufend", third, "line")
+        : chartCard("Erreichte Konten pro Tag", total(third), "im Zeitraum", third, "bar"),
+    ].join("");
+    return cards ? `<div class="charts stats-charts">${cards}</div>` : `<p class="muted small">Die Verläufe erscheinen ab dem zweiten Tag mit Zahlen. Manche Werte liefert Instagram erst ab 100 Followern.</p>`;
+  }
+  // what the channel costs (Finanzen, costs with this app as «Bereich») per viewer and per new follower
+  function moneyHtml(acc, rows, delta) {
+    const costs = S.fin?.value?.costs;
+    if (!costs) return "";
+    const per = costPerMonth(costs, acc.app_id);
+    const chf = per.CHF ?? 0;
+    const other = Object.entries(per).filter(([c, v]) => c !== "CHF" && v > 0);
+    const yt = acc.platform === "youtube";
+    const first = rows[0]?.metrics ?? {}, last = rows.at(-1)?.metrics ?? {};
+    const views = yt ? (last.views_total != null && first.views_total != null ? last.views_total - first.views_total : 0)
+      : rows.reduce((n, d) => n + (Number(d.metrics.views) || 0), 0);
+    const days = Math.max(1, rows.length);
+    const c = costPer(chf, views, delta ?? 0, days);
+    const tile = (label, value, sub = "") => `<div class="stat-tile"><span class="muted small">${label}</span><b>${value}</b>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>`;
+    if (!chf && !other.length) return `<p class="muted small">Kosten pro Zuschauer: in Finanzen sind keine laufenden Kosten mit Bereich «${esc(acc.app_id)}» erfasst.</p>`;
+    return `<h4 class="stats-sub">Kosten und Nutzen</h4><div class="stat-tiles">
+      ${tile("Kosten pro Monat", chf ? money(chf) : "–", esc(other.map(([cur, v]) => money(v, cur)).join(" + ")) || "aus Finanzen")}
+      ${tile("pro 1'000 Aufrufe", c.perThousandViews != null ? money(c.perThousandViews) : "–", "auf 30 Tage gerechnet")}
+      ${tile("pro neuem Follower", c.perFollower != null ? money(c.perFollower) : "–", delta > 0 ? `${delta} neue in ${days} Tagen` : "noch kein Zuwachs")}
+    </div>${other.length ? `<p class="muted small">Nur Kosten in CHF sind eingerechnet (${esc(other.map(([cur]) => cur).join(", "))} ohne Umrechnung).</p>` : ""}`;
+  }
+  // the official thresholds for earning money, with a forecast at the pace of the period
+  function goalHtml(acc, last, rows, media, delta) {
+    const stages = GOALS[acc.platform];
+    if (!stages) return "";
+    const yt = acc.platform === "youtube";
+    const since90 = new Date(Date.now() - 90 * 864e5).toISOString();
+    const values = yt
+      ? { subscribers: last.followers_count, uploads_90d: media.filter((m) => m.posted_at && m.posted_at >= since90).length,
+          watch_hours_long_365d: last.watch_minutes_long_365d != null ? Math.round(last.watch_minutes_long_365d / 60) : undefined, shorts_views_90d: last.shorts_views_90d }
+      : { followers: last.followers_count };
+    const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(new Date());
+    const days = Math.max(1, rows.length);
+    const when = (iso) => `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.${iso.slice(0, 4)}`;
+    const part = (p, label) => {
+      const fc = (p.key === "subscribers" || p.key === "followers") && p.value != null && p.value < p.goal ? forecast(p.value, p.goal, delta ?? 0, days, today) : null;
+      const pct = Math.round((p.share ?? 0) * 100);
+      return `<li class="goal-part${p.share === 1 ? " done" : ""}"><span>${label}${esc(GOAL_LABEL[p.key])}</span>
+        <span class="goal-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></span>
+        <span class="small">${p.value == null ? "noch keine Zahl" : `${num(p.value)} / ${num(p.goal)}`}${fc ? ` · bei diesem Tempo am ${when(fc.date)}` : p.share === 1 ? " ✓" : ""}</span></li>`;
+    };
+    return `<h4 class="stats-sub">Ziel: Geld verdienen</h4>${stages.map((st) => {
+      const pr = stageProgress(st, values);
+      return `<div class="goal${pr.done ? " done" : ""}"><b>${esc(pr.stage)}</b> <span class="muted small">${Math.round(pr.share * 100)} %</span>
+        <ul>${pr.needs.map((p) => part(p, "")).join("")}${pr.or.map((p, i) => part(p, i ? "oder " : "")).join("")}</ul></div>`;
+    }).join("")}<p class="muted small">${yt
+      ? "Schwellen von YouTube (Stand Oktober 2026). Für neue Bewerbungen ab 1.2.2027: 8'000 Stunden statt 4'000. Shorts-Wiedergabezeit zählt nicht zu den Stunden. YouTube prüft jeden Kanal noch von Hand."
+      : "Instagram Geschenke: ab 500 Followern (Instagram Hilfe). Für weitere Einnahmen nennt Instagram keine feste Zahl."}</p>`;
   }
 
   function savedMode() {

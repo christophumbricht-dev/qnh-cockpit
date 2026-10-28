@@ -82,6 +82,16 @@ export function analyticsMetrics(row: Record<string, unknown> | undefined, suffi
   }
   return out;
 }
+// rows by creatorContentType → { watch_minutes_long_365d, shorts_views_90d } (only what YouTube delivered)
+export function yppMetrics(year: Array<Record<string, unknown>>, quarter: Array<Record<string, unknown>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  const long = year.find((r) => String(r.creatorContentType).toUpperCase() === "LONG_FORM");
+  if (typeof long?.estimatedMinutesWatched === "number") out.watch_minutes_long_365d = Math.round(long.estimatedMinutesWatched);
+  const shorts = quarter.find((r) => String(r.creatorContentType).toUpperCase() === "SHORTS");
+  if (typeof shorts?.views === "number") out.shorts_views_90d = Math.round(shorts.views);
+  else if (quarter.length) out.shorts_views_90d = 0;
+  return out;
+}
 const shiftDay = (day: string, days: number) => new Date(Date.parse(day + "T12:00:00Z") + days * 864e5).toISOString().slice(0, 10);
 
 async function analytics(deps: StatsDeps, token: string, day: string, ids: string[]) {
@@ -93,6 +103,11 @@ async function analytics(deps: StatsDeps, token: string, day: string, ids: strin
   const end = shiftDay(day, -2), start = shiftDay(end, -27); // YouTube Analytics lags about two days
   const account = analyticsMetrics((await ask({ startDate: start, endDate: end, metrics: [...BASE_METRICS, "subscribersGained"].join(",") }))[0], "_28d");
   Object.assign(account, analyticsMetrics((await ask({ startDate: start, endDate: end, metrics: CTR_METRICS.join(",") }).catch(() => []))[0], "_28d"));
+  // YouTube Partner Program (Social → Statistik «Ziel»): long-form watch hours of the last 12 months and Shorts views of
+  // the last 90 days, split by content type; left out when YouTube refuses the dimension
+  Object.assign(account, yppMetrics(
+    await ask({ startDate: shiftDay(end, -364), endDate: end, dimensions: "creatorContentType", metrics: "views,estimatedMinutesWatched" }).catch(() => []),
+    await ask({ startDate: shiftDay(end, -89), endDate: end, dimensions: "creatorContentType", metrics: "views" }).catch(() => [])));
   const perVideo = new Map<string, Record<string, number>>();
   if (ids.length) {
     const q = { startDate: "2020-01-01", endDate: end, dimensions: "video", filters: `video==${ids.join(",")}`, maxResults: "200" };

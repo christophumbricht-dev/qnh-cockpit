@@ -1,6 +1,6 @@
 // Deno tests for the daily statistics with a mocked Instagram API: npm run test:functions
 import { assertEquals } from "jsr:@std/assert@1";
-import { analyticsMetrics, collectStats, parseInsights, reportRows, type MediaRow, type StatsStore } from "./stats.ts";
+import { analyticsMetrics, collectStats, parseInsights, reportRows, yppMetrics, type MediaRow, type StatsStore } from "./stats.ts";
 
 const NOW = new Date("2026-10-20T04:23:00Z");
 
@@ -91,6 +91,11 @@ Deno.test("YouTube: channel totals and per-video views/likes/comments", async ()
     if (url.host === "youtubeanalytics.googleapis.com") {
       // click rate refused (not every channel has it) – the rest must still arrive
       if (url.searchParams.get("metrics")!.includes("ClickRate")) return new Response(JSON.stringify({ error: { message: "Unknown metric" } }), { status: 400 });
+      if (url.searchParams.get("dimensions") === "creatorContentType") {
+        return url.searchParams.get("metrics") === "views"
+          ? body({ columnHeaders: [{ name: "creatorContentType" }, { name: "views" }], rows: [["SHORTS", 52000], ["LONG_FORM", 300]] })
+          : body({ columnHeaders: [{ name: "creatorContentType" }, { name: "views" }, { name: "estimatedMinutesWatched" }], rows: [["LONG_FORM", 900, 7212.4], ["SHORTS", 60000, 9000]] });
+      }
       if (url.searchParams.get("dimensions") === "video") return body({ columnHeaders: [{ name: "video" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }], rows: [["abc_DEF-123", 30, 245, 61.2]] });
       return body({ columnHeaders: [{ name: "views" }, { name: "estimatedMinutesWatched" }, { name: "averageViewDuration" }, { name: "averageViewPercentage" }, { name: "subscribersGained" }], rows: [[400, 90, 20, 55.5, 3]] });
     }
@@ -101,7 +106,7 @@ Deno.test("YouTube: channel totals and per-video views/likes/comments", async ()
   }) as typeof fetch;
   const res = await collectStats({ store, fetch: fn, now: () => NOW, google: { clientId: "C", clientSecret: "S" } });
   assertEquals(res, [{ account: "leesidelab", status: "ok", media: 1, followers: 12 }]);
-  assertEquals(days[0].metrics, { followers_count: 12, views_total: 8100, media_count: 3, views_28d: 400, watch_minutes_28d: 90, avg_view_duration_28d: 20, avg_view_pct_28d: 55.5, subscribers_gained_28d: 3 });
+  assertEquals(days[0].metrics, { followers_count: 12, views_total: 8100, media_count: 3, views_28d: 400, watch_minutes_28d: 90, avg_view_duration_28d: 20, avg_view_pct_28d: 55.5, subscribers_gained_28d: 3, watch_minutes_long_365d: 7212, shorts_views_90d: 52000 });
   assertEquals(media[0].kind, "SHORT");
   assertEquals(media[0].permalink, "https://youtube.com/shorts/abc_DEF-123");
   assertEquals(media[0].metrics, { views: 540, likes: 21, comments: 4, watch_minutes: 30, avg_view_duration: 245, avg_view_pct: 61.2 });
@@ -114,4 +119,10 @@ Deno.test("youtube analytics: report rows become our metric names", () => {
   assertEquals(analyticsMetrics(row), { watch_minutes: 120, avg_view_pct: 63.46, ctr: 4.8 });
   assertEquals(analyticsMetrics({ views: 10, subscribersGained: 2 }, "_28d"), { views_28d: 10, subscribers_gained_28d: 2 });
   assertEquals(reportRows({}), []);
+});
+
+Deno.test("yppMetrics: long-form hours of a year and Shorts views of 90 days, only what arrived", () => {
+  assertEquals(yppMetrics([{ creatorContentType: "LONG_FORM", estimatedMinutesWatched: 120.6 }], [{ creatorContentType: "SHORTS", views: 9 }]), { watch_minutes_long_365d: 121, shorts_views_90d: 9 });
+  assertEquals(yppMetrics([], []), {});
+  assertEquals(yppMetrics([], [{ creatorContentType: "LONG_FORM", views: 3 }]), { shorts_views_90d: 0 });
 });
