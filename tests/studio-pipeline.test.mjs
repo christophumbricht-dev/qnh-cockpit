@@ -35,23 +35,25 @@ test("transitions after a review and after a new version", () => {
   assert.equal(afterNewVersion("approved"), "review2");
 });
 
-test("pipelineBlock: 4 weeks per channel, the weakest item of a day, late marks", () => {
+test("pipelineBlock: only long videos, weakest item per day, weekly goal of 2", () => {
   const items = [
-    { id: "a", channel: "leesidelab/youtube", day: "2026-11-02", status: "approved" },
-    { id: "b", channel: "leesidelab/youtube", day: "2026-11-02", status: "draft" },
-    { id: "c", channel: "leesidelab/youtube", day: "2026-11-24", status: "idea" },
-    { id: "d", channel: "leesidelab/youtube", day: "2026-11-03", status: "dropped" },
-    { id: "e", channel: "leesidelab/instagram", day: "2026-11-04", status: "idea" },
+    { id: "a", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-02", status: "approved" },
+    { id: "b", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-02", status: "draft" },
+    { id: "s", channel: "leesidelab/youtube", format: "short", day: "2026-11-03", status: "review1" },
+    { id: "c", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-24", status: "idea" },
+    { id: "d", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-25", status: "dropped" },
   ];
   const [row] = pipelineBlock(items, "2026-11-02", "2026-10-28");
-  assert.equal(row.channel, "leesidelab/youtube");
-  assert.equal(row.weeks.length, 4);
-  const mon = row.weeks[0].days[0];
-  assert.deepEqual(mon.items.map((i) => i.id), ["a", "b"]);
-  assert.equal(mon.phase.color, "blue");
-  assert.equal(mon.late, true);   // draft (step 2) was due 14 days before 2.11.
-  const tue = row.weeks[0].days[1];
-  assert.deepEqual([tue.items.length, tue.phase.label, tue.late], [0, "noch keine Idee", true]);
-  assert.equal(row.weeks[3].days[1].phase.who, "christoph");
-  assert.equal(row.weeks[3].days[1].late, false);
+  assert.deepEqual([row.channel, row.perWeek, row.weeks.length], ["leesidelab/youtube", 2, 4]);
+  const w1 = row.weeks[0];
+  assert.deepEqual(w1.days[0].items.map((i) => i.id), ["a", "b"]);
+  assert.equal(w1.days[0].phase.color, "blue");
+  assert.equal(w1.days[0].late, true);            // draft was due 14 days before 2.11.
+  assert.equal(w1.days[1].items.length, 0);       // the Short is not part of the Ablauf
+  assert.equal(w1.days[1].late, false);           // a free day is never late
+  assert.deepEqual([w1.count, w1.missing, w1.late], [2, 0, false]);
+  const w2 = row.weeks[1];                        // 9.11.: no long video, idea deadline 19.10. passed
+  assert.deepEqual([w2.count, w2.missing, w2.late], [0, 2, true]);
+  const w4 = row.weeks[3];                        // 23.11.: one idea, deadline 2.11. not yet
+  assert.deepEqual([w4.count, w4.missing, w4.late], [1, 1, false]);
 });

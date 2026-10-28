@@ -5,11 +5,12 @@
 //   4 Feinschliff (yellow)  Claude polishes; Sichtung 2 and approval
 //   5 bereit (green)    approved, waits for publishing or is out
 // Red is only for «late»: a step not done by its deadline (days before the air date). Pure, tested in tests/studio-pipeline.test.mjs.
-import { WEEKPLAN, addDaysIso } from "../social/weekplan.js";
+import { addDaysIso } from "../social/weekplan.js";
 
-// channels that run through the Ablauf
-export const PIPELINE_CHANNELS = ["leesidelab/youtube"];
-export const inPipeline = (channel) => PIPELINE_CHANNELS.includes(channel);
+// what runs through the Ablauf: only the long YouTube videos (Christoph 28.10.2026: «die Shorts nicht»), 2 a week
+export const PIPELINE = [{ channel: "leesidelab/youtube", format: "video_long", perWeek: 2 }];
+export const PIPELINE_CHANNELS = PIPELINE.map((p) => p.channel);
+export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && p.format === format);
 
 export const STEPS = [
   null,
@@ -58,28 +59,26 @@ export function afterNewVersion(status) {
 export const LOOKING = ["draft", "review1", "review2"];
 export const christophsTurn = (status) => phaseOf(status).who === "christoph";
 
-// 4-week block of the Ablauf: per channel, per day the planned slot and the items of that day
-// → [{ channel, weeks: [{ monday, days: [{ date, slot, items, phase, late }] }] }]  (phase/late of the weakest item)
-export function pipelineBlock(items, monday, today, weeks = 4, channels = PIPELINE_CHANNELS) {
-  return channels.map((channel) => {
-    const [app_id, platform] = channel.split("/");
-    const plan = WEEKPLAN.find((c) => c.app_id === app_id && c.platform === platform);
-    const mine = items.filter((i) => i.channel === channel && i.status !== "dropped" && i.day);
+// 4-week block of the Ablauf: per channel, per day the long videos of that day (no fixed weekdays: a day without
+// one is just free), per week how many are planned against the goal; a week is short of videos («missing») when it
+// has fewer than perWeek items and its idea deadline (21 days before its Monday) has passed
+// → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late }] }] }]
+export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE) {
+  return pipeline.map(({ channel, format, perWeek }) => {
+    const mine = items.filter((i) => i.channel === channel && i.format === format && i.status !== "dropped" && i.day);
     return {
-      channel,
+      channel, perWeek,
       weeks: Array.from({ length: weeks }, (_, w) => {
         const m = addDaysIso(monday, 7 * w);
-        return {
-          monday: m,
-          days: Array.from({ length: 7 }, (_, d) => {
-            const date = addDaysIso(m, d);
-            const list = mine.filter((i) => i.day === date);
-            const weakest = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
-            const status = weakest?.status ?? null;
-            const slot = plan?.slots.find((s) => s.day === d) ?? null;
-            return { date, slot, items: list, phase: phaseOf(status), late: (slot || list.length) && date >= today ? isLate(status, date, today) : false };
-          }),
-        };
+        const days = Array.from({ length: 7 }, (_, d) => {
+          const date = addDaysIso(m, d);
+          const list = mine.filter((i) => i.day === date);
+          const weakest = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
+          return { date, items: list, phase: phaseOf(weakest?.status ?? null), late: weakest && date >= today ? isLate(weakest.status, date, today) : false };
+        });
+        const count = days.reduce((n, d) => n + d.items.length, 0);
+        const missing = Math.max(0, perWeek - count);
+        return { monday: m, count, missing, late: missing > 0 && addDaysIso(m, 6) >= today && today > deadline(m, 1), days };
       }),
     };
   });

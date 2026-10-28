@@ -10,7 +10,7 @@ Jede Rückmeldung wird ausserdem eine Regel in `C:\QNH\03_Social\Abnahme-Regeln.
 
 ## YouTube-Ablauf (seit 28.10.2026)
 
-YouTube-Videos (Kanal `leesidelab/youtube`, Liste `PIPELINE_CHANNELS` in `src/studio/pipeline.js`) laufen durch vier Schritte, geplant in 4-Wochen-Blöcken. Christoph sieht den Stand im Wochenplan (Social → Wochenplan) und im Studio als farbige Kästchen:
+Die **langen** YouTube-Videos (Kanal `leesidelab/youtube`, Format `video_long`, Ziel 2 pro Woche, Liste `PIPELINE` in `src/studio/pipeline.js`) laufen durch vier Schritte, geplant in 4-Wochen-Blöcken. Shorts nicht: die laufen wie Reels direkt in Sichtung 1. Christoph sieht den Stand im Wochenplan (Social → Wochenplan) und im Studio als farbige Kästchen:
 
 | Schritt | Farbe | Claude | Christoph | fertig bis |
 |---|---|---|---|---|
@@ -22,7 +22,7 @@ YouTube-Videos (Kanal `leesidelab/youtube`, Liste `PIPELINE_CHANNELS` in `src/st
 
 Rot umrandet = im Verzug. «du» im Kästchen = Christoph ist dran. Der Entwurf zählt nicht als Sichtung: die zwei Sichtungen gelten für das fertige Video.
 
-1. Ideen für den nächsten Block: `npm.cmd run studio -- idee leesidelab/youtube 2026-11-20 "Nebel im Mittelland" "Wie Hochnebel entsteht und was er für VFR heisst." [--format video_long]`. Alle Ideen eines Blocks auf einmal vorschlagen.
+1. Ideen für den nächsten Block: `npm.cmd run studio -- idee leesidelab/youtube 2026-11-20 "Nebel im Mittelland" "Wie Hochnebel entsteht und was er für VFR heisst." --format video_long`. Rechts im Block steht pro Woche, wie viele lange Videos geplant sind (rot = weniger als 2 und die Ideen-Frist ist vorbei). Alle Ideen eines Blocks auf einmal vorschlagen.
 2. `npm.cmd run studio -- ideen`: was wartet, was ok ist (Entwurf machen) und was verworfen wurde (neue Idee für denselben Tag vorschlagen, Christophs Notiz beachten).
 3. Entwurf: Ordner `studio/<slug>/` mit `entwurf.json`, dann `npm.cmd run studio -- entwurf "<ordner>"`. Baut `v<n>/video.mp4` (Windows-Stimme, Bild zoomt langsam, nie Standbild), `scenes.json`, `meta.json` und lädt hoch.
 

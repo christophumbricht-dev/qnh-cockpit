@@ -1187,3 +1187,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .st-idea { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .st-idea > div:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 280px; }
 .st-idea-act { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.pl-block .blk-grid { grid-template-columns: 54px repeat(7, minmax(0, 1fr)) 40px; }
+.pl-count { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.pl-count.pl-short { color: var(--pl-late); }
