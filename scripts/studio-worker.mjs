@@ -44,7 +44,7 @@ function runClaude(text) {
   return new Promise((resolve) => {
     // the prompt goes in through stdin: no quoting problems with long text on Windows
     const child = spawn("claude", ["-p", "--permission-mode", "acceptEdits",
-      "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "--max-turns", "400"],
+      "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "--max-turns", "400"],
     { cwd: QNH, shell: true, windowsHide: true, env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: "qnh-studio-worker" } });
     let out = "";
     const keep = (d) => { out = (out + d.toString()).slice(-60_000); };
