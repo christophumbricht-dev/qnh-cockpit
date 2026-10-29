@@ -182,6 +182,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
           <button class="btn ghost" data-action="st-idea-drop" data-id="${esc(i.id)}">Andere Idee …</button></div></div>`).join("")}</section>`;
   }
   const itemForPost = (postId) => items().find((i) => i.social_post_id === postId) ?? null;
+  // pictures instead of a video: carousels, single pictures and stories made of photos (source.pages)
+  const pagesOf = (it) => isPages(it.format) || !!current(it)?.source?.pages;
 
   // ---------- media ----------
   async function ensureMedia(it) {
@@ -195,7 +197,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const turls = await Promise.all(thumbs.map((t) => data.mediaUrl(t?.key ? { kind: "r2", key: t.key } : t?.path ? { kind: "storage", path: t.path } : null)));
     if (st().mediaFor !== key) return;   // another post was opened meanwhile
     turls.forEach((u, i) => { st().urls[`${key}#t${i}`] = u; });
-    if (isPages(it.format)) { if (turls.length) render(); return; }
+    if (pagesOf(it)) { if (turls.length) render(); return; }
     const url = st().local[key] ?? await data.mediaUrl(ver.source);
     if (st().mediaFor !== key) return;
     st().urls[key] = url;
@@ -208,7 +210,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   function full() {
     const it = item();
     if (!it) return;
-    if (isPages(it.format)) { document.querySelector(".st-frame.pages img")?.requestFullscreen?.().catch(() => {}); return; }
+    // the whole frame, so swiping and the dots work in full screen too (the iPhone has none for pictures: swipe in the frame)
+    if (pagesOf(it)) { document.querySelector(".st-frame.pages")?.requestFullscreen?.().catch(() => {}); return; }
     if (!video.currentSrc) return;
     video.controls = true;
     if (video.requestFullscreen) video.requestFullscreen().catch(() => { video.controls = false; });
@@ -314,7 +317,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       ${(st().value?.requests ?? []).filter((q) => q.item_id === it.id).map(requestHtml).join("")}
       ${it.pitch || it.status === "idea" ? ideaView(it) : ""}
       ${["idea", "idea_ok", "dropped"].includes(it.status) && !ver ? "" : `<div class="st-body${it.format === "video_long" ? " wide" : ""}">
-        <div class="st-stage">${ver ? (isPages(it.format) ? pagesView(it, ver, ms) : playerView(it, ver, ms)) : `<p class="note">Noch keine Fassung. Sie kommt mit dem Import oder mit <code>npm run studio -- upload</code>.</p>`}</div>
+        <div class="st-stage">${ver ? (pagesOf(it) ? pagesView(it, ver, ms) : playerView(it, ver, ms)) : `<p class="note">Noch keine Fassung. Sie kommt mit dem Import oder mit <code>npm run studio -- upload</code>.</p>`}</div>
         <aside class="st-side">${formView(it)}${markerList(it, ver, ms)}${actions(it, ms)}</aside>
       </div>`}
       ${ver ? packageView(it, ver) : ""}`;
@@ -386,11 +389,11 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const m = ver?.meta ?? {};
     return (m.titles ?? [])[m.chosen_title ?? 0] ?? "";
   }
-  function screenOverlay(it, ver) {
+  function screenOverlay(it, ver, page = 0, pageCount = 0) {
     if (!fullScreen(it)) return "";
     const handle = handleFor(it.channel);
     const text = it.channel.endsWith("/youtube") ? chosenTitle(ver) || it.title : ver?.meta?.caption ?? "";
-    if (it.format === "story") return `<div class="dev-ui dev-story" aria-hidden="true"><span class="dev-bar"></span><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span></div>`;
+    if (it.format === "story") return `<div class="dev-ui dev-story" aria-hidden="true"><span class="dev-bar">${pageCount > 1 ? Array.from({ length: pageCount }, (_, i) => `<i class="${i <= page ? "on" : ""}"></i>`).join("") : ""}</span><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span></div>`;
     return `<div class="dev-ui dev-reel" aria-hidden="true"><div class="dev-side"><span>♡</span><span>💬</span><span>➤</span><span>⋯</span></div>
       <div class="dev-cap"><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span><p>${esc(String(text).split("\n").find(Boolean) ?? "")}</p></div></div>`;
   }
@@ -458,13 +461,15 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const p = Math.min(s.page, Math.max(0, pages.length - 1));
     const spots = ms.filter((m) => m.target === "medium" && m.page === p && m.x != null).map((m) => `<span class="st-spot st-m-${m.status}" style="left:${m.x}%;top:${m.y}%" title="${esc(m.body)}"></span>`).join("");
     const spot = s.form?.x != null && s.form.page === p ? `<span class="st-spot form" style="left:${s.form.x}%;top:${s.form.y}%"></span>` : "";
-    return `${device(it, ver, `<div class="st-frame vertical pages">${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}">` : `<p class="note">Keine Bilder.</p>`}
+    const story = it.format === "story";
+    return `${device(it, ver, `<div class="st-frame vertical pages" data-swipe="pages">${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}" draggable="false">` : `<p class="note">Keine Bilder.</p>`}
+        ${story ? screenOverlay(it, ver, p, pages.length) : ""}
         <div class="st-overlay${s.form?.target === "medium" ? " placing" : ""}" data-action="st-spot">${spots}${spot}</div>
-        ${pages.length > 1 ? `<span class="ig-dots" aria-hidden="true">${pages.map((_, i) => `<i class="${i === p ? "on" : ""}"></i>`).join("")}</span>` : ""}</div>`)}
+        ${pages.length > 1 && !story ? `<span class="ig-dots" aria-hidden="true">${pages.map((_, i) => `<i class="${i === p ? "on" : ""}"></i>`).join("")}</span>` : ""}</div>`)}
       <div class="st-strip">${pages.map((u, i) => `<button class="st-thumb${i === p ? " on" : ""}" data-action="st-page" data-value="${i}"><img src="${esc(u)}" alt="Seite ${i + 1}"><span>${i + 1}${ms.some((m) => m.page === i) ? " ●" : ""}</span></button>`).join("")}</div>
       <div class="st-controls"><button class="btn ghost" data-action="st-key" data-value="prevPage">‹ Seite</button><span class="muted">${p + 1} / ${pages.length}</span>
         <button class="btn ghost" data-action="st-key" data-value="nextPage">Seite ›</button><button class="btn st-mark" data-action="st-key" data-value="mark">● Marker</button></div>
-      <p class="muted small st-keys">← → Seite · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
+      <p class="muted small st-keys">Im iPhone wischen oder ← → Seite · M Marker · Klick aufs Bild: Vollbild, beim Marker: Stelle</p>`;
   }
 
   function formView(it) {
@@ -593,7 +598,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (!ver) return;
     video.pause();
     const base = { item_id: it.id, version: ver.version, target, category: target === "medium" ? "picture" : "text", body: "", x: null, y: null };
-    if (target === "medium" && isPages(it.format)) st().form = { ...base, page: st().page, at: null };
+    if (target === "medium" && pagesOf(it)) st().form = { ...base, page: st().page, at: null };
     else if (target === "medium") {
       const t = Math.round((video.currentTime || 0) * 1000) / 1000;
       const a = anchor(ver.scenes, t);
@@ -607,7 +612,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   const inText = (el) => !!el?.closest?.("input, textarea, select, [contenteditable='true']");
   function onKeydown(e) {
     if (S.tab !== "studio" || S.sheet || S.search?.open || document.fullscreenElement || !item() || e.ctrlKey || e.metaKey || e.altKey) return false;
-    const a = keyAction({ key: e.key, inText: inText(e.target), format: item().format, paused: video.paused });
+    const a = keyAction({ key: e.key, inText: inText(e.target), format: pagesOf(item()) ? "carousel" : item().format, paused: video.paused });
     if (!a) return false;
     e.preventDefault();
     return act(a);
@@ -772,8 +777,25 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     }
   }
 
+  // swipe through the pages inside the phone like on Instagram (finger or mouse drag); the click that
+  // follows a swipe must not open full screen or place a marker spot
+  let swipe = null, swiped = 0;
+  document.addEventListener("pointerdown", (e) => {
+    swipe = e.isPrimary && e.target.closest?.('[data-swipe="pages"]') ? { x: e.clientX, y: e.clientY } : null;
+  });
+  document.addEventListener("pointerup", (e) => {
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    swiped = Date.now();
+    act(dx < 0 ? "nextPage" : "prevPage");
+  });
+  document.addEventListener("pointercancel", () => { swipe = null; });
+
   // click into the paused picture: the spot of the marker being written (x/y in percent)
   function onPointer(e) {
+    if (Date.now() - swiped < 400) return true;
     const ov = e.target.closest?.('[data-action="st-spot"]');
     const tl = e.target.closest?.('[data-action="st-scrub"]');
     if (tl && !e.target.closest(".st-mtick")) {

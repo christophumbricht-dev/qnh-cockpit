@@ -1,4 +1,4 @@
-// ?demo: invented studio items (a long video, a reel, a carousel) with markers, kept in memory.
+// ?demo: invented studio items (a long video, a reel, a carousel, a photo story) with markers, kept in memory.
 // The videos are not in the repo: the player offers «Video vom PC öffnen» like the real fallback.
 import { mondayOf, addDaysIso } from "../social/weekplan.js";
 
@@ -20,6 +20,7 @@ const items = [
   { id: "long", channel: "leesidelab/youtube", format: "video_long", title: "Föhn explained for pilots", slug: "foehn-long", day: addDaysIso(mon, 6), status: "review1", current_version: 1, social_post_id: null },
   { id: "reel", channel: "leesidelab/instagram", format: "reel", title: "Panel Puzzle 1: kalter Motor", slug: "2026-11-08-panel-1", day: addDaysIso(mon, 6), status: "review2", current_version: 2, social_post_id: null },
   { id: "car", channel: "downwind/instagram", format: "carousel", title: "3 Dinge, die dein Papier-Flugbuch nicht kann", slug: "2026-11-04-papier", day: addDaysIso(mon, 2), status: "review1", current_version: 1, social_post_id: null },
+  { id: "sto", channel: "leesidelab/instagram", format: "story", title: "Story: drei Fotos vom Säntis", slug: "2026-11-05-story", day: addDaysIso(mon, 3), status: "review1", current_version: 1, social_post_id: null },
   // YouTube-Ablauf: one item per step
   { id: "yt1", channel: "leesidelab/youtube", format: "video_long", title: "Wind im Griff 3: Böen beim Aufsetzen", slug: "yt-wind-3", day: addDaysIso(mon, 1), status: "approved", current_version: 2, social_post_id: null },
   { id: "yt2", channel: "leesidelab/youtube", format: "video_long", title: "Woher kommt das Wetter? Die Bise", slug: "yt-bise", day: addDaysIso(mon, 10), status: "work", current_version: 1, social_post_id: null },
@@ -38,6 +39,7 @@ const versions = [
   { id: "v5", item_id: "yt4", version: 1, source: { kind: "local", name: "yt-thermik/v1/video.mp4" }, scenes: [{ id: "a", label: "Morgens", start: 0, end: 12 }, { id: "b", label: "Felder und Fels", start: 12, end: 30 }], fps: 30, duration: 30,
     meta: { caption: "Entwurf mit Windows-Stimme", assumptions: ["Entwurf: Stimme Microsoft Zira, Bilder als Skizzen"] } },
   { id: "v4", item_id: "car", version: 1, source: { kind: "storage", pages: ["logos/downwind.svg", "logos/leesidelab.svg", "logos/wolkenhof.svg"] }, scenes: [], meta: { caption: "3 Dinge, die dein Papier-Flugbuch nicht kann 👇" } },
+  { id: "v6", item_id: "sto", version: 1, source: { kind: "storage", pages: ["logos/leesidelab.svg", "logos/downwind.svg", "logos/wolkenhof.svg"] }, scenes: [], meta: {} },
 ];
 const markers = [
   { id: id(), item_id: "long", version: 1, at: 160.4, scene_id: "case", offset_s: 11.4, x: 52, y: 38, target: "medium", category: "picture", body: "Wolkendecke wirkt zu flach, etwas mehr Tiefe?", status: "draft", created_at: "2026-10-28T10:00:00Z" },
