@@ -35,6 +35,8 @@ await db.exec(read("20261028200000_studio_jobs.sql"));
 await db.exec(read("20261028200000_studio_jobs.sql"));   // safe to run twice
 await db.exec(read("20261028210000_claude_inbox.sql"));
 await db.exec(read("20261028210000_claude_inbox.sql"));
+await db.exec(read("20261029100000_render_jobs.sql"));
+await db.exec(read("20261029100000_render_jobs.sql"));
 
 async function as(who, sql) {
   const role = who === "service" ? "service_role" : who ? "authenticated" : "anon";
@@ -88,4 +90,15 @@ test("«An Claude»: admins only, scope and status checked, updated_at moves", a
   await as(ADMIN, `update claude_inbox set status = 'done', reply = 'Erledigt' where id = '${id}'`);
   assert.equal((await as(OTHER, "select * from claude_inbox")).rows.length, 0);
   await assert.rejects(as(null, "select * from claude_inbox"));
+});
+
+test("render queue: admins only, job file name and status checked, upsert by name", async () => {
+  await as(ADMIN, "insert into render_jobs (name, title, status, position) values ('44_asi_reel_v3.ps1', 'Fahrtmesser-Reel', 'queued', 0)");
+  await as(ADMIN, "insert into render_jobs (name, status, started_at) values ('44_asi_reel_v3.ps1', 'running', now()) on conflict (name) do update set status = excluded.status, started_at = excluded.started_at");
+  assert.equal((await as(ADMIN, "select status from render_jobs where name = '44_asi_reel_v3.ps1'")).rows[0].status, "running");
+  await assert.rejects(as(ADMIN, "insert into render_jobs (name, status) values ('../evil.ps1', 'queued')"));
+  await assert.rejects(as(ADMIN, "insert into render_jobs (name, status) values ('x.ps1', 'maybe')"));
+  assert.equal((await as(OTHER, "select * from render_jobs")).rows.length, 0);
+  await assert.rejects(as(OTHER, "insert into render_jobs (name, status) values ('y.ps1', 'queued')"));
+  await assert.rejects(as(null, "select * from render_jobs"));
 });

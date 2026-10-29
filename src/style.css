@@ -1210,8 +1210,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* «An Claude» (#claude) */
 .ib-form { display: grid; gap: 8px; margin-bottom: 12px; }
-.ib-form textarea, .ib-form select { width: 100%; font: inherit; }
+.ib-form textarea, .ib-form select { width: 100%; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.ib-form textarea { resize: vertical; line-height: 1.45; }
 .ib-now { display: flex; gap: 8px; align-items: center; }
+.ib-now input { width: auto; flex: none; margin: 0; }
 .ib-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ib-item { border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
 .ib-item.ib-done { border-left-color: var(--ok); }
@@ -1221,6 +1223,28 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .ib-state { margin-left: auto; font-weight: 600; }
 .ib-body { margin: 6px 0; white-space: pre-wrap; }
 .ib-reply { white-space: pre-wrap; }
+/* «Warteschlange» on «An Claude» (src/queue/): Läuft gerade · Geplant · Erledigt (24 h) */
+.q-card { margin-bottom: 12px; }
+.q-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.q-head h2 { margin: 0; }
+.q-head .muted { margin-left: auto; }
+.q-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.q-col h3 { font: 600 13px/1.2 var(--body); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+.q-n { display: inline-block; min-width: 20px; text-align: center; border-radius: 99px; padding: 1px 6px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.q-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.q-item { display: grid; gap: 2px; border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+.q-item.q-run { border-left-color: var(--brand); background: var(--brand-soft); }
+.q-item.q-wait { border-left-color: var(--line); }
+.q-item.q-pause { border-left-color: var(--line); opacity: .7; }
+.q-item.q-ok { border-left-color: var(--ok); }
+.q-item.q-fail, .q-item.q-warn { border-left-color: var(--alert); }
+.q-item.q-warn { background: var(--alert-soft); }
+.q-where { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.q-title { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.q-sub { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.q-item.q-fail .q-sub { color: var(--alert); }
+.q-stale { background: var(--alert-soft); color: var(--alert); border-radius: 10px; padding: 8px 10px; margin: 0 0 10px; }
+@media (max-width: 860px) { .q-cols { grid-template-columns: minmax(0, 1fr); gap: 12px; } }
 
 /* Social → Statistik: charts, money, goal */
 .stats-charts { margin: 4px 0 14px; }

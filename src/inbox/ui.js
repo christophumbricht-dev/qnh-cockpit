@@ -3,6 +3,7 @@
 import { esc } from "../format.js";
 import * as data from "./data.js";
 import { startRun } from "../studio/data.js";
+import { createQueue } from "../queue/ui.js";
 
 const WHEN = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -10,8 +11,11 @@ export function createInbox({ S, render, toast, errorText }) {
   S.inbox = { value: undefined, loading: false, error: null, scope: "all", draftScope: "general", now: true };
   const st = () => S.inbox;
   let unsubscribe = null, timer, busy = false;
+  // «Warteschlange» on top of the page: GPU queue of the gaming PC, background runs, these instructions (src/queue/)
+  const queue = createQueue({ S, render, errorText });
 
   async function load(force = false) {
+    queue.load(force);
     if (st().loading || (st().value !== undefined && !force)) return;
     st().loading = true;
     try {
@@ -28,10 +32,10 @@ export function createInbox({ S, render, toast, errorText }) {
   // «Heute»: an answer of the last day, and an instruction Claude could not do
   function agenda() {
     const day = Date.now() - 864e5;
-    return rows().filter((r) => (r.status === "done" || r.status === "failed") && Date.parse(r.updated_at) > day).slice(0, 3).map((r) => ({
+    return [...queue.agenda(), ...rows().filter((r) => (r.status === "done" || r.status === "failed") && Date.parse(r.updated_at) > day).slice(0, 3).map((r) => ({
       key: `inbox:${r.id}`, lane: r.status === "failed" ? "now" : "today", tone: r.status === "failed" ? "alert" : "info",
       title: `Claude: ${String(r.reply ?? data.STATUS[r.status]).slice(0, 110)}`, sub: `zu «${String(r.body).slice(0, 60)}»`, where: data.projectName(r.scope), href: "#claude",
-    }));
+    }))];
   }
 
   function setScopeFromRoute(scope) {
@@ -54,7 +58,8 @@ export function createInbox({ S, render, toast, errorText }) {
         <p class="ib-body">${esc(r.body)}</p>
         ${r.reply ? `<p class="st-note ib-reply"><b>Claude:</b> ${esc(r.reply)}</p>` : ""}
       </li>`;
-    return `<form class="card ib-form" data-form="ib-new">
+    return `${queue.view(rows())}
+      <form class="card ib-form" data-form="ib-new">
         <label class="small" for="ib-scope">Für</label>
         <select id="ib-scope" name="ib-scope">${options}</select>
         <textarea name="ib-body" rows="4" maxlength="4000" required placeholder="Was soll Claude machen? Zum Beispiel: «Mach im Dezember eine Serie über Nebel» oder «Prüf die Rechnungen im Cockpit»."></textarea>
