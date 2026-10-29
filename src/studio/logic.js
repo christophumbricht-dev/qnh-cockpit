@@ -127,3 +127,13 @@ export function r2Flag(bytes) {
   return null;
 }
 export const fmtGB = (bytes) => `${(bytes / 1e9).toFixed(bytes < 1e10 ? 2 : 1)} GB`;
+
+// a long YouTube video with its Social draft: what the studio's «Freigeben» brings into the draft first – the title and
+// the title picture Christoph chose in the Sichtung (meta.thumbnails[i].social = that picture in the Social bucket)
+// (only for a draft the studio made: its thumbnails carry .social; the chosen one without it means «no own picture»)
+export function chosenPatch(meta = {}) {
+  const title = String((meta.titles ?? [])[meta.chosen_title ?? 0] ?? "").trim();
+  const thumbs = meta.thumbnails ?? [];
+  const studioDraft = thumbs.some((t) => t?.social);
+  return { ...(title ? { title } : {}), ...(studioDraft ? { cover_path: thumbs[meta.chosen_thumbnail ?? 0]?.social ?? null } : {}) };
+}

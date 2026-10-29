@@ -23,7 +23,7 @@ export const KINDS = { image: "Bild", carousel: "Karussell", reel: "Reel", story
 
 // YouTube (Data API v3): title ≤ 100 characters, description ≤ 5000 bytes; more than 60 hashtags → YouTube ignores
 // all of them (more than 15 look like spam); vertical videos up to 3 minutes become Shorts. No < > in title or description.
-export const YOUTUBE = { title: 100, descriptionBytes: 5000, hashtagsWarn: 15, hashtagsMax: 60, shortMax: 180 };
+export const YOUTUBE = { title: 100, descriptionBytes: 5000, hashtagsWarn: 15, hashtagsMax: 60, shortMax: 180, unverifiedMax: 15 * 60 };
 export const utf8Bytes = (text) => new TextEncoder().encode(String(text ?? "")).length;
 
 const TOL = 0.02;
@@ -101,14 +101,21 @@ export function validateItem(kind, item, index = 0) {
 // a YouTube upload becomes a normal video (not a Short) when it is landscape or longer than 3 minutes
 export const youtubeIsLong = (item) => !!item && ((!!item.width && item.width > item.height) || item.duration > YOUTUBE.shortMax);
 
-// YouTube video: MP4/MOV up to 50 MB (Supabase); vertical up to 3 minutes = Short, anything else a normal video
+// a long video of the Digital Studio: the file is in Cloudflare R2 (path = its key), not in the Social bucket; it is
+// looked at and approved in the studio (Sichtung 1 and 2), social-publish reads it from R2
+export const fromR2 = (item) => item?.source === "r2";
+export const isStudioVideo = (post) => (post?.media ?? []).some(fromR2);
+
+// YouTube video: MP4/MOV up to 50 MB (Supabase) or a studio video in R2; vertical up to 3 minutes = Short, anything else a normal video
 export function validateYoutubeItem(item) {
   const errors = [], warnings = [];
   if (!isVideo(item)) errors.push("Auf YouTube geht nur ein Video (MP4).");
   else if (!/^video\/(mp4|quicktime)$/.test(item.type)) errors.push("Videos als MP4 (H.264, AAC) exportieren.");
-  if (item.size > LIMITS.fileBytes) errors.push(`Datei ist ${mb(item.size)} gross, höchstens 50 MB (Supabase Gratis-Plan).`);
+  if (!fromR2(item) && item.size > LIMITS.fileBytes) errors.push(`Datei ist ${mb(item.size)} gross, höchstens 50 MB (Supabase Gratis-Plan).`);
   if (item.duration != null && item.duration < 1) errors.push("Das Video ist leer.");
-  if (youtubeIsLong(item)) warnings.push(item.duration > YOUTUBE.shortMax ? `Video ist ${Math.round(item.duration)} s lang – länger als 3 Minuten wird es ein normales Video, kein Short.` : "Querformat – wird ein normales YouTube-Video, kein Short.");
+  if (fromR2(item)) {
+    if (item.duration > YOUTUBE.unverifiedMax) warnings.push(`Video ist ${Math.round(item.duration / 60)} Minuten lang – über 15 Minuten nimmt YouTube es nur von einem bestätigten Kanal (Telefonnummer).`);
+  } else if (youtubeIsLong(item)) warnings.push(item.duration > YOUTUBE.shortMax ? `Video ist ${Math.round(item.duration)} s lang – länger als 3 Minuten wird es ein normales Video, kein Short.` : "Querformat – wird ein normales YouTube-Video, kein Short.");
   return { errors, warnings };
 }
 

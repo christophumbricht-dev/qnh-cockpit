@@ -1,7 +1,8 @@
 // QNH Core – Edge Function social-publish
 //
 // POST { op: "publish", post_id? }   publish due approved posts (post_id: only this one, cockpit button);
-//                                    Instagram and YouTube (videos upload in pieces, a long upload continues next run)
+//                                    Instagram and YouTube (videos upload in pieces, a long upload continues next run;
+//                                    long YouTube videos go up privately up to a day ahead and go public on time)
 // POST { op: "refresh-tokens" }      refresh Instagram tokens that expire within 20 days (weekly cron)
 // POST { op: "cleanup" }             delete files of posts published > 14 days ago (daily cron)
 // POST { op: "stats" }               Instagram statistics per account and media item (daily cron, or the CLI)
@@ -21,13 +22,15 @@
 //
 // Secrets (supabase secrets set …): SOCIAL_CRON_SECRET; optional FACEBOOK_ENABLED=true;
 // for YouTube GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET (and optionally GOOGLE_REDIRECT_URIS, comma-separated);
+// for long studio videos in Cloudflare R2 the same R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+// (optional R2_JURISDICTION) as studio-media (Supabase secrets are shared by all functions of the project);
 // for «Bei anderen» ANTHROPIC_API_KEY, optionally META_APP_ID + META_APP_SECRET (renews the Facebook token).
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { cleanup, FinalError, publishDue, refreshTokens, type Deps } from "./publish.ts";
 import { supabaseStore } from "./store.ts";
-import { followUpYoutube } from "./youtube.ts";
+import { followUpYoutube, preuploadYoutube } from "./youtube.ts";
 import { collectStats } from "./stats.ts";
 import { runOutreach, translateGerman } from "./outreach.ts";
 import { elevenlabsCredits } from "./elevenlabs.ts";
@@ -75,6 +78,11 @@ Deno.serve(async (req) => {
   const store = supabaseStore(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } }));
   const clientId = Deno.env.get("GOOGLE_CLIENT_ID") ?? "", clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
   const google = clientId && clientSecret ? { clientId, clientSecret } : null;
+  const env = (k: string) => Deno.env.get(k)?.trim() || "";
+  const jurisdiction = env("R2_JURISDICTION").toLowerCase();
+  const r2 = env("R2_ACCOUNT_ID") && env("R2_ACCESS_KEY_ID") && env("R2_SECRET_ACCESS_KEY") && env("R2_BUCKET") && /^([a-z]{2,10})?$/.test(jurisdiction)
+    ? { accountId: env("R2_ACCOUNT_ID"), jurisdiction, bucket: env("R2_BUCKET"), accessKeyId: env("R2_ACCESS_KEY_ID"), secretAccessKey: env("R2_SECRET_ACCESS_KEY") }
+    : null;
   const deps: Deps = {
     store,
     fetch,
@@ -82,6 +90,7 @@ Deno.serve(async (req) => {
     now: () => new Date(),
     facebookEnabled: Deno.env.get("FACEBOOK_ENABLED") === "true",
     google,
+    r2,
     // pg_net waits 150 s; stop uploading well before (the free plan also ends a run after 150 s)
     deadline: Date.now() + 100_000,
   };
@@ -95,6 +104,14 @@ Deno.serve(async (req) => {
       const postId = !fromCron && typeof body.post_id === "string" ? body.post_id : undefined;
       const results = await publishDue(deps, postId);
       if (!postId) results.push(...(await followUpYoutube({ store, fetch, now: deps.now, google, deadline: deps.deadline })));
+      if (!postId) {
+        // long YouTube videos of the next day go up privately ahead of time; a problem here must not hide the results above
+        try {
+          results.push(...(await preuploadYoutube(deps)));
+        } catch (err) {
+          console.error("social-publish preupload", err);
+        }
+      }
       if (!postId) {
         // the answers Christoph approved with the post (never replies to other people); a problem here must not hide the results above
         try {

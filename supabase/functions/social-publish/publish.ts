@@ -12,7 +12,13 @@ import { publishYoutube } from "./youtube.ts";
 export const MAX_ATTEMPTS = 3;
 
 export type UserTag = { username: string; x: number; y: number };
-export type MediaItem = { path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null; duration?: number | null; still?: string };
+export type MediaItem = {
+  path: string; type: string; alt?: string; user_tags?: UserTag[]; width?: number | null; height?: number | null; duration?: number | null; still?: string;
+  // a long video of the Digital Studio: path is its key in Cloudflare R2 (studio/<slug>/v<n>/video.mp4), not in the Social bucket
+  source?: "r2"; bytes?: number;
+  captions?: string; // YouTube: key of an .srt in R2 next to the video, uploaded as captions
+  lang?: string; // YouTube: language of the video and the captions, e.g. "en"
+};
 
 // Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
 export function userTags(m: MediaItem): string | undefined {
@@ -80,7 +86,9 @@ export type Deps = {
   google?: GoogleConfig | null; // YouTube (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)
   deadline?: number; // ms timestamp: a YouTube upload stops here and the next run continues
   chunkSize?: number; // YouTube upload piece (tests use small ones)
+  r2?: R2Config | null; // Cloudflare R2 (long studio videos), the same secrets as studio-media
 };
+export type R2Config = { accountId: string; jurisdiction?: string; bucket: string; accessKeyId: string; secretAccessKey: string };
 
 export type Result = { id: string; status: string; error?: string };
 
@@ -339,7 +347,8 @@ export async function cleanup(deps: Deps, keepDays = 14): Promise<Result[]> {
   const before = new Date(deps.now().getTime() - keepDays * 86400_000);
   const out: Result[] = [];
   for (const post of await deps.store.publishedWithFiles(before)) {
-    const paths = [...post.media.flatMap((m) => [m.path, ...(m.still ? [m.still] : [])]), ...(post.cover_path ? [post.cover_path] : [])];
+    // a studio video in R2 is not in the bucket (the studio keeps it, Christoph tidies R2 there)
+    const paths = [...post.media.flatMap((m) => [...(m.source === "r2" ? [] : [m.path]), ...(m.still ? [m.still] : [])]), ...(post.cover_path ? [post.cover_path] : [])];
     await deps.store.removeFiles(paths);
     await deps.store.update(post.id, { media_deleted_at: deps.now().toISOString() });
     out.push({ id: post.id, status: "files-deleted" });

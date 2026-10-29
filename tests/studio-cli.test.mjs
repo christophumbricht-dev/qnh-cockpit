@@ -159,3 +159,52 @@ test("requestRow: voicing needs sentences and credits", () => {
   assert.throws(() => requestRow({ title: "", sentences: 1, credits: 1 }), /titel/);
   assert.equal(requestRow({ title: "Frage", kind: "other" }).sentences, null);
 });
+
+// ---------- long YouTube video: the Social draft made by `upload` (video stays in R2) ----------
+import { chosenPatch, youtubeDraftRow } from "../scripts/studio-lib.mjs";
+
+const LONG_META = {
+  titles: ["Your Body Lies in a Cloud. This Instrument Doesn't.", "Left or Right? The Instrument Mistake Pilots Still Fear"],
+  thumbnails: [{ key: "studio/ah/v1/thumb_A.jpg", social: "P1/thumb-v1-0.jpg" }, { key: "studio/ah/v1/thumb_B.jpg", social: "P1/thumb-v1-1.jpg" }],
+  description: "Fly into a cloud and your inner ear starts to lie.", first_comment: "At 10:33 …", lang: "en", publish_at: "2026-11-01T17:00",
+};
+const LONG_VERSION = { meta: LONG_META, source: { kind: "r2", key: "studio/ah/v1/video.mp4", bytes: 828e6 }, duration: 889.2 };
+
+test("youtubeDraftRow: the draft of a long video points to R2, with title picture, captions, language and the planned time", () => {
+  const row = youtubeDraftRow({ accountId: "acc", version: LONG_VERSION, video: { width: 1920, height: 1080 }, captionsKey: "studio/ah/v1/captions_en.srt" });
+  assert.equal(row.title, LONG_META.titles[0]);
+  assert.equal(row.cover_path, "P1/thumb-v1-0.jpg");
+  assert.equal(row.scheduled_at, "2026-11-01T16:00:00.000Z"); // 17:00 Swiss winter time
+  assert.deepEqual(row.media, [{ path: "studio/ah/v1/video.mp4", type: "video/mp4", source: "r2", bytes: 828e6, alt: "", width: 1920, height: 1080, duration: 889.2, captions: "studio/ah/v1/captions_en.srt", lang: "en" }]);
+  assert.equal(row.first_comment, "At 10:33 …");
+  assert.equal(row.made_for_kids, false);
+  // Christoph chose title B and picture B in the studio
+  const b = youtubeDraftRow({ accountId: "acc", version: { ...LONG_VERSION, meta: { ...LONG_META, chosen_title: 1, chosen_thumbnail: 1 } } });
+  assert.deepEqual([b.title, b.cover_path], [LONG_META.titles[1], "P1/thumb-v1-1.jpg"]);
+});
+
+test("youtubeDraftRow refuses a draft YouTube would refuse or that has no time", () => {
+  assert.throws(() => youtubeDraftRow({ accountId: "a", version: { ...LONG_VERSION, meta: { ...LONG_META, titles: [] } } }), /Titel/);
+  assert.throws(() => youtubeDraftRow({ accountId: "a", version: { ...LONG_VERSION, meta: { ...LONG_META, description: "ä".repeat(3000) } } }), /Beschreibung/);
+  assert.throws(() => youtubeDraftRow({ accountId: "a", version: { ...LONG_VERSION, meta: { ...LONG_META, publish_at: undefined } } }), /publish_at/);
+  const kids = youtubeDraftRow({ accountId: "a", version: { ...LONG_VERSION, meta: { ...LONG_META, made_for_kids: true } } });
+  assert.equal(kids.first_comment, ""); // no comments on videos for kids
+});
+
+test("checkMeta keeps the YouTube fields and checks them", () => {
+  const m = checkMeta({ titles: ["A"], captions: "captions_en.srt", lang: "en", publish_at: "2026-11-01T17:00", made_for_kids: false, topic: "Artificial Horizon" });
+  assert.deepEqual([m.captions, m.lang, m.publish_at, m.made_for_kids, m.topic], ["captions_en.srt", "en", "2026-11-01T17:00", false, "Artificial Horizon"]);
+  assert.throws(() => checkMeta({ captions: "../x.srt" }), /captions/);
+  assert.throws(() => checkMeta({ lang: "english" }), /lang/);
+  assert.throws(() => checkMeta({ publish_at: "Sonntag" }), /publish_at/);
+  assert.throws(() => checkMeta({ made_for_kids: "no" }), /made_for_kids/);
+});
+
+test("chosenPatch: the studio's choice of title and title picture for the draft", () => {
+  assert.deepEqual(chosenPatch({ ...LONG_META, chosen_title: 1, chosen_thumbnail: 1 }), { title: LONG_META.titles[1], cover_path: "P1/thumb-v1-1.jpg" });
+  assert.deepEqual(chosenPatch({ titles: ["Only"], thumbnails: [{ key: "k" }] }), { title: "Only" }); // a picture that is only in R2 stays out
+  assert.deepEqual(chosenPatch({}), {});
+  // the chosen picture is not in the Social bucket (e.g. it failed): no other picture stands in for it
+  assert.deepEqual(chosenPatch({ ...LONG_META, thumbnails: [LONG_META.thumbnails[0], { key: "studio/ah/v1/c.png" }], chosen_thumbnail: 1 }), { title: LONG_META.titles[0], cover_path: null });
+  assert.equal(youtubeDraftRow({ accountId: "a", version: { ...LONG_VERSION, meta: { ...LONG_META, thumbnails: [LONG_META.thumbnails[0], { key: "x" }], chosen_thumbnail: 1 } } }).cover_path, null);
+});

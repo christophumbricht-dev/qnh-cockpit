@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { formatOf } from "../src/studio/logic.js";
 import { afterNewVersion, phaseOf } from "../src/studio/pipeline.js";
+import { validatePost, zurichToUtc } from "../src/social/validate.js";
 
 export class CliError extends Error {}
 
@@ -48,8 +49,62 @@ export function checkMeta(m = {}) {
     titles, thumbnails: list(m.thumbnails).map(String), description: String(m.description ?? ""), chapters: String(m.chapters ?? ""),
     shorts: list(m.shorts).map((s) => (typeof s === "string" ? { title: s } : s)), assumptions: list(m.assumptions).map(String),
     ...(m.first_comment ? { first_comment: String(m.first_comment) } : {}), fps,
+    ...youtubeMeta(m),
   };
 }
+
+// optional in meta.json of a long YouTube video: the captions file (.srt in the folder), the language, the planned
+// time (Swiss wall clock) and «for kids» – then `upload` also makes the Social draft (youtubeDraftRow)
+const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/;
+function youtubeMeta(m) {
+  const out = {};
+  if (m.captions != null && m.captions !== "") {
+    if (!/^[A-Za-z0-9._-]{1,120}\.srt$/.test(String(m.captions))) throw new CliError("«captions» ist der Name einer .srt-Datei im Ordner (nur Buchstaben, Ziffern, . _ -).");
+    out.captions = String(m.captions);
+  }
+  if (m.lang != null && m.lang !== "") {
+    if (!LANG.test(String(m.lang))) throw new CliError("«lang» ist ein Sprachcode wie «en» oder «de».");
+    out.lang = String(m.lang);
+  }
+  if (m.publish_at != null && m.publish_at !== "") {
+    if (!zurichToUtc(String(m.publish_at))) throw new CliError("«publish_at» ist Schweizer Zeit wie «2026-11-01T17:00».");
+    out.publish_at = String(m.publish_at).slice(0, 16);
+  }
+  if (m.made_for_kids != null) {
+    if (typeof m.made_for_kids !== "boolean") throw new CliError("«made_for_kids» ist true oder false.");
+    out.made_for_kids = m.made_for_kids;
+  }
+  if (m.topic) out.topic = String(m.topic).trim().slice(0, 80);
+  return out;
+}
+
+// The Social draft of a long YouTube video from the studio: the video stays in R2 (too big for the Social bucket),
+// social-publish reads it from there, uploads it privately a day ahead with the chosen title picture (cover_path)
+// and the captions, and switches it to public at the planned time. Title and picture are the ones Christoph chose.
+//   version: { meta, source: { key, bytes }, duration }   meta.thumbnails[i].social = the picture in the Social bucket
+//   video: { width, height }   captionsKey: R2 key of the .srt or null
+export function youtubeDraftRow({ accountId, version, video = {}, captionsKey = null }) {
+  const m = version.meta ?? {};
+  const title = String((m.titles ?? [])[m.chosen_title ?? 0] ?? "").trim();
+  const thumbs = m.thumbnails ?? [];
+  const cover = thumbs[m.chosen_thumbnail ?? 0]?.social ?? null; // never another picture than the chosen one
+  const media = [{
+    path: version.source.key, type: "video/mp4", source: "r2", bytes: version.source.bytes ?? null, alt: "",
+    width: video.width ?? null, height: video.height ?? null, duration: version.duration ?? null,
+    ...(captionsKey ? { captions: captionsKey } : {}), ...(m.lang ? { lang: m.lang } : {}),
+  }];
+  const row = {
+    account_id: accountId, kind: "reel", title, caption: String(m.description ?? ""), first_comment: m.made_for_kids ? "" : String(m.first_comment ?? ""),
+    media, cover_path: cover, scheduled_at: m.publish_at ? zurichToUtc(m.publish_at) : null, made_for_kids: m.made_for_kids === true,
+    ...(m.topic ? { topic: m.topic } : {}),
+  };
+  const { errors } = validatePost({ kind: "reel", items: media, caption: row.caption, first_comment: row.first_comment, platform: "youtube", title, made_for_kids: row.made_for_kids });
+  if (errors.length) throw new CliError(`YouTube-Entwurf: ${errors.join(" ")}`);
+  if (!row.scheduled_at) throw new CliError("YouTube-Entwurf: «publish_at» (geplante Zeit) fehlt in meta.json.");
+  return row;
+}
+
+export { chosenPatch } from "../src/studio/logic.js";
 
 // who is next: Christoph (Sichtung 1/2) or Claude (status work = open / «noch nicht» markers)
 export function summary(items, markers) {

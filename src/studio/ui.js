@@ -5,7 +5,7 @@
 // playback is not interrupted; time and playhead are updated directly, not by re-rendering.
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { CATEGORIES, MARKER_STATUS, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
+import { CATEGORIES, MARKER_STATUS, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, chosenPatch, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
 import { DEADLINE_DAYS, LOOKING, PIPELINE, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
@@ -756,7 +756,9 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const done = { status: "approved", approved_at: new Date().toISOString() };
     try {
       if (it.social_post_id) {
-        if (!(await approvePost(it.social_post_id))) return;
+        // a long video: the title and title picture Christoph chose here go into the draft first
+        // and the draft must hold exactly this cut (the video in R2 of the version Christoph looked at)
+        if (!(await approvePost(it.social_post_id, it.format === "video_long" ? chosenPatch(ver?.meta) : null, ver?.source?.kind === "r2" ? ver.source.key : null))) return;
         // the post is approved now; the studio step must follow, one retry if the network hiccups
         await wrote(() => data.setItem(it.id, done).catch(() => data.setItem(it.id, done)));
       } else {

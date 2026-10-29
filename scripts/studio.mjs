@@ -6,6 +6,8 @@
 //   npm run studio -- resolve <marker-id> "was geändert" [--regel all|channel|post "Regeltext"]
 //   npm run studio -- reject <marker-id> "warum nicht"
 //   npm run studio -- upload <ordner> [--kanal leesidelab/youtube] [--tag YYYY-MM-DD] [--slug …]
+//                                                               long YouTube video with "publish_at" in meta.json: also its
+//                                                               Social draft (video stays in R2, title picture, captions)
 //
 // YouTube-Ablauf (src/studio/pipeline.js: Idee → Entwurf → Video → Feinschliff → bereit):
 //   npm run studio -- idee <kanal> <YYYY-MM-DD> "Titel" "Worum es geht" [--format …] [--ok]   step 1 (--ok: Christoph already confirmed)
@@ -33,10 +35,11 @@ import { execFileSync } from "node:child_process";
 import { ROOT, args, fail, signedIn } from "./qnh-session.mjs";
 import { buildDraft } from "./studio-draft.mjs";
 import { PIPELINE_CHANNELS, inPipeline } from "../src/studio/pipeline.js";
-import { isPlaceholder } from "../src/social/validate.js";
+import { formatZurich, isPlaceholder } from "../src/social/validate.js";
+import { replacedPlaceholders } from "./social-lib.mjs";
 import { addDaysIso, mondayOf } from "../src/social/weekplan.js";
 import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, requestRow, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
-  statusAfterNewVersion, summary, versionFromPost, workMarkers } from "./studio-lib.mjs";
+  statusAfterNewVersion, summary, versionFromPost, workMarkers, youtubeDraftRow } from "./studio-lib.mjs";
 
 const PAKETE = join(ROOT, "pakete");
 const STATUS = { idea: "Idee wartet auf Christoph", idea_ok: "Idee ok: Claude macht den Entwurf", draft: "Entwurf wartet auf Christoph", draft_done: "Entwurf ok: Claude macht das Video",
@@ -117,6 +120,13 @@ async function r2Put(sb, key, path, type) {
   return key;
 }
 
+const probeVideo = (path) => {
+  try {
+    const [w, h] = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", path]).toString().trim().split(",").map(Number);
+    return { width: w || null, height: h || null };
+  } catch { return {}; }
+};
+
 async function upload(sb, a) {
   const dir = a._[0] && resolve(a._[0]);
   if (!dir || !existsSync(join(dir, "video.mp4"))) throw new CliError("Ordner mit video.mp4, scenes.json und meta.json angeben (docs/studio-paket.md).");
@@ -126,12 +136,29 @@ async function upload(sb, a) {
   const read = (n, empty) => (existsSync(join(dir, n)) ? JSON.parse(readFileSync(join(dir, n), "utf8")) : empty);
   const scenes = checkScenes(read("scenes.json", []), duration);
   const meta = checkMeta(read("meta.json", {}));
+  if (meta.captions && !existsSync(join(dir, meta.captions))) throw new CliError(`Untertitel fehlen: ${meta.captions}`);
   const hash = await hashFile(video);
 
   const { items, versions } = await loadAll(sb);
   let item = items.find((i) => i.slug === slug);
+  // the confirmed idea of the same channel, day and format (Ablauf) becomes this video instead of a second item
+  if (!item && a.kanal && a.tag) {
+    const idea = pickIdea(items.filter((i) => i.channel === a.kanal && i.day === a.tag && i.format === "video_long" && !i.social_post_id && !["dropped", "approved"].includes(i.status)));
+    if (idea) item = must(await sb.from("studio_items").update({ slug }).eq("id", idea.id).select().single());
+  }
   const mine = item ? versions.filter((v) => v.item_id === item.id).sort((x, y) => x.version - y.version) : [];
-  if (mine.at(-1)?.hash === hash) return console.log(`= ${slug}: Fassung ${mine.at(-1).version} hat schon genau dieses Video. Nichts hochgeladen.`);
+  const last = mine.at(-1);
+  if (last?.hash === hash) {
+    console.log(`= ${slug}: Fassung ${last.version} hat schon genau dieses Video. Nichts hochgeladen.`);
+    // its YouTube draft is still missing or holds another cut (e.g. it was approved meanwhile and then withdrawn)
+    if (last.source?.kind === "r2" && item.channel.endsWith("/youtube") && item.format === "video_long") {
+      const postId = item.social_post_id ?? crypto.randomUUID();
+      const thumbs = await socialThumbs(sb, dir, last.meta?.thumbnails ?? [], meta.thumbnails, postId, last.version);
+      const version = thumbs === last.meta?.thumbnails ? last : must(await sb.from("studio_versions").update({ meta: { ...last.meta, thumbnails: thumbs } }).eq("id", last.id).select().single());
+      await youtubeDraft(sb, item, postId, version, probeVideo(video), last.meta?.captions_key ?? null);
+    }
+    return;
+  }
   const n = (mine.at(-1)?.version ?? 0) + 1;
   if (!item) {
     if (!a.kanal) throw new CliError("Neuer Beitrag: --kanal angeben (z. B. leesidelab/youtube).");
@@ -142,17 +169,76 @@ async function upload(sb, a) {
   const put = await r2Put(sb, key, video, "video/mp4");
   // bytes: the cockpit adds them up against R2's free 10 GB (r2Usage in src/studio/logic.js)
   const source = put ? { kind: "r2", key, bytes: statSync(video).size } : { kind: "local", name: `${slug}/v${n}/video.mp4` };
-  // thumbnails: small pictures, also to R2 (the cockpit signs them like the video)
-  const thumbs = [];
+  // a long YouTube video with a planned time gets its Social draft right away (social-publish reads the video from R2)
+  const youtube = put && item.channel.endsWith("/youtube") && item.format === "video_long";
+  const postId = youtube ? item.social_post_id ?? crypto.randomUUID() : null;
+  // thumbnails: small pictures, also to R2 (the cockpit signs them like the video); for YouTube also into the Social
+  // bucket, from where the chosen one becomes the title picture (cover_path)
+  let thumbs = [];
   for (const t of meta.thumbnails) {
     const p = join(dir, t);
     if (!existsSync(p)) throw new CliError(`Titelbild fehlt: ${t}`);
     const k = `studio/${slug}/v${n}/${basename(t).replace(/[^A-Za-z0-9._-]/g, "-")}`;
     thumbs.push(put && (await r2Put(sb, k, p, /\.png$/i.test(t) ? "image/png" : "image/jpeg")) ? { key: k, bytes: statSync(p).size } : { name: t });
   }
-  must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, source, scenes, fps: meta.fps, duration, meta: { ...meta, thumbnails: thumbs }, hash }));
+  if (youtube) thumbs = await socialThumbs(sb, dir, thumbs, meta.thumbnails, postId, n);
+  // captions (.srt) next to the video in R2: social-publish uploads them to YouTube
+  let captionsKey = null;
+  if (put && meta.captions) {
+    captionsKey = `studio/${slug}/v${n}/${meta.captions}`;
+    if (!(await r2Put(sb, captionsKey, join(dir, meta.captions), "application/x-subrip"))) captionsKey = null;
+  }
+  const versionMeta = { ...meta, thumbnails: thumbs, ...(captionsKey ? { captions_key: captionsKey } : {}) };
+  const saved = must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, source, scenes, fps: meta.fps, duration, meta: versionMeta, hash }).select().single());
   must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), ...(a.tag ? { day: a.tag } : {}) }).eq("id", item.id));
   console.log(`✓ ${slug}: Fassung ${n}${put ? " (Video in R2)" : " · R2 nicht eingerichtet: Christoph öffnet das Video im Studio vom PC («Video vom PC öffnen»)"}.`);
+  if (youtube) await youtubeDraft(sb, item, postId, saved, probeVideo(video), captionsKey);
+}
+
+// every title picture also into the Social bucket (as JPEG – the bucket takes no PNG), from where the chosen one becomes
+// the draft's cover_path and social-publish sets it on YouTube. Returns the same list when nothing was missing.
+async function socialThumbs(sb, dir, thumbs, names, postId, n) {
+  if (thumbs.every((t) => t?.social)) return thumbs;
+  const out = [];
+  for (const [i, t] of thumbs.entries()) {
+    if (t?.social) { out.push(t); continue; }
+    const p = join(dir, names[i] ?? "");
+    if (!names[i] || !existsSync(p)) { out.push(t); continue; }
+    const jpg = /\.jpe?g$/i.test(p) ? readFileSync(p) : execFileSync("ffmpeg", ["-v", "error", "-i", p, "-frames:v", "1", "-q:v", "2", "-f", "image2", "-c:v", "mjpeg", "pipe:1"], { maxBuffer: 64 * 1024 * 1024 });
+    const path = `${postId}/thumb-v${n}-${i}.jpg`;
+    const { error } = await sb.storage.from("social-media").upload(path, jpg, { contentType: "image/jpeg", upsert: true });
+    if (error) throw new CliError(`Titelbild ${names[i]} in den Social-Speicher: ${error.message}`);
+    out.push({ ...t, social: path });
+  }
+  return out;
+}
+
+// the Social draft of a long YouTube video (studio-lib youtubeDraftRow): new, or brought up to this version while it
+// is still a draft. Christoph approves it in the studio (Sichtung 2 → «Freigeben»), never here.
+async function youtubeDraft(sb, item, postId, version, video, captionsKey) {
+  if (!version.meta?.publish_at) return console.log("  Kein Social-Entwurf: «publish_at» fehlt in meta.json.");
+  const [app] = item.channel.split("/");
+  const account = must(await sb.from("social_accounts").select("id, app_id, platform").eq("app_id", app).eq("platform", "youtube").maybeSingle());
+  if (!account) return console.log(`  Kein Social-Entwurf: das YouTube-Konto ${item.channel} ist im Cockpit nicht verbunden.`);
+  const row = youtubeDraftRow({ accountId: account.id, version, video, captionsKey });
+  const old = item.social_post_id ? must(await sb.from("social_posts").select("id, status, media").eq("id", item.social_post_id).maybeSingle()) : null;
+  if (old && !["draft", "failed"].includes(old.status)) {
+    if (old.media?.[0]?.path === row.media[0].path) return console.log(`  Social-Beitrag ist «${old.status}» und hat schon diese Fassung.`);
+    return console.log(`  Social-Beitrag ist schon «${old.status}» mit einer anderen Fassung: neue Fassung NICHT übernommen. Im Cockpit zurückziehen, dann nochmals «npm run studio -- upload» (die Freigabe im Studio prüft, dass es dieselbe Fassung ist).`);
+  }
+  if (old) must(await sb.from("social_posts").update(row).eq("id", old.id));
+  else {
+    must(await sb.from("social_posts").insert({ id: postId, ...row, source: "package" }));
+    must(await sb.from("studio_items").update({ social_post_id: postId }).eq("id", item.id));
+  }
+  // the real post is here: its placeholder for that day goes away (like the Social import)
+  const { data: holders } = await sb.from("social_posts").select("id, status, caption, media, account_id, scheduled_at").eq("account_id", account.id).eq("status", "draft").like("caption", "PLATZHALTER%");
+  for (const ph of replacedPlaceholders(holders ?? [], { id: postId, account_id: account.id, scheduled_at: row.scheduled_at })) {
+    const { error } = await sb.from("social_posts").update({ status: "cancelled" }).eq("id", ph.id);
+    if (!error) console.log("  Platzhalter für diesen Tag ersetzt.");
+  }
+  console.log(`  ✓ Social-Entwurf ${old ? "aktualisiert" : "angelegt"}: «${row.title}», ${formatZurich(row.scheduled_at)}${row.cover_path ? ", mit Titelbild" : ""}${captionsKey ? ", mit Untertiteln" : ""}.`);
+  console.log("    Freigabe: im Studio (Sichtung 2 → «Freigeben»). social-publish lädt ihn bis 24 h vorher privat hoch und stellt ihn zur Zeit öffentlich.");
 }
 
 // --- called by the Social import for every draft it created or replaced ---

@@ -51,7 +51,8 @@ Ein Ordner `studio/<slug>/v<n>/` beim Projekt (nie ins Git), zum Beispiel `03_So
 |---|---|
 | `video.mp4` | das fertige Video |
 | `scenes.json` | `[{ "id": "intro", "label": "Intro", "start": 0, "end": 28.0 }, …]` in Sekunden, aus der Timeline des Renders. `id` bleibt über die Fassungen gleich, so wandern Marker mit, wenn sich Szenen verschieben. |
-| `meta.json` | `titles[]` (Varianten, Christoph wählt), `thumbnails[]` (Dateinamen im Ordner), `description`, `chapters`, `shorts[]` (`{ title, start, end }`), `assumptions[]`, `fps`, optional `first_comment` |
+| `meta.json` | `titles[]` (Varianten, Christoph wählt), `thumbnails[]` (Dateinamen im Ordner, JPEG), `description`, `chapters`, `shorts[]` (`{ title, start, end }`), `assumptions[]`, `fps`, optional `first_comment`; für YouTube zusätzlich `publish_at` (Schweizer Zeit, `"2026-11-01T17:00"`), `captions` (Name der `.srt` im Ordner), `lang` (`"en"`), optional `made_for_kids`, `topic` |
+| `<captions>.srt` | die Untertitel, wenn `captions` gesetzt ist |
 
 ```bash
 npm.cmd run studio -- upload "<ordner>" --kanal leesidelab/youtube --tag 2026-11-08
@@ -59,7 +60,9 @@ npm.cmd run studio -- upload "<ordner>" --kanal leesidelab/youtube --tag 2026-11
 
 Das Video geht nach Cloudflare R2 (Funktion `studio-media`). Ist R2 noch nicht eingerichtet, bleibt das Video auf dem PC und Christoph öffnet es im Studio mit «Video vom PC öffnen».
 
-Später das Social-Paket für YouTube mit `"studio": "<slug>"` in `post.json`: dann gehört der Entwurf zum selben Studio-Beitrag. Hat Christoph das lange Video im Studio schon freigegeben, übernimmt der Import die Freigabe nur, wenn Video, Beschreibung (= Caption) und der gewählte Titel genau gleich sind.
+**Langes YouTube-Video mit `publish_at` (seit 29.10.2026):** `upload` legt gleich den Social-Entwurf an (oder bringt ihn auf die neue Fassung, solange er Entwurf ist). Das Video bleibt in R2 (`media[0]` = `{ path: <R2-Schlüssel>, source: "r2", captions, lang }`), die Titelbilder gehen zusätzlich in den Social-Speicher (`thumbnails[i].social`), das gewählte wird `cover_path`. Eine bestätigte Idee am selben Tag wird zu diesem Beitrag, ein Platzhalter des Tages fällt weg. Christoph gibt im Studio frei (Sichtung 2 → «Freigeben»): zuerst kommen der dort gewählte Titel und das gewählte Titelbild in den Entwurf (`chosenPatch`), dann die normale Freigabe. In der Freigabe-Runde von Social erscheinen diese Entwürfe nicht. `social-publish` lädt das Video bis 24 h vor der Zeit **privat** hoch (aus R2, mit Titelbild und Untertiteln, je höchstens 3 Versuche) und stellt es zur geplanten Zeit öffentlich; ein zurückgezogener Beitrag bleibt privat. Ist eine ältere Fassung schon privat oben, nennt der Beitrag sie zum Löschen in YouTube Studio. Von Hand bleiben: Kommentar anheften, Endbildschirm, «Test & Compare», Playlist.
+
+Ohne `publish_at` (oder ohne R2): kein Entwurf. Dann wie früher das Social-Paket für YouTube mit `"studio": "<slug>"` in `post.json`: dann gehört der Entwurf zum selben Studio-Beitrag. Hat Christoph das lange Video im Studio schon freigegeben, übernimmt der Import die Freigabe nur, wenn Video, Beschreibung (= Caption) und der gewählte Titel genau gleich sind.
 
 ## Befehle
 

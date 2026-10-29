@@ -85,6 +85,7 @@ export function youtube(fetchFn: FetchFn, token: string) {
   return {
     get: (path: string, params?: Params) => call("GET", path, params),
     post: (path: string, params?: Params, json?: unknown) => call("POST", path, params, json),
+    put: (path: string, params?: Params, json?: unknown) => call("PUT", path, params, json),
     del: (path: string, params?: Params) => call("DELETE", path, params),
   };
 }

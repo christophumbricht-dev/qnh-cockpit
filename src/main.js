@@ -56,7 +56,7 @@ const store = createStore({ S, render: () => render(), toast: (t) => toast(t), e
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
   appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), studioFor: (id) => studio.itemForPost(id) });
 const inbox = createInbox({ S, render: () => render(), toast: (t) => toast(t), errorText });
-const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id) => social.approvePost(id),
+const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id, patch, mediaKey) => social.approvePost(id, patch, mediaKey),
   handleFor: (channel) => { const [app, platform] = channel.split("/"); const a = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform); return a?.handle || app; },
   // a day without a studio item: the Social post of that day (e.g. a YouTube Short), else the list
   openDay: (channel, date) => {

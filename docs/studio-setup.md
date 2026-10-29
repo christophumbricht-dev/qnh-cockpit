@@ -23,6 +23,16 @@ Kosten: R2 hat kein Ausgabelimit. Bis 10 GB Speicher ist es gratis, Datenverkehr
 npx.cmd -y supabase@2.122.0 functions deploy studio-media
 ```
 
+## Lange YouTube-Videos aus R2 veröffentlichen (seit 29.10.2026)
+
+`social-publish` liest das lange Video mit denselben R2-Secrets aus R2 (Secrets gelten in Supabase für alle Funktionen des Projekts, nichts Neues eintragen). Nur die neue Fassung der Funktion hochladen:
+
+```bash
+npx.cmd -y supabase@2.122.0 functions deploy social-publish
+```
+
+Der Kanal braucht für eigene Titelbilder und für Videos über 15 Minuten die Bestätigung per Telefonnummer (YouTube Studio → Einstellungen → Kanal → Funktionsberechtigung). Ohne sie geht das Video trotzdem online, der Beitrag sagt dann, dass das Titelbild von Hand fehlt.
+
 ## Ohne R2
 
 Das Studio läuft auch ohne R2: Reels und Karussells kommen aus dem Social-Speicher, lange Videos öffnest du mit «Video vom PC öffnen» (die Datei wird nicht hochgeladen).

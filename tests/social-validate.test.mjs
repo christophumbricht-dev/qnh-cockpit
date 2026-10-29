@@ -138,3 +138,13 @@ test("YouTube «für Kinder»: no first comment and no answer, because YouTube s
   assert.match(validatePost({ ...base, kids: true, made_for_kids: undefined, first_comment: "x" }).errors.join(), /keine Kommentare/); // editor field
   assert.deepEqual(validatePost({ ...base, made_for_kids: false, first_comment: "Was meint ihr?" }).errors, []);
 });
+
+import { isStudioVideo, validateYoutubeItem } from "../src/social/validate.js";
+test("a long studio video in R2: no 50 MB limit, a note above 15 minutes, not part of the review round", () => {
+  const item = { path: "studio/ah/v1/video.mp4", type: "video/mp4", source: "r2", size: 828e6, duration: 889 };
+  assert.deepEqual(validateYoutubeItem(item), { errors: [], warnings: [] });
+  assert.match(validateYoutubeItem({ ...item, duration: 20 * 60 }).warnings[0], /15 Minuten.*bestätigten Kanal/);
+  assert.match(validateYoutubeItem({ ...item, source: undefined }).errors[0], /50 MB/);
+  assert.equal(isStudioVideo({ media: [item] }), true);
+  assert.equal(isStudioVideo({ media: [{ path: "a/1.mp4", type: "video/mp4" }] }), false);
+});

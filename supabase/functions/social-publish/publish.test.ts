@@ -259,6 +259,13 @@ Deno.test("cleanup also deletes the still frame of a video", async () => {
   assertEquals(removed, ["a/1.mp4", "a/1-still.jpg"]);
 });
 
+Deno.test("cleanup leaves a studio video in R2 alone (only the title picture in the bucket goes)", async () => {
+  const old = { ...post({ id: "old", status: "published", cover_path: "a/thumb.jpg", media: [{ path: "studio/foehn/v2/video.mp4", type: "video/mp4", source: "r2" }] }), published_at: "2026-10-01T10:00:00Z" } as Post;
+  const { store, removed } = fakeStore([old]);
+  await cleanup(deps(store, mockGraph({}).fetchFn));
+  assertEquals(removed, ["a/thumb.jpg"]);
+});
+
 Deno.test("user_tags go to the image containers (single image and carousel images), never to videos", async () => {
   const tag = [{ username: "exploring_the_skies", x: 0.5, y: 0.9 }];
   const posts = [

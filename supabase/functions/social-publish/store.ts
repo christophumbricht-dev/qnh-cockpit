@@ -3,7 +3,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Account, Post, Store } from "./publish.ts";
 import type { MediaRow, StatsStore } from "./stats.ts";
 import type { CommentsStore, QuizStore, ReplyStore, StoredComment } from "./comments.ts";
-import type { FollowUpStore } from "./youtube.ts";
+import type { FollowUpStore, PreStore } from "./youtube.ts";
 import type { Item, OutreachSettings, OutreachStore, Watch } from "./outreach.ts";
 
 const BUCKET = "social-media";
@@ -17,7 +17,7 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 
 const ITEM_COLS = "id, watch_id, source, media_id, username, permalink, caption, media_type, image_url, posted_at, like_count, comments_count, status, found_at";
 
-export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & OutreachStore & ReplyStore & QuizStore {
+export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & PreStore & OutreachStore & ReplyStore & QuizStore {
   return {
     async claim(postId) {
       return must(await db.rpc("social_claim", { p_post_id: postId ?? null, p_limit: 5 }), "claim") as Post[];
@@ -57,6 +57,13 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
         .eq("status", "published").is("remote_comment_id", null).not("remote_media_id", "is", null).neq("first_comment", "")
         .gte("published_at", since.toISOString()).limit(20), "youtube follow-up") as Array<Post & { social_accounts?: unknown }>;
       return rows.map(({ social_accounts: _a, ...p }) => p as Post).filter((p) => p.first_comment.trim()); // only spaces: nothing to write
+    },
+    // approved YouTube posts planned within the next day (long ones go up privately ahead of time, preuploadYoutube)
+    async youtubeUpcoming(from: Date, until: Date) {
+      const rows = must(await db.from("social_posts").select("*, social_accounts!inner(platform, active)").eq("social_accounts.platform", "youtube")
+        .eq("social_accounts.active", true).eq("status", "approved").gt("scheduled_at", from.toISOString()).lte("scheduled_at", until.toISOString())
+        .order("scheduled_at").limit(50), "youtube upcoming") as Array<Post & { social_accounts?: unknown }>;
+      return rows.map(({ social_accounts: _a, ...p }) => p as Post);
     },
     async missingFiles(paths: string[]) {
       const missing: string[] = [];

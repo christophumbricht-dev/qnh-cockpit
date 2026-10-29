@@ -213,6 +213,14 @@ export async function updatePost(id, post, expectedUpdatedAt) {
   return must(r, "update");
 }
 
+// a few fields of a draft (the studio's «Freigeben» brings the chosen title and title picture of a long video first)
+export async function patchDraft(id, patch) {
+  if (DEMO) return demo.update(id, patch);
+  const r = await sb().from("social_posts").update(patch).eq("id", id).in("status", ["draft", "failed"]).select().maybeSingle();
+  if (!r.error && !r.data) throw new Error("Der Beitrag ist kein Entwurf mehr – Titel und Titelbild nicht übernommen.");
+  return must(r, "update");
+}
+
 export async function setStatus(id, status, scheduledAt) {
   const patch = scheduledAt === undefined ? { status } : { status, scheduled_at: scheduledAt };
   if (DEMO) return demo.update(id, patch);

@@ -3,7 +3,7 @@
 import { esc, num } from "../format.js";
 import * as data from "./data.js";
 import { NO_TOPIC, guessTopic, topicOf } from "./topics.js";
-import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, youtubeIsLong, zurichToUtc } from "./validate.js";
+import { KINDS, LIMITS, REPLY_HOURS, YOUTUBE, aspectLabel, countHashtags, formatZurich, formatZurichDate, hoursLabel, isPlaceholder, isStudioVideo, parseTagList, quizList, replyHours, utcToZurichLocal, utf8Bytes, validatePost, youtubeIsLong, zurichToUtc } from "./validate.js";
 import { IMPORT, isQuizStory, readPackage } from "./package.js";
 import { chartSvg } from "../charts.js";
 import { GOALS, GOAL_LABEL, costPer, costPerMonth, dailyGain, daySeries, forecast, metric, stageProgress } from "./growth.js";
@@ -206,7 +206,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const order = [...groups.entries()].sort(([ta, a], [tb, b]) => (ta === NO_TOPIC) - (tb === NO_TOPIC) || next(a) - next(b) || last(b) - last(a));
     return order.map(([topic, ps]) => {
       const sorted = [...ps].sort((a, b) => byTime(a, b, "scheduled_at"));
-      const drafts = ps.filter((p) => p.status === "draft" && !isPlaceholder(p)).length;
+      const drafts = ps.filter((p) => p.status === "draft" && !isPlaceholder(p) && !isStudioVideo(p)).length;
       return `<section class="topic-group">
         <div class="topic-head"><h3 class="group">${esc(topic)} <span class="muted">${ps.length}</span></h3>
           ${drafts ? `<button class="btn ghost" data-action="soc-review-topic" data-value="${esc(topic)}">Freigabe-Runde (${drafts})</button>` : ""}</div>
@@ -244,7 +244,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const now = Date.now();
     const next = mine.filter((p) => p.status === "approved" && p.scheduled_at && new Date(p.scheduled_at).getTime() > now).sort((x, y) => x.scheduled_at.localeCompare(y.scheduled_at))[0];
     const approved = mine.filter((p) => p.status === "approved").length;
-    const drafts = mine.filter((p) => p.status === "draft" && !isPlaceholder(p)).length;
+    const drafts = mine.filter((p) => p.status === "draft" && !isPlaceholder(p) && !isStudioVideo(p)).length;
     const month = mine.filter((p) => p.status === "published" && p.published_at && now - new Date(p.published_at).getTime() < 30 * 864e5).length;
     const c = inbox.countFor(a.id);
     const youtube = a.platform === "youtube";
@@ -418,14 +418,26 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // Digital Studio «Freigeben»: the same checks and confirmation as the editor's «Freigeben»
-  async function approvePost(id) {
+  async function approvePost(id, patch = null, mediaKey = null) {
+    const post = posts().find((p) => p.id === id);
+    if (mediaKey && isStudioVideo(post) && post.media[0]?.path !== mediaKey) {
+      toast("Der YouTube-Entwurf hat noch eine andere Fassung des Videos – zuerst die neue Fassung hochladen (npm run studio -- upload), dann freigeben.");
+      return false;
+    }
+    if (patch && Object.keys(patch).length) {
+      try { await data.patchDraft(id, patch); await load(true); } catch (err) { toast(errorText(err)); return false; }
+    }
     const ed = editorFor(id);
     if (!ed) { toast("Beitrag nicht gefunden."); return false; }
-    const { errors } = checks(ed, true);
+    const { errors, warnings } = checks(ed, true);
     if (errors.length) { toast(errors[0]); return false; }
     const twin = twinOf({ ...ed, remote_media_id: posts().find((p) => p.id === id)?.remote_media_id });
     if (twin && !confirm(`Achtung: Dieser Beitrag sieht aus wie einer, der schon auf Instagram ist${twin.posted_at ? ` (${formatZurichDate(twin.posted_at)})` : ""}. Trotzdem freigeben?`)) return false;
-    if (!confirm(confirmText("Diesen Beitrag freigeben? Er wird zur geplanten Zeit automatisch veröffentlicht.", ed))) return false;
+    // a long studio video: what YouTube will do with it (private a day ahead, public on time) and any warning
+    const lead = isStudioVideo(posts().find((p) => p.id === id))
+      ? `Dieses Video freigeben? Es geht bis 24 Stunden vorher privat auf YouTube (mit Titelbild und Untertiteln) und zur geplanten Zeit öffentlich.${warnings.length ? `\n\nHinweis: ${warnings.join(" ")}` : ""}`
+      : "Diesen Beitrag freigeben? Er wird zur geplanten Zeit automatisch veröffentlicht.";
+    if (!confirm(confirmText(lead, ed))) return false;
     try {
       await data.setStatus(id, "approved", zurichToUtc(ed.scheduledLocal));
       toast(`Freigegeben für ${formatZurich(zurichToUtc(ed.scheduledLocal))}`);
@@ -433,6 +445,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       return true;
     } catch (err) { toast(errorText(err)); return false; }
   }
+
+  // a long YouTube video going up privately ahead of time (social-publish) or still uploading: a note, not an error
+  const PROGRESS = /^(Vorab privat|Vorab-Upload auf YouTube läuft|Vorab-Upload wartet|Vorab-Upload:|Der Vorab-Upload läuft gerade|YouTube-Upload läuft)/;
+  const noteClass = (p) => (PROGRESS.test(String(p.last_error ?? "")) && p.status !== "failed" ? "muted" : "error");
+  // withdrawn after the private upload: the video stays private until Christoph approves again
+  const noteText = (p) => (p.status === "draft" && /^Vorab privat/.test(String(p.last_error ?? "")) ? "Schon privat auf YouTube hochgeladen. Es bleibt privat, bis du wieder freigibst." : String(p.last_error ?? ""));
 
   // post list: a still image only (videos would be downloaded just to show a frame)
   function listThumb(p) {
@@ -447,6 +465,11 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   function thumb(item, cls = "thumb") {
     if (!item) return `<span class="${cls} empty"></span>`;
+    if (item.source === "r2") { // a long studio video lives in R2: the title picture stands in, the video plays in the studio
+      return item.poster
+        ? `<span class="video-thumb"><img class="${cls}" src="${esc(item.poster)}" alt="" loading="lazy" decoding="async"><span class="play" aria-hidden="true">▶</span></span>`
+        : `<span class="${cls} video-tile" aria-label="Video im Studio">▶ im Studio</span>`;
+    }
     const src = item.url ?? data.mediaUrl(item.path);
     if (!/^video\//.test(item.type)) return `<img class="${cls}" src="${esc(src)}" alt="${esc(item.alt ?? "")}" loading="lazy" decoding="async">`;
     // videos never load just to be shown (Supabase egress, 25.10.2026): the cover or the still frame stands in,
@@ -552,7 +575,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         ${quizHtml(p)}
         ${twinHtml(twinOf(p))}
         ${todoBox(p.todo, PLATFORM[a?.platform] ?? "Instagram", p.id)}
-        ${p.last_error ? `<p class="error small">${esc(p.last_error)}</p>` : ""}
+        ${p.last_error ? `<p class="${noteClass(p)} small">${esc(noteText(p))}</p>` : ""}
         <div class="actions">${actions.join("")}</div>
       </div>
     </article>`;
@@ -605,7 +628,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function reviewQueue() {
     const st = S.social;
     return posts()
-      .filter((p) => p.status === "draft" && !isPlaceholder(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
+      .filter((p) => p.status === "draft" && !isPlaceholder(p) && !isStudioVideo(p) && (st.filter === "all" || account(p.account_id)?.app_id === st.filter) && onPlatform(p) && (!st.reviewTopic || topicOf(p) === st.reviewTopic))
       .sort((a, b) => byTime(a, b, "scheduled_at"));
   }
   function nextInReview(currentId) {
@@ -620,7 +643,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   function openEditor(post, { duplicate = false } = {}) {
     const fallback = publishable().find((a) => S.social.filter === "all" || a.app_id === S.social.filter) ?? publishable()[0];
-    const items = (post?.media ?? []).map((m) => (duplicate ? { ...m, copyFrom: m.path, path: null, still: undefined } : { ...m }));
+    // a studio video in R2 is not copied: the duplicate points to the same file
+    const items = (post?.media ?? []).map((m) => (duplicate && m.source !== "r2" ? { ...m, copyFrom: m.path, path: null, still: undefined } : { ...m }));
     S.social.editor = {
       id: post && !duplicate ? post.id : crypto.randomUUID(),
       isNew: !post || duplicate,
@@ -728,7 +752,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         <span class="muted">${ed.isNew ? (ed.source === "duplicate" ? "Duplikat" : "Neuer Beitrag") : `${STATUS[ed.status] ?? ed.status}`}${ro ? " · zum Ändern zuerst zurückziehen oder duplizieren" : ""}</span></div>
       <section class="soc-editor">
         <div class="soc-form card">
-          ${ed.last_error ? `<p class="error">${esc(ed.last_error)}</p>` : ""}
+          ${ed.last_error ? `<p class="${noteClass(ed)}">${esc(noteText(ed))}</p>` : ""}
           ${ed.isNew ? "" : twinHtml(twinOf({ ...ed, remote_media_id: posts().find((p) => p.id === ed.id)?.remote_media_id }))}
           <label class="field">Konto
             <select name="soc-account"${dis}>${publishable().map((a) => `<option value="${a.id}"${a.id === ed.account_id ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}</select></label>
@@ -1022,11 +1046,14 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
       else if (it.copyFrom) path = await data.copyFile(it.copyFrom, ed.id, it.type, i);
       media.push({ path, type: it.type, alt: it.alt ?? "", width: it.width ?? null, height: it.height ?? null, duration: it.duration ?? null,
         ...(it.user_tags?.length && !/^video\//.test(it.type) ? { user_tags: it.user_tags } : {}),
-        ...(same && it.still && /^video\//.test(it.type) ? { still: it.still } : {}) });
+        ...(same && it.still && /^video\//.test(it.type) ? { still: it.still } : {}),
+        ...(same && it.source === "r2" ? { source: "r2", bytes: it.bytes ?? null, ...(it.captions ? { captions: it.captions } : {}), ...(it.lang ? { lang: it.lang } : {}) } : {}) });
       Object.assign(it, { path, file: undefined, copyFrom: undefined });
     }
     let cover_path = null;
-    if (ed.kind === "reel" && ed.cover && !isYoutube(ed.account_id)) { // YouTube: no cover through the API
+    // YouTube Shorts: no cover through the API; a long studio video keeps its title picture (set by social-publish)
+    const studioVideo = ed.items.some((it) => it.source === "r2" && !it.file && !it.copyFrom);
+    if (ed.kind === "reel" && ed.cover && (!isYoutube(ed.account_id) || studioVideo)) {
       cover_path = ed.cover.path;
       if (ed.cover.file) cover_path = await data.uploadFile(ed.id, ed.cover.file, "cover");
       else if (ed.cover.copyFrom) cover_path = await data.copyFile(ed.cover.copyFrom, ed.id, "image/jpeg", "cover");
@@ -1034,7 +1061,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     }
     const row = {
       account_id: ed.account_id, kind: ed.kind, title: isYoutube(ed.account_id) ? String(ed.title ?? "").trim() : "", caption: ed.kind === "story" ? "" : ed.caption,
-      first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) ? null : cover_path,
+      first_comment: ed.kind === "story" ? "" : ed.first_comment, media, cover_path: isYoutube(ed.account_id) && !studioVideo ? null : cover_path,
       scheduled_at: zurichToUtc(ed.scheduledLocal), source: ed.source, todo: ed.todo ?? "", topic: String(ed.topic ?? "").trim() || null, location: ed.kind === "story" || isYoutube(ed.account_id) ? null : ed.location ?? null,
       ai_generated: !isYoutube(ed.account_id) && ed.ai === true,
       made_for_kids: isYoutube(ed.account_id) && ed.kids === true,
