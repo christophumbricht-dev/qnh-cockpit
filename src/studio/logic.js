@@ -149,3 +149,11 @@ export function chosenPatch(meta = {}) {
   const studioDraft = thumbs.some((t) => t?.social);
   return { ...(title ? { title } : {}), ...(studioDraft ? { cover_path: thumbs[meta.chosen_thumbnail ?? 0]?.social ?? null } : {}) };
 }
+
+// a post approved outside the studio (Social review round, editor) or already out: its studio item shows «freigegeben»
+// too (Christoph 29.10.2026). Only forward: a withdrawn post does not undo a studio approval here.
+export const POST_OUT = ["approved", "publishing", "published"];
+export function approvedByPost(item, post) {
+  if (!item || !post || item.status === "approved") return null;
+  return POST_OUT.includes(post.status) ? { status: "approved", approved_at: post.updated_at ?? new Date().toISOString() } : null;
+}

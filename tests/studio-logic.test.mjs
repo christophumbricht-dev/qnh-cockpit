@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { anchor, arrowStep, fmtTime, formatOf, keyAction, markersFor, openCount, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "../src/studio/logic.js";
+import { anchor, approvedByPost, arrowStep, fmtTime, formatOf, keyAction, markersFor, openCount, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "../src/studio/logic.js";
 
 const V1 = [{ id: "intro", label: "Intro", start: 0, end: 28 }, { id: "rain", label: "Regen", start: 28, end: 77 }, { id: "case", label: "Unfall", start: 77, end: 157 }];
 const V2 = [{ id: "intro", label: "Intro", start: 0, end: 20 }, { id: "case", label: "Unfall", start: 20, end: 90 }];
@@ -111,4 +111,13 @@ test("«noch nicht» comments are appended to the marker text and shown one by o
   assert.equal(withFollowUp("x", "   "), "x");
   assert.equal(withFollowUp("a".repeat(1990), "bbbbbbbbbbbbbbbbbbbb").length, 2000);
   assert.deepEqual(splitFollowUps("nur Text"), { body: "nur Text", followUps: [] });
+});
+
+test("approvedByPost: a post approved in the review round or already out makes its studio item «freigegeben»", () => {
+  const at = "2026-10-29T20:00:00Z";
+  assert.deepEqual(approvedByPost({ status: "review1" }, { status: "approved", updated_at: at }), { status: "approved", approved_at: at });
+  assert.deepEqual(approvedByPost({ status: "work" }, { status: "published", updated_at: at }), { status: "approved", approved_at: at });
+  assert.equal(approvedByPost({ status: "approved" }, { status: "published", updated_at: at }), null);
+  assert.equal(approvedByPost({ status: "review1" }, { status: "draft", updated_at: at }), null);
+  assert.equal(approvedByPost({ status: "review2" }, null), null);
 });

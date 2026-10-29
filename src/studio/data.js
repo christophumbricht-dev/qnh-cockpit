@@ -5,7 +5,7 @@ import { DEMO, client } from "../api.js";
 import { QNH } from "../apps.js";
 import { mediaUrl as socialUrl } from "../social/data.js";
 import * as demo from "./demo.js";
-import { withFollowUp } from "./logic.js";
+import { approvedByPost, withFollowUp } from "./logic.js";
 import { afterReview } from "./pipeline.js";
 
 const sb = () => client(QNH);
@@ -20,14 +20,22 @@ export async function loadStudio() {
   if (DEMO) return demo.load();
   const from = new Date(Date.parse(`${swissToday()}T12:00:00Z`) - LOAD_DAYS_BACK * 864e5).toISOString().slice(0, 10);
   const [r, runs] = await Promise.all([
-    sb().from("studio_items").select("*, studio_versions(*), studio_markers(*)")
+    sb().from("studio_items").select("*, studio_versions(*), studio_markers(*), social_posts(status, updated_at)")
       .or(`day.gte.${from},day.is.null`).order("day", { ascending: true, nullsFirst: false }).limit(1000),
     loadRuns(),
   ]);
   if (r.error && /does not exist|could not find/i.test(r.error.message)) return null;
   const rows = must(r);
   const versions = [], markers = [];
-  const items = rows.map(({ studio_versions: v = [], studio_markers: m = [], ...item }) => { versions.push(...v); markers.push(...m); return item; });
+  const heal = [];
+  const items = rows.map(({ studio_versions: v = [], studio_markers: m = [], social_posts: post = null, ...item }) => {
+    versions.push(...v); markers.push(...m);
+    const patch = approvedByPost(item, post);   // approved in the Social review round: the studio follows
+    if (patch) { heal.push([item.id, patch]); return { ...item, ...patch }; }
+    return item;
+  });
+  // written back quietly, so the CLI and the next load agree; a failure only means it is tried again next time
+  for (const [id, patch] of heal) sb().from("studio_items").update(patch).eq("id", id).neq("status", "approved").then(() => {}, () => {});
   markers.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   return { items, versions, markers, ...runs };
 }
