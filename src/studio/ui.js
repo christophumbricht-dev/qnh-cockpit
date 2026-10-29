@@ -210,8 +210,14 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   function full() {
     const it = item();
     if (!it) return;
-    // the whole frame, so swiping and the dots work in full screen too (the iPhone has none for pictures: swipe in the frame)
-    if (pagesOf(it)) { document.querySelector(".st-frame.pages")?.requestFullscreen?.().catch(() => {}); return; }
+    // the whole frame, so swiping and the dots work in full screen too; the iPhone has no full screen for pictures,
+    // so there the frame fills the window instead (st().lightbox), closed by a tap, × or Esc
+    if (pagesOf(it)) {
+      const fr = document.querySelector(".st-frame.pages");
+      if (!st().lightbox && fr?.requestFullscreen && document.fullscreenEnabled) fr.requestFullscreen().catch(() => lightbox(true));
+      else lightbox(!st().lightbox);
+      return;
+    }
     if (!video.currentSrc) return;
     video.controls = true;
     if (video.requestFullscreen) video.requestFullscreen().catch(() => { video.controls = false; });
@@ -219,6 +225,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     else { video.controls = false; return; }
     if (video.paused) video.play().catch(() => {});
   }
+  function lightbox(on) { st().lightbox = on; render(); }
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) { video.controls = false; tick(); } });
   video.addEventListener("webkitendfullscreen", () => { video.controls = false; tick(); });
 
@@ -462,7 +469,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const spots = ms.filter((m) => m.target === "medium" && m.page === p && m.x != null).map((m) => `<span class="st-spot st-m-${m.status}" style="left:${m.x}%;top:${m.y}%" title="${esc(m.body)}"></span>`).join("");
     const spot = s.form?.x != null && s.form.page === p ? `<span class="st-spot form" style="left:${s.form.x}%;top:${s.form.y}%"></span>` : "";
     const story = it.format === "story";
-    return `${device(it, ver, `<div class="st-frame vertical pages" data-swipe="pages">${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}" draggable="false">` : `<p class="note">Keine Bilder.</p>`}
+    return `${device(it, ver, `<div class="st-frame vertical pages${s.lightbox ? " st-fs" : ""}" data-swipe="pages">${s.lightbox ? `<button class="st-fs-close" data-action="st-fs-close" aria-label="Vollbild schliessen">×</button>` : ""}${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}" draggable="false">` : `<p class="note">Keine Bilder.</p>`}
         ${story ? screenOverlay(it, ver, p, pages.length) : ""}
         <div class="st-overlay${s.form?.target === "medium" ? " placing" : ""}" data-action="st-spot">${spots}${spot}</div>
         ${pages.length > 1 && !story ? `<span class="ig-dots" aria-hidden="true">${pages.map((_, i) => `<i class="${i === p ? "on" : ""}"></i>`).join("")}</span>` : ""}</div>`)}
@@ -611,6 +618,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   // ---------- events ----------
   const inText = (el) => !!el?.closest?.("input, textarea, select, [contenteditable='true']");
   function onKeydown(e) {
+    if (S.tab === "studio" && st().lightbox && e.key === "Escape") { e.preventDefault(); lightbox(false); return true; }
     if (S.tab !== "studio" || S.sheet || S.search?.open || document.fullscreenElement || !item() || e.ctrlKey || e.metaKey || e.altKey) return false;
     const a = keyAction({ key: e.key, inText: inText(e.target), format: pagesOf(item()) ? "carousel" : item().format, paused: video.paused });
     if (!a) return false;
@@ -678,6 +686,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         return true;
       }
       case "st-page": s.page = Number(el.dataset.value); break;
+      case "st-fs-close": lightbox(false); return true;
       case "st-mark-target": { const it = item(); if (it) startMarker(it, el.dataset.value); return true; }
       case "st-cat": if (s.form) s.form.category = el.dataset.value; break;
       case "st-choose": {
@@ -837,8 +846,8 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   }
 
   const setItemFromRoute = (id) => {
-    if (id && id !== st().itemId) { st().itemId = id; st().form = null; st().mediaFor = null; st().page = 0; }
-    if (!id) { st().itemId = null; st().round = null; video.pause(); }
+    if (id && id !== st().itemId) { st().itemId = id; st().form = null; st().mediaFor = null; st().page = 0; st().lightbox = false; }
+    if (!id) { st().itemId = null; st().round = null; st().lightbox = false; video.pause(); }
   };
 
   return { load, view, afterRender, onClick, onKeydown, onPointer, onSubmit, onInput, badge, agenda, itemForPost, setItemFromRoute };
