@@ -15,10 +15,10 @@ const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", 
 const ZURICH_DAY = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" });
 let todayCache = { at: 0, day: "" };
 const today = () => { const now = Date.now(); if (now - todayCache.at > 60_000) todayCache = { at: now, day: ZURICH_DAY.format(new Date(now)) }; return todayCache.day; };
-// playback speed in steps of 25 % (Christoph 29.10.2026: «−25 % / +25 %»), remembered per device
+// playback speed in steps of 25 % (Christoph 29.10.2026: «−25 % / +25 %»). Every video starts at 100 %: a remembered slow
+// or fast speed silenced the next video (Safari plays no sound below 50 % or above 200 %; «Ton startet nicht immer»)
 const RATE_STEP = 0.25, RATE_MIN = 0.25, RATE_MAX = 3;
 const clampRate = (r) => Math.min(RATE_MAX, Math.max(RATE_MIN, Math.round(r / RATE_STEP) * RATE_STEP));
-const savedRate = () => { try { const r = Number(localStorage.getItem("qnh-studio-rate")); return r > 0 ? clampRate(r) : 1; } catch { return 1; } };
 const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.` : "ohne Tag");
 
 export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {} }) {
@@ -29,11 +29,13 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   let index = { versions: new Map(), open: new Map(), r2: { bytes: 0, files: 0 } };
   const video = document.createElement("video");
   video.playsInline = true;
-  video.preload = "metadata";
+  // the opened video buffers ahead, so sound and picture start together instead of stuttering while the first
+  // seconds still come from R2 (the iPhone decides on its own)
+  video.preload = "auto";
   video.className = "st-video";
   video.muted = false;
   video.volume = 1;
-  let rate = savedRate();
+  let rate = 1;
   // the browser resets the speed when a new file is loaded
   video.addEventListener("loadedmetadata", () => { video.playbackRate = rate; });
   video.addEventListener("error", async () => {
@@ -197,7 +199,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const url = st().local[key] ?? await data.mediaUrl(ver.source);
     if (st().mediaFor !== key) return;
     st().urls[key] = url;
-    if (url && video.src !== url) { video.src = url; video.load(); }
+    if (url && video.src !== url) { rate = 1; video.src = url; video.load(); }
     if (!url) video.removeAttribute("src");
     render();
   }
@@ -229,6 +231,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       st().local[ver.id] = url;
       st().urls[ver.id] = url;
       st().mediaFor = ver.id;
+      rate = 1;
       video.src = url;
       video.load();
       render();
@@ -659,7 +662,6 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         const step = Number(el.dataset.value);
         rate = step === 0 ? 1 : clampRate(rate + step * RATE_STEP);
         video.playbackRate = rate;
-        try { localStorage.setItem("qnh-studio-rate", String(rate)); } catch { /* private mode */ }
         break;
       }
       case "st-local": { const it = item(); if (it) pickLocal(current(it)); return true; }
