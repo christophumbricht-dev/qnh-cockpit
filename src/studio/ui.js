@@ -15,9 +15,10 @@ const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", 
 const ZURICH_DAY = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" });
 let todayCache = { at: 0, day: "" };
 const today = () => { const now = Date.now(); if (now - todayCache.at > 60_000) todayCache = { at: now, day: ZURICH_DAY.format(new Date(now)) }; return todayCache.day; };
-// playback speeds (Christoph 28.10.2026), remembered per device
-const RATES = [0.1, 0.25, 0.5, 1, 2, 3];
-const savedRate = () => { try { const r = Number(localStorage.getItem("qnh-studio-rate")); return RATES.includes(r) ? r : 1; } catch { return 1; } };
+// playback speed in steps of 25 % (Christoph 29.10.2026: «−25 % / +25 %»), remembered per device
+const RATE_STEP = 0.25, RATE_MIN = 0.25, RATE_MAX = 3;
+const clampRate = (r) => Math.min(RATE_MAX, Math.max(RATE_MIN, Math.round(r / RATE_STEP) * RATE_STEP));
+const savedRate = () => { try { const r = Number(localStorage.getItem("qnh-studio-rate")); return r > 0 ? clampRate(r) : 1; } catch { return 1; } };
 const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.` : "ohne Tag");
 
 export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {} }) {
@@ -200,6 +201,22 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (!url) video.removeAttribute("src");
     render();
   }
+  // a tap on the iPhone or laptop: the video alone in full screen with the browser's own controls (Christoph 29.10.2026);
+  // the iPhone has no element full screen, only its video player (webkitEnterFullscreen)
+  function full() {
+    const it = item();
+    if (!it) return;
+    if (isPages(it.format)) { document.querySelector(".st-frame.pages img")?.requestFullscreen?.().catch(() => {}); return; }
+    if (!video.currentSrc) return;
+    video.controls = true;
+    if (video.requestFullscreen) video.requestFullscreen().catch(() => { video.controls = false; });
+    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    else { video.controls = false; return; }
+    if (video.paused) video.play().catch(() => {});
+  }
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) { video.controls = false; tick(); } });
+  video.addEventListener("webkitendfullscreen", () => { video.controls = false; tick(); });
+
   function pickLocal(ver) {
     const input = document.createElement("input");
     input.type = "file";
@@ -378,14 +395,14 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const handle = handleFor(it.channel);
     if (!isPhone(it)) {
       const desc = String(ver?.meta?.description ?? ver?.meta?.caption ?? "").split("\n").filter(Boolean).slice(0, 2).join(" ");
-      return `<div class="dev-laptop"><div class="dev-lid"><div class="dev-screen dev-yt">${frame}
+      return `<div class="dev-laptop" data-action="st-full" title="Vollbild"><div class="dev-lid"><div class="dev-screen dev-yt">${frame}
           <div class="yt-meta"><b>${esc(chosenTitle(ver) || it.title)}</b><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span>${desc ? `<p>${esc(desc)}</p>` : ""}</div></div></div><div class="dev-base"></div></div>`;
     }
     const status = `<div class="ios-status" aria-hidden="true"><span>9:41</span><i class="ios-island"></i><span>▮▮▮ ▭</span></div>`;
     const tabs = it.channel.endsWith("/instagram") && it.format !== "story" ? `<div class="ig-tabs" aria-hidden="true"><span>⌂</span><span>⌕</span><span>⊕</span><span>▶</span><span>◯</span></div>` : "";
-    if (fullScreen(it)) return `<div class="dev-phone"><div class="dev-screen dev-full${it.format === "story" ? " dev-storyscreen" : ""}">${status}<div class="dev-content">${frame}</div>${tabs}</div></div>`;
+    if (fullScreen(it)) return `<div class="dev-phone" data-action="st-full" title="Vollbild"><div class="dev-screen dev-full${it.format === "story" ? " dev-storyscreen" : ""}">${status}<div class="dev-content">${frame}</div>${tabs}</div></div>`;
     const cap = String(ver?.meta?.caption ?? "");
-    return `<div class="dev-phone"><div class="dev-screen dev-feed">${status}<div class="dev-content">
+    return `<div class="dev-phone" data-action="st-full" title="Vollbild"><div class="dev-screen dev-feed">${status}<div class="dev-content">
         <div class="ig-head"><span class="dev-who"><i class="dev-av"></i>${esc(handle)}</span><span>⋯</span></div>${frame}
         <div class="ig-act"><span>♡ 💬 ➤</span><span>⌑</span></div>
         <div class="ig-cap"><b>${esc(handle)}</b> ${esc(cap.slice(0, 220))}${cap.length > 220 ? " … mehr" : ""}</div>
@@ -404,7 +421,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     return `${device(it, ver, `<div class="st-frame${vertical ? " vertical" : ""}">
         <div class="st-video-slot" id="st-video-slot"></div>
         ${screenOverlay(it, ver)}
-        <div class="st-overlay" data-action="st-spot">${spots}${spot}</div>
+        <div class="st-overlay${s.form?.target === "medium" ? " placing" : ""}" data-action="st-spot">${spots}${spot}</div>
         ${url ? "" : `<div class="st-nomedia"><p>${ver.source?.kind === "r2" ? "Das Video liegt in Cloudflare R2, ist aber gerade nicht erreichbar." : "Kein Video verfügbar."}</p><button class="btn" data-action="st-local">Video vom PC öffnen</button></div>`}
       </div>`)}
       <div class="st-timeline" data-action="st-scrub">${ticks}${mticks}<span class="st-playhead" id="st-playhead"></span></div>
@@ -421,11 +438,15 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <button class="btn ghost" data-action="st-sound" id="st-sound" title="Ton ein/aus">${video.muted ? "🔇" : "🔊"}</button>
         <button class="btn st-mark" data-action="st-key" data-value="mark" title="Marker (M)">● Marker</button>
       </div>
-      <div class="chips st-rates" role="group" aria-label="Geschwindigkeit">${RATES.map((r) => `<button class="chip${r === rate ? " on" : ""}" data-action="st-rate" data-value="${r}">${r * 100} %</button>`).join("")}</div>
+      <div class="st-rates" role="group" aria-label="Geschwindigkeit">
+        <button class="btn ghost" data-action="st-rate" data-value="-1" title="25 % langsamer"${rate <= RATE_MIN ? " disabled" : ""}>− 25 %</button>
+        <button class="chip${rate === 1 ? " on" : ""}" data-action="st-rate" data-value="0" title="Zurück auf 100 %">${Math.round(rate * 100)} %</button>
+        <button class="btn ghost" data-action="st-rate" data-value="1" title="25 % schneller"${rate >= RATE_MAX ? " disabled" : ""}>+ 25 %</button>
+      </div>
       ${rate < 0.5 || rate > 2 ? `<p class="small warn-text">Bei ${rate * 100} % spielen Safari und das iPhone keinen Ton ab, Chrome nur verzerrt. Für den Ton 100 % wählen.</p>` : ""}
       ${url && ver.source?.kind !== "local" ? `<p class="small"><button class="link" data-action="st-local">Video stattdessen vom PC öffnen</button></p>` : ""}
       <p class="small" id="st-audio"></p>
-      <p class="muted small st-keys">Version ${typeof __BUILD__ === "string" ? __BUILD__ : "dev"} · Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick ins Bild beim Marker: Stelle</p>`;
+      <p class="muted small st-keys">Version ${typeof __BUILD__ === "string" ? __BUILD__ : "dev"} · Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick aufs Bild: Vollbild, beim Marker: Stelle</p>`;
   }
 
   function pagesView(it, ver, ms) {
@@ -435,7 +456,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const spots = ms.filter((m) => m.target === "medium" && m.page === p && m.x != null).map((m) => `<span class="st-spot st-m-${m.status}" style="left:${m.x}%;top:${m.y}%" title="${esc(m.body)}"></span>`).join("");
     const spot = s.form?.x != null && s.form.page === p ? `<span class="st-spot form" style="left:${s.form.x}%;top:${s.form.y}%"></span>` : "";
     return `${device(it, ver, `<div class="st-frame vertical pages">${pages.length ? `<img src="${esc(pages[p])}" alt="Seite ${p + 1}">` : `<p class="note">Keine Bilder.</p>`}
-        <div class="st-overlay" data-action="st-spot">${spots}${spot}</div>
+        <div class="st-overlay${s.form?.target === "medium" ? " placing" : ""}" data-action="st-spot">${spots}${spot}</div>
         ${pages.length > 1 ? `<span class="ig-dots" aria-hidden="true">${pages.map((_, i) => `<i class="${i === p ? "on" : ""}"></i>`).join("")}</span>` : ""}</div>`)}
       <div class="st-strip">${pages.map((u, i) => `<button class="st-thumb${i === p ? " on" : ""}" data-action="st-page" data-value="${i}"><img src="${esc(u)}" alt="Seite ${i + 1}"><span>${i + 1}${ms.some((m) => m.page === i) ? " ●" : ""}</span></button>`).join("")}</div>
       <div class="st-controls"><button class="btn ghost" data-action="st-key" data-value="prevPage">‹ Seite</button><span class="muted">${p + 1} / ${pages.length}</span>
@@ -582,7 +603,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   // ---------- events ----------
   const inText = (el) => !!el?.closest?.("input, textarea, select, [contenteditable='true']");
   function onKeydown(e) {
-    if (S.tab !== "studio" || S.sheet || S.search?.open || !item() || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (S.tab !== "studio" || S.sheet || S.search?.open || document.fullscreenElement || !item() || e.ctrlKey || e.metaKey || e.altKey) return false;
     const a = keyAction({ key: e.key, inText: inText(e.target), format: item().format, paused: video.paused });
     if (!a) return false;
     e.preventDefault();
@@ -633,11 +654,14 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         video.muted = !video.muted;
         if (!video.muted && video.volume === 0) video.volume = 1;
         break;
-      case "st-rate":
-        rate = Number(el.dataset.value);
+      case "st-full": full(); return true;
+      case "st-rate": {
+        const step = Number(el.dataset.value);
+        rate = step === 0 ? 1 : clampRate(rate + step * RATE_STEP);
         video.playbackRate = rate;
         try { localStorage.setItem("qnh-studio-rate", String(rate)); } catch { /* private mode */ }
         break;
+      }
       case "st-local": { const it = item(); if (it) pickLocal(current(it)); return true; }
       case "st-seek": {
         const v = String(el.dataset.value);
@@ -759,7 +783,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     if (!ov) return false;
     const f = st().form;
     if (!f || f.target !== "medium") {
-      if (!isPages(item()?.format)) act("toggle");
+      full();
       return true;
     }
     const r = ov.getBoundingClientRect();
