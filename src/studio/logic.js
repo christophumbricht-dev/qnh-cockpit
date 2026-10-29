@@ -12,6 +12,18 @@ export const STATUS = {
   approved: "freigegeben",
 };
 export const MARKER_STATUS = { draft: "Entwurf", open: "offen", done: "erledigt", rejected: "abgelehnt", ok: "ok", not_yet: "noch nicht" };
+
+// «noch nicht» in Sichtung 2 with a new comment: it is added to the marker text, so Claude reads it with the
+// marker (no extra column); the list shows each one as its own line
+export const FOLLOW_UP = "\n\nNoch nicht: ";
+export function withFollowUp(body, text) {
+  const t = String(text ?? "").trim();
+  return t ? `${body}${FOLLOW_UP}${t}`.slice(0, 2000) : body;
+}
+export function splitFollowUps(body) {
+  const [first, ...followUps] = String(body ?? "").split(FOLLOW_UP);
+  return { body: first, followUps };
+}
 export const CATEGORIES = { picture: "Bild", sound: "Ton", text: "Text", fact: "Fakt", other: "Sonstiges" };
 export const TARGETS = { medium: "Video / Bild", caption: "Caption", title: "Titel", description: "Beschreibung", first_comment: "Erster Kommentar", quiz: "Quiz-Antworten", thumbnail: "Titelbild", general: "Ganzer Beitrag" };
 export const SCOPES = { post: "nur dieser Beitrag", channel: "ganzer Kanal", all: "alle Kanäle" };

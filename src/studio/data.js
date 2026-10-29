@@ -5,6 +5,7 @@ import { DEMO, client } from "../api.js";
 import { QNH } from "../apps.js";
 import { mediaUrl as socialUrl } from "../social/data.js";
 import * as demo from "./demo.js";
+import { withFollowUp } from "./logic.js";
 import { afterReview } from "./pipeline.js";
 
 const sb = () => client(QNH);
@@ -92,6 +93,12 @@ export async function deleteMarker(id) {
 export async function judgeMarker(id, status) {
   if (DEMO) return demo.judgeMarker(id, status);
   must(await sb().from("studio_markers").update({ status }).eq("id", id));
+}
+// «noch nicht» with a new comment (appended to the marker text, see withFollowUp)
+export async function followUpMarker(id, text) {
+  if (DEMO) return demo.followUpMarker(id, text);
+  const m = must(await sb().from("studio_markers").select("body").eq("id", id).single());
+  must(await sb().from("studio_markers").update({ status: "not_yet", body: withFollowUp(m.body, text) }).eq("id", id));
 }
 // «Sichtung abschliessen»: the item moves on first (only from the status Christoph was looking at, so a second
 // click or another device does nothing), then his drafts become open for Claude

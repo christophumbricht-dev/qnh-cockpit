@@ -102,3 +102,13 @@ test("r2Flag: quiet under 8 GB, warn from 80 %, cost above 10 GB", () => {
   assert.deepEqual(r2Flag(110e9), { level: "cost", usd: 1.5 });
   assert.equal(fmtGB(1.234e9), "1.23 GB");
 });
+
+import { splitFollowUps, withFollowUp } from "../src/studio/logic.js";
+test("«noch nicht» comments are appended to the marker text and shown one by one", () => {
+  const once = withFollowUp("Nadel zu schnell", "  immer noch zu schnell ");
+  const twice = withFollowUp(once, "jetzt zu langsam");
+  assert.deepEqual(splitFollowUps(twice), { body: "Nadel zu schnell", followUps: ["immer noch zu schnell", "jetzt zu langsam"] });
+  assert.equal(withFollowUp("x", "   "), "x");
+  assert.equal(withFollowUp("a".repeat(1990), "bbbbbbbbbbbbbbbbbbbb").length, 2000);
+  assert.deepEqual(splitFollowUps("nur Text"), { body: "nur Text", followUps: [] });
+});

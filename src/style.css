@@ -1270,3 +1270,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .goal-bar i { display: block; height: 100%; background: #1098AD; border-radius: 99px; }
 .goal-part.done .goal-bar i { background: var(--ok); }
 @media (max-width: 600px) { .goal-part { grid-template-columns: 1fr; gap: 4px; } }
+
+/* Studio Sichtung 2: «noch nicht» with a new comment */
+.st-follow { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.st-follow textarea { width: 100%; }
+.st-follow-txt { margin: 4px 0 0; padding-left: 8px; border-left: 3px solid var(--warn); }
+
+/* Studio «Speichern»: the video or the pictures onto the phone (src/studio/save.js) */
+.st-save { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.st-save .small { flex: 1 1 200px; }

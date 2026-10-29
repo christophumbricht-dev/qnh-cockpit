@@ -1,6 +1,7 @@
 // ?demo: invented studio items (a long video, a reel, a carousel, a photo story) with markers, kept in memory.
 // The videos are not in the repo: the player offers «Video vom PC öffnen» like the real fallback.
 import { mondayOf, addDaysIso } from "../social/weekplan.js";
+import { withFollowUp } from "./logic.js";
 
 const listeners = new Set();
 const emit = () => setTimeout(() => listeners.forEach((f) => f()), 0);
@@ -67,6 +68,7 @@ export async function saveMarker(m) {
 }
 export async function deleteMarker(mid) { markers.splice(markers.findIndex((x) => x.id === mid), 1); emit(); }
 export async function judgeMarker(mid, status) { markers.find((x) => x.id === mid).status = status; emit(); }
+export async function followUpMarker(mid, text) { const m = markers.find((x) => x.id === mid); m.status = "not_yet"; m.body = withFollowUp(m.body, text); emit(); }
 export async function finishReview(iid, next = "work") {
   for (const m of markers) if (m.item_id === iid && m.status === "draft") m.status = "open";
   items.find((i) => i.id === iid).status = next;

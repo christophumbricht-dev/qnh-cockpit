@@ -5,7 +5,8 @@
 // playback is not interrupted; time and playhead are updated directly, not by re-rendering.
 import { esc } from "../format.js";
 import * as data from "./data.js";
-import { CATEGORIES, MARKER_STATUS, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, chosenPatch, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
+import { canShareFiles, downloadFiles, fetchFile, fileName, sizeText } from "./save.js";
+import { CATEGORIES, MARKER_STATUS, splitFollowUps, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, chosenPatch, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
 import { DEADLINE_DAYS, LOOKING, PIPELINE, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
@@ -22,7 +23,7 @@ const clampRate = (r) => Math.min(RATE_MAX, Math.max(RATE_MIN, Math.round(r / RA
 const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.` : "ohne Tag");
 
 export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {} }) {
-  S.studio = { value: undefined, loading: false, error: null, itemId: null, round: null, page: 0, form: null, filter: "all", weekStart: null, local: {}, urls: {}, mediaFor: null };
+  S.studio = { value: undefined, loading: false, error: null, itemId: null, round: null, page: 0, form: null, filter: "all", weekStart: null, local: {}, urls: {}, mediaFor: null, save: null };
   const st = () => S.studio;
   let unsubscribe = null, reloadTimer, again = false, ownWriteAt = 0, busy = false;
   // per load: versions by item (sorted), open marker counts by item, R2 usage
@@ -422,6 +423,74 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         ${ver?.meta?.first_comment ? `<div class="ig-com"><b>${esc(handle)}</b> ${esc(ver.meta.first_comment.slice(0, 120))}</div>` : ""}</div>${tabs}</div></div>`;
   }
 
+  // ---------- «Speichern»: the video or the pictures onto the phone (save.js) ----------
+  function saveList(it, ver, kind) {
+    const s = st();
+    const title = it.slug || chosenTitle(ver) || it.title;
+    if (kind === "video") {
+      const url = s.urls[ver.id];
+      return url ? [{ url, name: fileName({ title, version: it.current_version, url, fallbackExt: "mp4" }) }] : [];
+    }
+    const pages = data.pageUrls(ver.source);
+    const idx = kind === "page" ? [Math.min(s.page, pages.length - 1)] : pages.map((_, i) => i);
+    return idx.filter((i) => pages[i]).map((i) => ({ url: pages[i], name: fileName({ title, version: it.current_version, page: pages.length > 1 ? i : null, url: pages[i], fallbackExt: "jpg" }) }));
+  }
+  async function saveMedia(kind) {
+    const s = st();
+    const it = item();
+    const ver = it && current(it);
+    if (!ver || s.save?.busy) return;
+    const list = saveList(it, ver, kind);
+    if (!list.length) { toast("Nichts zum Speichern."); return; }
+    const key = `${ver.id}:${kind}:${kind === "page" ? s.page : ""}`;
+    s.save = { key, busy: true, files: null, err: null };
+    render();
+    try {
+      const files = await Promise.all(list.map((x) => fetchFile(x.url, x.name)));
+      if (st().save?.key !== key) return;
+      // the share sheet needs a fresh tap (Safari): the file waits for «Jetzt sichern»; laptops download right away
+      if (canShareFiles(files)) st().save = { key, busy: false, files, err: null };
+      else { downloadFiles(files); st().save = null; toast(files.length > 1 ? `${files.length} Dateien heruntergeladen.` : "Heruntergeladen."); }
+    } catch (err) {
+      if (st().save?.key === key) st().save = { key, busy: false, files: null, err: errorText(err) };
+    }
+    render();
+  }
+  function shareSaved() {
+    const s = st();
+    const files = s.save?.files;
+    if (!files) return;
+    // straight from the tap, no await before it (otherwise Safari refuses the share sheet)
+    navigator.share({ files }).then(() => { st().save = null; render(); })
+      .catch((err) => { if (err?.name !== "AbortError") { downloadFiles(files); st().save = null; render(); } });
+  }
+  function saveRow(it, ver, mode, nPages = 0) {
+    const s = st();
+    // only the save that belongs to this version (and, for one picture, to the page shown now)
+    const sv = s.save?.key?.startsWith(`${ver.id}:`) && !(s.save.key.includes(":page:") && !s.save.key.endsWith(`:page:${s.page}`)) ? s.save : null;
+    if (mode === "video") {
+      const url = s.urls[ver.id];
+      if (!url || ver.source?.kind === "local") return "";
+      if (ver.source?.kind === "r2") {           // long video in R2: too big to hold in memory, the page may not fetch it (CSP)
+        const name = fileName({ title: it.slug || chosenTitle(ver) || it.title, version: it.current_version, url, fallbackExt: "mp4" });
+        return `<div class="st-save"><a class="btn ghost" href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}">⬇ Video öffnen</a>
+          <span class="muted small">Öffnet sich im Browser. Auf dem iPhone dort Teilen → «In Dateien sichern».</span></div>`;
+      }
+    }
+    if (sv?.files) {
+      return `<div class="st-save"><button class="btn" data-action="st-save-share">⬇ Jetzt sichern · ${esc(sizeText(sv.files))}</button>
+        <button class="link" data-action="st-save-cancel">Abbrechen</button>
+        <span class="muted small">Auf dem iPhone «${mode === "video" ? "Video" : "Bild"} sichern» wählen, dann ist es in Fotos.</span></div>`;
+    }
+    const dis = sv?.busy ? " disabled" : "";
+    const err = sv?.err ? `<span class="error small">${esc(sv.err)}</span>` : "";
+    const busy = sv?.busy ? `<span class="muted small">Lädt …</span>` : "";
+    if (mode === "video") return `<div class="st-save"><button class="btn ghost" data-action="st-save" data-value="video"${dis}>⬇ Speichern</button>${busy}${err}</div>`;
+    if (!nPages) return "";
+    return `<div class="st-save"><button class="btn ghost" data-action="st-save" data-value="page"${dis}>⬇ ${nPages > 1 ? "Dieses Bild" : "Bild speichern"}</button>
+      ${nPages > 1 ? `<button class="btn ghost" data-action="st-save" data-value="pages"${dis}>⬇ Alle ${nPages} Bilder</button>` : ""}${busy}${err}</div>`;
+  }
+
   function playerView(it, ver, ms) {
     const s = st();
     const url = s.urls[ver.id];
@@ -457,6 +526,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <button class="btn ghost" data-action="st-rate" data-value="1" title="25 % schneller"${rate >= RATE_MAX ? " disabled" : ""}>+ 25 %</button>
       </div>
       ${rate < 0.5 || rate > 2 ? `<p class="small warn-text">Bei ${rate * 100} % spielen Safari und das iPhone keinen Ton ab, Chrome nur verzerrt. Für den Ton 100 % wählen.</p>` : ""}
+      ${saveRow(it, ver, "video")}
       ${url && ver.source?.kind !== "local" ? `<p class="small"><button class="link" data-action="st-local">Video stattdessen vom PC öffnen</button></p>` : ""}
       <p class="small" id="st-audio"></p>
       <p class="muted small st-keys">Version ${typeof __BUILD__ === "string" ? __BUILD__ : "dev"} · Leertaste Start/Pause · ← → ${arrowStep(it.format)} s · , . ein Bild (in der Pause) · M Marker · Klick aufs Bild: Vollbild, beim Marker: Stelle</p>`;
@@ -476,6 +546,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       <div class="st-strip">${pages.map((u, i) => `<button class="st-thumb${i === p ? " on" : ""}" data-action="st-page" data-value="${i}"><img src="${esc(u)}" alt="Seite ${i + 1}"><span>${i + 1}${ms.some((m) => m.page === i) ? " ●" : ""}</span></button>`).join("")}</div>
       <div class="st-controls"><button class="btn ghost" data-action="st-key" data-value="prevPage">‹ Seite</button><span class="muted">${p + 1} / ${pages.length}</span>
         <button class="btn ghost" data-action="st-key" data-value="nextPage">Seite ›</button><button class="btn st-mark" data-action="st-key" data-value="mark">● Marker</button></div>
+      ${saveRow(it, ver, "pages", pages.length)}
       <p class="muted small st-keys">Im iPhone wischen oder ← → Seite · M Marker · Klick aufs Bild: Vollbild, beim Marker: Stelle</p>`;
   }
 
@@ -502,11 +573,15 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       return `<li class="st-m st-m-${m.status}">
         <div class="st-m-top">${jump ? `<button class="link" data-action="st-seek" data-value="${m.page != null ? `p${m.page}` : p.at}">${esc(where)}</button>` : `<b class="small">${esc(where)}</b>`}
           <span class="muted small">${esc(CATEGORIES[m.category] ?? m.category)}</span><span class="pill st-m-${m.status}">${esc(MARKER_STATUS[m.status])}</span></div>
-        <p>${esc(m.body)}</p>
+        ${(() => { const t = splitFollowUps(m.body); return `<p>${esc(t.body)}</p>${t.followUps.map((f) => `<p class="st-follow-txt"><b>Noch nicht:</b> ${esc(f)}</p>`).join("")}`; })()}
         ${m.note ? `<p class="st-note"><b>Claude:</b> ${esc(m.note)}</p>` : ""}
         ${m.scope ? `<p class="muted small">Regel: ${esc(SCOPES[m.scope])}${m.rule ? ` · ${esc(m.rule)}` : ""}</p>` : ""}
         <div class="st-m-actions">${editable ? `<button class="link" data-action="st-edit" data-id="${esc(m.id)}">Ändern</button><button class="link danger" data-action="st-del" data-id="${esc(m.id)}">Löschen</button>` : ""}
-          ${review2 && ["done", "rejected", "ok", "not_yet"].includes(m.status) ? `<button class="btn ghost${m.status === "ok" ? " on" : ""}" data-action="st-judge" data-id="${esc(m.id)}" data-value="ok">ok</button><button class="btn ghost${m.status === "not_yet" ? " on" : ""}" data-action="st-judge" data-id="${esc(m.id)}" data-value="not_yet">noch nicht</button>` : ""}</div>
+          ${review2 && ["done", "rejected", "ok", "not_yet"].includes(m.status) ? `<button class="btn ghost${m.status === "ok" ? " on" : ""}" data-action="st-judge" data-id="${esc(m.id)}" data-value="ok">ok</button><button class="btn ghost${m.status === "not_yet" ? " on" : ""}" data-action="st-judge" data-id="${esc(m.id)}" data-value="not_yet">noch nicht</button>` : ""}
+          ${review2 && m.status === "not_yet" && st().followUp !== m.id ? `<button class="link" data-action="st-follow" data-id="${esc(m.id)}">Kommentar dazu</button>` : ""}</div>
+        ${review2 && st().followUp === m.id ? `<form class="st-follow" data-form="st-follow" data-id="${esc(m.id)}">
+          <textarea name="st-follow" rows="3" placeholder="Was ist noch nicht gut?" required>${esc(st().followText ?? "")}</textarea>
+          <div class="row-right"><button class="btn">Speichern</button><button type="button" class="btn ghost" data-action="st-follow-cancel">Ohne Kommentar</button></div></form>` : ""}
       </li>`;
     }).join("")}</ul>`;
   }
@@ -678,6 +753,9 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         break;
       }
       case "st-local": { const it = item(); if (it) pickLocal(current(it)); return true; }
+      case "st-save": saveMedia(el.dataset.value); return true;
+      case "st-save-share": shareSaved(); return true;
+      case "st-save-cancel": s.save = null; break;
       case "st-seek": {
         const v = String(el.dataset.value);
         if (v.startsWith("p")) { s.page = Number(v.slice(1)); break; }
@@ -703,7 +781,13 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         return true;
       case "st-judge":
         try { await wrote(() => data.judgeMarker(id, el.dataset.value)); } catch (err) { toast(errorText(err)); }
+        // «noch nicht»: right away a field for what is still wrong (Christoph 29.10.2026)
+        if (el.dataset.value === "not_yet") { s.followUp = id; s.followText = ""; } else if (s.followUp === id) s.followUp = null;
+        render();
+        setTimeout(() => document.querySelector('textarea[name="st-follow"]')?.focus(), 0);
         return true;
+      case "st-follow": s.followUp = id; s.followText = ""; render(); setTimeout(() => document.querySelector('textarea[name="st-follow"]')?.focus(), 0); return true;
+      case "st-follow-cancel": s.followUp = null; render(); return true;
       case "st-finish": {
         const it = item();
         try {
@@ -829,6 +913,16 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   }
 
   async function onSubmit(form) {
+    if (form.dataset.form === "st-follow") {
+      const text = form.elements["st-follow"].value.trim();
+      if (!text) return true;
+      try {
+        await wrote(() => data.followUpMarker(form.dataset.id, text));
+        st().followUp = null; st().followText = "";
+      } catch (err) { toast(errorText(err)); }
+      render();
+      return true;
+    }
     if (form.dataset.form !== "st-marker") return false;
     const f = st().form;
     const body = form.elements["st-body"].value.trim();
@@ -842,6 +936,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
   }
   function onInput(e) {
     if (e.target.name === "st-body" && st().form) { st().form.body = e.target.value; return true; }
+    if (e.target.name === "st-follow") { st().followText = e.target.value; return true; }
     return false;
   }
 

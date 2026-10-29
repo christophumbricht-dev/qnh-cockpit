@@ -178,7 +178,7 @@ export function reviewFile(item, markers) {
 }
 export function markerLine(m) {
   const where = m.target !== "medium" ? m.target : m.page != null ? `Seite ${m.page + 1}` : m.at != null ? `${m.at.toFixed(1)} s${m.scene_id ? ` (${m.scene_id} +${(m.offset_s ?? 0).toFixed(1)} s)` : ""}` : "ganzer Beitrag";
-  return `${m.id}  ${where}${m.x != null ? ` @${m.x}%/${m.y}%` : ""}  [${m.category}${m.status === "not_yet" ? ", noch nicht" : ""}]  ${m.body}`;
+  return `${m.id}  ${where}${m.x != null ? ` @${m.x}%/${m.y}%` : ""}  [${m.category}${m.status === "not_yet" ? ", noch nicht" : ""}]  ${String(m.body).replace(/\s*\n+\s*/g, " · ")}`;
 }
 
 // ---------- YouTube-Ablauf: ideas and drafts ----------
