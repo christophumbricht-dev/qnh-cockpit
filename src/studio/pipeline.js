@@ -11,7 +11,9 @@ import { WEEKPLAN, addDaysIso } from "../social/weekplan.js";
 // Instagram of Leeside and Downwind with every format, reel, carousel, picture or story (7 a week each; «es soll alles
 // durchs Studio durch»). formats null = all formats.
 export const PIPELINE = [
-  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "lange Videos, Ziel 2 pro Woche (plus Shorts)" },
+  // from December 3 a week on fixed days: Wednesday, Friday (accident case) and Sunday (Christoph 30.10.2026)
+  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "lange Videos, 2 pro Woche, ab Dezember 3: Mi, Fr Unfall, So",
+    from: [{ monday: "2026-11-30", perWeek: 3, days: [2, 4, 6] }] },
   { channel: "leesidelab/instagram", formats: null, perWeek: 7, label: "Instagram" },
   { channel: "downwind/instagram", formats: null, perWeek: 7, label: "Instagram" },
 ];
@@ -84,7 +86,9 @@ export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELI
   // a post without a time comes after those with one
   const at = (i) => { const t = timeOf(i); return t ? new Date(t).getTime() : Infinity; };
   const byTime = (a, b) => at(a) - at(b) || String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
-  return pipeline.map(({ channel, formats, perWeek, label, looksOnly = false }) => {
+  return pipeline.map(({ channel, formats, perWeek, label, looksOnly = false, from = [] }) => {
+    // the goal of a week: the latest period that has started by its Monday (days: fixed weekdays, 0 = Monday)
+    const goal = (m) => [...from].sort((a, b) => a.monday.localeCompare(b.monday)).filter((p) => p.monday <= m).at(-1) ?? { perWeek, days: null };
     const [app_id, platform] = channel.split("/");
     // the standard week: Instagram, and the YouTube week (all Shorts)
     const plan = WEEKPLAN.find((c) => c.app_id === app_id && c.platform === platform && (formats == null || looksOnly));
@@ -93,6 +97,7 @@ export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELI
       channel, perWeek, label, looksOnly,
       weeks: Array.from({ length: weeks }, (_, w) => {
         const m = addDaysIso(monday, 7 * w);
+        const { perWeek: weekGoal, days: fixed } = goal(m);
         const count = mine.filter((i) => i.day >= m && i.day <= addDaysIso(m, 6)).length;
         const days = Array.from({ length: 7 }, (_, d) => {
           const date = addDaysIso(m, d);
@@ -100,15 +105,16 @@ export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELI
           const weakest = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
           const slot = plan?.slots.find((s) => s.day === d) ?? null;
           // «N/A» (Christoph 30.10.2026): a day with nothing on purpose; with a standard week a day without its slot,
-          // without one (long videos, no fixed days) the free days of a week that already has its goal
-          const off = !list.length && (plan ? !slot : count >= perWeek);
+          // without one (long videos) the days that are not fixed, or with no fixed days the free days of a week
+          // that already has its goal
+          const off = !list.length && (plan ? !slot : fixed ? !fixed.includes(d) : count >= weekGoal);
           const lateOf = (i) => date >= today && isLate(i.status, date, today);
           const entries = list.map((i) => ({ item: i, phase: phaseOf(i.status), late: lateOf(i) }));
           return { date, slot, items: list, entries, off, phase: phaseOf(weakest?.status ?? null), late: weakest ? lateOf(weakest) : false };
         });
-        const missing = Math.max(0, perWeek - count);
+        const missing = Math.max(0, weekGoal - count);
         // without ideas a missing Short is not late (it simply is not made yet)
-        return { monday: m, count, missing, late: !looksOnly && missing > 0 && addDaysIso(m, 6) >= today && today > deadline(m, 1), days };
+        return { monday: m, perWeek: weekGoal, count, missing, late: !looksOnly && missing > 0 && addDaysIso(m, 6) >= today && today > deadline(m, 1), days };
       }),
     };
   });

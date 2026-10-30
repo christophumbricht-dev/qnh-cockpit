@@ -147,7 +147,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     return `<section class="card pl-block"><div class="blk-head"><b>Ablauf: Idee → Entwurf → Video → Feinschliff</b>
         <button class="btn ghost" data-action="st-block" data-value="-28" aria-label="4 Wochen zurück">‹</button><span>4 Wochen ab ${esc(dm(monday))}</span><button class="btn ghost" data-action="st-block" data-value="28" aria-label="4 Wochen vor">›</button></div>
       ${rows.map((r) => `<p class="st-ch">${esc(CHANNEL_NAME[r.channel] ?? r.channel)} · ${esc(r.label)}</p><div class="blk-grid"><span></span>${WEEK_DAYS.map((d) => `<span class="blk-dow">${d}</span>`).join("")}<span class="blk-dow">Woche</span>
-        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map((d) => cell(d, r.channel)).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${r.perWeek})">${w.count}/${r.perWeek}</span>`).join("")}</div>`).join("")}
+        ${r.weeks.map((w) => `<span class="blk-week">${esc(dm(w.monday))}</span>${w.days.map((d) => cell(d, r.channel)).join("")}<span class="pl-count${w.late ? " pl-short" : ""}" title="${esc(r.label)} in dieser Woche (Ziel ${w.perWeek})">${w.count}/${w.perWeek}</span>`).join("")}</div>`).join("")}
       <p class="muted small blk-legend">${legend} · <span class="pl-key pl-late-key"></span> im Verzug · «du» = du bist dran · rechts: Beiträge der Woche (rot = zu wenige Ideen)</p>
       <p class="muted small">Fristen vor dem Sendetag: Idee ${DEADLINE_DAYS[1]} Tage, Entwurf ${DEADLINE_DAYS[2]}, Video ${DEADLINE_DAYS[3]}, Feinschliff ${DEADLINE_DAYS[4]}.</p></section>`;
   }

@@ -99,3 +99,12 @@ test("pipelineBlock: two posts on a day, one entry each with its own phase, orde
   const one = pipelineBlock([items[0]], "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.looksOnly))[0].weeks[0].days[0];
   assert.deepEqual([one.entries.length, one.phase.n], [1, 3]);
 });
+
+test("pipelineBlock: long videos 3 a week from 30.11.2026 on Wednesday, Friday and Sunday", () => {
+  const long = (id, day) => ({ id, channel: "leesidelab/youtube", format: "video_long", day, status: "draft" });
+  const [row] = pipelineBlock([long("a", "2026-11-25"), long("b", "2026-12-02"), long("c", "2026-12-04")], "2026-11-23", "2026-10-30", 2);
+  const [nov, dec] = row.weeks;
+  assert.deepEqual([nov.perWeek, nov.count, dec.perWeek, dec.count, dec.missing], [2, 1, 3, 2, 1]);
+  // December: only Mon, Tue, Thu, Sat are N/A; the empty Sunday is a gap, not N/A
+  assert.deepEqual(dec.days.map((d) => d.off), [true, true, false, true, false, true, false]);
+});
