@@ -31,10 +31,11 @@ export const WEEKPLAN = [
   {
     app_id: "downwind", platform: "instagram", slots: [
       { day: 0, time: "18:00", format: "Karussell", note: "Flugplätze, Tipps, Hintergrund" },
-      { day: 1, time: "18:00", format: "Flugplatz-Tipp", note: "Bild und kurzer Text" },
-      { day: 2, time: "18:00", format: "Karussell oder Bild", note: "App und Fliegen" },
+      // at least 4 reels a week (Christoph 30.10.2026: reels reach 5 to 10 times more accounts)
+      { day: 1, time: "18:00", format: "Flugplatz-Tipp", note: "Reel mit Downwind Theme, Tipp als Text" },
+      { day: 2, time: "18:00", format: "Karussell oder Bild", note: "Flugplätze, App und Fliegen" },
       { day: 3, time: "18:00", format: "App-Funktion in 15 Sekunden", note: "Reel mit Downwind Theme (dazu Storys)" },
-      { day: 4, time: "18:00", format: "Bild oder Karussell", note: "" },
+      { day: 4, time: "18:00", format: "App und Fliegen", note: "Reel mit Downwind Theme" },
       { day: 5, time: "09:00", format: "Flug-Reel", note: "App-Replay mit Downwind Theme" },
       { day: 6, time: "18:00", format: "Foto der Woche", note: "eigene Fotos oder Jürg mit Bildnachweis" },
     ],
