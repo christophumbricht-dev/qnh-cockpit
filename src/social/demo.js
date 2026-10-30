@@ -143,3 +143,30 @@ export async function outreachItem(id, patch) {
   Object.assign(it, patch, patch.status ? { done_at: patch.status === "done" ? new Date().toISOString() : null } : {}); emit();
 }
 export async function runOutreach() { await wait(800); out.settings.last_run_at = new Date().toISOString(); emit(); return { status: out.settings.enabled ? "ok" : "off", found: 0, suggested: 0, skipped: 0, errors: [] }; }
+
+// ---------- «Konkurrenz»: invented channels and videos (titles made up, no real numbers) ----------
+const comp = (() => {
+  const dayIso = (back) => new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
+  const channels = [
+    { id: "k1", handle: "@AccidentFilesDemo", note: "Unfall-Dokus, lange Videos", active: true, channel_id: null, title: "Accident Files (Demo)", thumbnail_url: null, subscribers: 412000, videos: 180, views: 9e7, last_checked_at: ago(240), last_error: null },
+    { id: "k2", handle: "@CockpitBasicsDemo", note: "Erklärvideos für Piloten", active: true, channel_id: null, title: "Cockpit Basics (Demo)", thumbnail_url: null, subscribers: 38000, videos: 260, views: 4e6, last_checked_at: ago(240), last_error: null },
+    { id: "k3", handle: "@nobody_demo", note: "", active: true, channel_id: null, title: "", thumbnail_url: null, subscribers: null, videos: null, views: null, last_checked_at: ago(240), last_error: "Kanal «@nobody_demo» nicht gefunden." },
+  ];
+  const list = [
+    ["k1", "The storm they flew into anyway", 3, 1500, 640000], ["k1", "Fuel for 20 minutes, 90 to go", 10, 1320, 210000], ["k1", "Two pilots, one wrong altimeter", 20, 1100, 190000],
+    ["k1", "The checklist nobody finished", 31, 1610, 230000], ["k1", "Icing at 9000 ft", 45, 1250, 170000],
+    ["k2", "How the vacuum pump keeps your gyros alive", 4, 640, 42000], ["k2", "QNH vs QFE in 60 seconds", 2, 58, 310000], ["k2", "Carb ice: the 3 signs", 9, 45, 21000],
+    ["k2", "Crosswind landing, step by step", 15, 720, 9000], ["k2", "Density altitude explained", 25, 810, 11000], ["k2", "Why the compass lies in turns", 30, 50, 18000], ["k2", "Stall warning: what it really senses", 40, 55, 16000],
+  ];
+  const videos = list.map(([competitor_id, title, back, duration_s], i) => ({ video_id: `demo${String(i).padStart(7, "0")}`, competitor_id, title, published_at: new Date(Date.now() - back * 864e5).toISOString(), duration_s, is_short: duration_s <= 180, thumbnail_url: null }));
+  const days = list.flatMap(([, , back, , views], i) => [{ video_id: videos[i].video_id, day: dayIso(0), views }, ...(back > 8 ? [{ video_id: videos[i].video_id, day: dayIso(7), views: Math.round(views * 0.9) }] : [])]);
+  return { channels, videos, days };
+})();
+export async function competitors() { await wait(); return clone(comp); }
+export async function addCompetitor(handle, note) {
+  if (comp.channels.some((c) => c.handle.toLowerCase() === handle.toLowerCase())) throw new Error("Steht schon auf der Liste.");
+  comp.channels.push({ id: `k${comp.channels.length + 1}`, handle, note, active: true, channel_id: null, title: "", thumbnail_url: null, subscribers: null, videos: null, views: null, last_checked_at: null, last_error: null });
+}
+export async function removeCompetitor(id) { comp.channels.splice(comp.channels.findIndex((c) => c.id === id), 1); }
+export async function competitorActive(id, active) { comp.channels.find((c) => c.id === id).active = active; }
+export async function runCompetitors() { await wait(600); return { results: comp.channels.filter((c) => c.active).map((c) => ({ handle: c.handle, status: c.last_error ? "failed" : "ok" })) }; }

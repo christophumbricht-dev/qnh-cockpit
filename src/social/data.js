@@ -286,3 +286,41 @@ export function subscribe(onChange) {
     .subscribe();
   return () => sb().removeChannel(channel);
 }
+
+// ---------- «Konkurrenz»: YouTube channels of other creators (migration 20261030100000_competitors.sql) ----------
+// loaded only when the tab is opened; null = not set up yet (migration missing), competitorsError keeps the answer
+export let competitorsError = null;
+const COMP_COLS = "id, handle, note, active, channel_id, title, thumbnail_url, subscribers, videos, views, last_checked_at, last_error, created_at";
+const VIDEO_COLS = "video_id, competitor_id, title, published_at, duration_s, is_short, thumbnail_url";
+export async function loadCompetitors() {
+  if (DEMO) return demo.competitors();
+  const since = new Date(Date.now() - 9 * 864e5).toISOString().slice(0, 10);   // the latest day and the one 7 days before
+  const [channels, videos] = await Promise.all([
+    sb().from("competitor_channels").select(COMP_COLS).order("created_at"),
+    sb().from("competitor_videos").select(VIDEO_COLS).order("published_at", { ascending: false }).limit(2000),
+  ]);
+  const err = channels.error ?? videos.error;
+  competitorsError = err ? [err.code, err.message].filter(Boolean).join(": ") : null;
+  if (err) return null;
+  // views per day of the last 9 days, in pages (PostgREST gives at most 1000 rows per request)
+  const days = [];
+  for (let from = 0; from < 20000; from += 1000) {
+    const page = must(await sb().from("competitor_video_days").select("video_id, day, views").gte("day", since).order("day").range(from, from + 999), "competitor days");
+    days.push(...page);
+    if (page.length < 1000) break;
+  }
+  return { channels: channels.data, videos: videos.data, days };
+}
+export async function addCompetitor(handle, note = "") {
+  if (DEMO) return demo.addCompetitor(handle, note);
+  must(await sb().from("competitor_channels").insert({ handle, note }), "competitor");
+}
+export async function removeCompetitor(id) {
+  if (DEMO) return demo.removeCompetitor(id);
+  must(await sb().from("competitor_channels").delete().eq("id", id), "competitor");
+}
+export async function setCompetitorActive(id, active) {
+  if (DEMO) return demo.competitorActive(id, active);
+  must(await sb().from("competitor_channels").update({ active }).eq("id", id), "competitor");
+}
+export const runCompetitors = async () => (DEMO ? demo.runCompetitors() : op({ op: "competitors" }));

@@ -151,6 +151,7 @@ function route() {
     S.social.byTopic = second === "themen"; // Social → Themen: same posts, grouped by topic
     if (second === "kommentare") social.setMode("comments");
     else if (second === "bei-anderen") social.setMode("outreach");
+    else if (second === "konkurrenz") social.setMode("competitors");
     else if (second === "wochenplan") { location.replace("#studio"); return; }   // the week plan is the Ablauf in the studio now
     else if (second === "themen") { S.social.filter = "all"; social.setMode("list"); }
     else S.social.filter = second && [...APPS, ...BRANDS].some((b) => b.id === second) ? second : "all"; // a channel from the sidebar, else all
@@ -1115,6 +1116,7 @@ root.addEventListener("submit", async (e) => {
   if (form.dataset.form.startsWith("fin-")) return finance.onSubmit(form);
   if (form.dataset.form.startsWith("st-")) return studio.onSubmit(form);
   if (form.dataset.form.startsWith("ib-")) return inbox.onSubmit(form);
+  if (form.dataset.form.startsWith("soc-")) return social.onSubmit(form);
   const a = appById(form.dataset.app);
   const l = (S.login[a.id] ??= { step: "email", email: "" });
   l.busy = true;

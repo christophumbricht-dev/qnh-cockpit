@@ -9,6 +9,7 @@
 //   npm run social -- comments draft <id> "…"                         reply suggestion – Christoph sends it himself
 //   npm run social -- import --replace    also take over changed packages of approved/edited posts (asks Christoph first!)
 //   npm run social -- todo-clear [--dry]  empty the to-do notes of drafts/planned/failed posts (backup in pakete/)
+//   npm run social -- konkurrenz [--shorts] [--tage 60] [--json] [--holen]   what stands out at other YouTube channels (social-competitors.mjs)
 //   npm run social -- platzhalter <app/plattform> <YYYY-MM-DD> <HH:MM> "Was kommt"   hold a day in the calendar (social-placeholder.mjs)
 //
 // Uses Christoph's admin session from `npm run roadmap -- login`. Remembers what was imported in
@@ -22,6 +23,7 @@ import { placeholder } from "./social-placeholder.mjs";
 import { stats } from "./social-stats.mjs";
 import { mb, prepareVideo } from "./social-video.mjs";
 import { comments } from "./social-comments.mjs";
+import { competitors } from "./social-competitors.mjs";
 import { studioFromImport } from "./studio.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
 import { IMPORT, PackageError, isQuizStory, parsePackage } from "../src/social/package.js";
@@ -164,10 +166,11 @@ async function todoClear(sb, a) {
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  if (!["status", "import", "stats", "comments", "todo-clear", "platzhalter"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | todo-clear [--dry] | platzhalter <app/plattform> <datum> <zeit> \"…\" | platzhalter list");
+  if (!["status", "import", "stats", "comments", "todo-clear", "platzhalter", "konkurrenz"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | konkurrenz [--shorts] [--holen] | todo-clear [--dry] | platzhalter <app/plattform> <datum> <zeit> \"…\" | platzhalter list");
   if (cmd === "platzhalter") return placeholder(await signedIn(), args(process.argv.slice(3)));
   if (cmd === "todo-clear") return todoClear(await signedIn(), args(process.argv.slice(3), ["dry"]));
   if (cmd === "stats") return stats(await signedIn(), args(process.argv.slice(3), ["json", "refresh"]));
+  if (cmd === "konkurrenz") return competitors(await signedIn(), args(process.argv.slice(3), ["json", "shorts", "holen"]));
   if (cmd === "comments") return comments(await signedIn(), args(process.argv.slice(3), ["json", "all", "clear"]));
   const a = args(rest, ["replace"]);
   const only = new Set(a._);

@@ -13,6 +13,8 @@
 // POST { op: "moderate", comment_id, action }                admin only: hide | show | approve | delete (own)
 // POST { op: "youtube-auth", app_id, redirect_uri, state }   admin only: Google sign-in URL («YouTube verbinden»)
 // POST { op: "youtube-connect", app_id, code, redirect_uri } admin only: store the channel's refresh token in Vault
+// POST { op: "competitors", competitor_id? }  «Konkurrenz»: public numbers of the latest videos of watched YouTube
+//                                    channels (also daily with op stats); read only, nothing is downloaded
 // POST { op: "outreach" }            «Bei anderen»: read posts of watched accounts/hashtags, ask Claude for comment
 //                                    suggestions (cron twice a day, or «Jetzt suchen»). Off in the cockpit = does nothing.
 //                                    Never posts, likes or follows anything.
@@ -32,6 +34,7 @@ import { cleanup, FinalError, publishDue, refreshTokens, type Deps } from "./pub
 import { supabaseStore } from "./store.ts";
 import { followUpYoutube, preuploadYoutube } from "./youtube.ts";
 import { collectStats } from "./stats.ts";
+import { collectCompetitors } from "./competitors.ts";
 import { runOutreach, translateGerman } from "./outreach.ts";
 import { elevenlabsCredits } from "./elevenlabs.ts";
 import { answerQuizzes, fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, sendDueReplies, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
@@ -124,7 +127,18 @@ Deno.serve(async (req) => {
     }
     if (op === "refresh-tokens") return json({ results: await refreshTokens(deps) });
     if (op === "cleanup") return json({ results: await cleanup(deps) });
-    if (op === "stats") return json({ results: await collectStats({ store, fetch, now: deps.now, google }) });
+    if (op === "stats") {
+      const results = await collectStats({ store, fetch, now: deps.now, google });
+      // «Konkurrenz» once a day with the statistics; a problem here must not hide the results above
+      let competitors: unknown[] = [];
+      try {
+        competitors = await collectCompetitors({ store, fetch, now: deps.now, google });
+      } catch (err) {
+        console.error("social-publish competitors", err);
+      }
+      return json({ results, competitors });
+    }
+    if (op === "competitors") return json({ results: await collectCompetitors({ store, fetch, now: deps.now, google }, str(body.competitor_id) || undefined) });
     if (op === "comments") {
       const results = await fetchComments(cdeps);
       let quiz: unknown[] = [];

@@ -1287,3 +1287,25 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .pl-stack.today { outline: 2px solid var(--brand); outline-offset: 2px; }
 .pl-stack .pl-cell { height: 22px; }
 .pl-stack .pl-you { inset: auto 2px 2px auto; padding: 1px 4px; }
+/* Social «Konkurrenz»: other creators' YouTube videos that stand out (Christoph 30.10.2026) */
+.kon-head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.kon-head-row h3 { margin: 0; }
+.kon-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.kon-video { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: start; }
+.kon-video > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kon-video a { color: inherit; text-decoration: none; }
+.kon-video b { overflow-wrap: anywhere; }
+.kon-thumb img, .kon-noimg { display: block; width: 160px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--line, #d9e2ec); }
+.kon-video.short .kon-thumb img, .kon-video.short .kon-noimg { width: 90px; aspect-ratio: 9 / 16; margin: 0 auto; }
+.kon-factor { color: var(--brand); font-variant-numeric: tabular-nums; }
+.kon-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.kon-table th, .kon-table td { padding: 8px 6px; border-bottom: 1px solid var(--line, #d9e2ec); text-align: left; vertical-align: top; }
+.kon-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kon-acts { white-space: nowrap; text-align: right; }
+.kon-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.kon-add input { flex: 1 1 180px; min-width: 0; }
+@media (max-width: 640px) {
+  .kon-video { grid-template-columns: 110px 1fr; }
+  .kon-thumb img, .kon-noimg { width: 110px; }
+  .kon-table th:nth-child(4), .kon-table td:nth-child(4), .kon-table th:nth-child(5), .kon-table td:nth-child(5) { display: none; }
+}

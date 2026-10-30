@@ -11,6 +11,7 @@ import { money } from "../finance/calc.js";
 import { findPublishedTwin } from "./dupes.js";
 import { createInbox } from "./inbox-ui.js";
 import { createOutreach } from "./outreach-ui.js";
+import { createCompetitors } from "./competitors-ui.js";
 
 const STATUS = { draft: "Entwurf", approved: "Geplant", publishing: "Wird veröffentlicht …", published: "Veröffentlicht", failed: "Fehler" };
 const GROUPS = [["Entwürfe", ["draft"]], ["Geplant", ["approved", "publishing"]], ["Veröffentlicht", ["published"]], ["Fehler", ["failed"]]];
@@ -36,6 +37,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   let reloadTimer;
   const inbox = createInbox({ S, render, toast, errorText, appName, appBadge, brands, reload: () => load(true) });
   const outreach = createOutreach({ S, render, toast, errorText });
+  const competitors = createCompetitors({ S, render, toast, errorText });
   let connectChecked = false;
 
   // ---------- data ----------
@@ -102,7 +104,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     // Wochenplan first (27.10.2026, Christoph: look at the 4-week block, then approve in the week); the full post list last.
     // The month calendar tab was removed the same day (the 4-week block replaces it).
     // the week plan moved into the Digital Studio (Ablauf block, 28.10.2026, Christoph); weekView stays unused for now
-    const modes = [["list", "Alle Beiträge"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"]].map(([v, l]) =>
+    const modes = [["list", "Alle Beiträge"], ["comments", `Kommentare${openComments ? ` · ${openComments}` : ""}`], ["outreach", `Bei anderen${openOut ? ` · ${openOut}` : ""}`], ["stats", "Statistik"], ["competitors", "Konkurrenz"]].map(([v, l]) =>
       `<button class="seg-btn${st.mode === v ? " on" : ""}" data-action="soc-mode" data-value="${v}" aria-pressed="${st.mode === v}">${l}</button>`).join("");
     const connect = inbox.connectRow();
     const channelList = accounts().filter((a) => st.filter === "all" || a.app_id === st.filter);
@@ -125,12 +127,12 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
           <button class="btn ghost desk-only" data-action="soc-pick-package">Paket importieren</button>
           <button class="btn desk-only" data-action="soc-new"${publishable().length ? "" : " disabled"}>Neuer Beitrag</button>
         </div></div>
-      ${apps.length > 1 && st.mode !== "outreach" ? `<div class="chips soc-apps">${chips}</div>` : ""}
+      ${apps.length > 1 && st.mode !== "outreach" && st.mode !== "competitors" ? `<div class="chips soc-apps">${chips}</div>` : ""}
       ${st.mode !== "list" ? "" : accounts().length ? `<div class="channels">${channelList.map(channelCard).join("")}${connect ? `<div class="channel-card add"><b>Kanal hinzufügen</b><span class="muted small">YouTube: hier verbinden. Instagram: docs/social-setup.md</span>${connect}</div>` : ""}</div>`
         : `<p class="note">Noch kein Konto verbunden (docs/social-setup.md, Schritt «Konto eintragen»).</p>`}
       ${st.error ? `<p class="error">${esc(errorText(st.error))}</p>` : ""}
       ${st.mode === "list" ? searchBar(shown) : ""}
-      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : listView(shown)}`;
+      ${st.mode === "stats" ? statsView() : st.mode === "comments" ? inbox.view() : st.mode === "outreach" ? outreach.view() : st.mode === "competitors" ? competitors.view() : listView(shown)}`;
   }
 
   // ---------- search + status filter ----------
@@ -404,7 +406,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   function savedMode() {
-    try { const m = localStorage.getItem(MODE_KEY); return ["list", "stats", "comments", "outreach"].includes(m) ? m : "list"; } catch { return "list"; }
+    try { const m = localStorage.getItem(MODE_KEY); return ["list", "stats", "comments", "outreach", "competitors"].includes(m) ? m : "list"; } catch { return "list"; }
   }
   // second half of approved → draft → approved (the time of an approved post is frozen): if it fails, the post
   // stays a draft and would silently not go out – say so plainly
@@ -1144,6 +1146,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   async function onClick(action, el) {
     if (action.startsWith("soc-cmt-") || action.startsWith("soc-yt-")) return inbox.onClick(action, el);
     if (action.startsWith("soc-out-")) return outreach.onClick(action, el);
+    if (action.startsWith("soc-kon-")) return competitors.onClick(action, el);
     const st = S.social;
     const ed = st.editor;
     const id = el.dataset.id;
@@ -1323,6 +1326,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   function onInput(e) {
     if (inbox.onInput(e)) return true;
     if (outreach.onInput(e)) return true;
+    if (competitors.onInput(e)) return true;
     const ed = S.social.editor;
     const name = e.target.name ?? "";
     if (name === "soc-search") { S.social.q = e.target.value; render(); return true; }
@@ -1436,7 +1440,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
 
   // #social/kommentare opens the inbox, #social/bei-anderen the suggestions (links from «Heute»)
-  const setMode = (mode) => { if (["list", "comments", "stats", "outreach"].includes(mode)) S.social.mode = mode; };
+  const setMode = (mode) => { if (["list", "comments", "stats", "outreach", "competitors"].includes(mode)) S.social.mode = mode; };
   // checklist of one post for «Heute» (same checkboxes as in the list, action soc-todo-check)
   function todoChecklist(id) {
     const p = posts().find((x) => x.id === id);
@@ -1467,5 +1471,6 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
   }
   const todoProgress = (t) => { const l = todoLines(t); return { done: l.filter((x) => x.done).length, total: l.length }; };
   return { approvePost, todoChecklist, miniPhone, todoProgress, todoFirstOpen, onScroll, afterRender, todoOpen, load, view, badge, onClick, onInput, onChange, onDrop, onDragOver, setMode,
+    onSubmit: (form) => competitors.onSubmit(form),
     commentCount: () => inbox.count(), outreachCount: () => outreach.count(), onKeydown: (e) => outreach.onKeydown(e) };
 }

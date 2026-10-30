@@ -5,6 +5,7 @@ import type { MediaRow, StatsStore } from "./stats.ts";
 import type { CommentsStore, QuizStore, ReplyStore, StoredComment } from "./comments.ts";
 import type { FollowUpStore, PreStore } from "./youtube.ts";
 import type { Item, OutreachSettings, OutreachStore, Watch } from "./outreach.ts";
+import type { Competitor, CompetitorStore } from "./competitors.ts";
 
 const BUCKET = "social-media";
 const ACCOUNT_COLS = "id, app_id, platform, remote_id, handle, active, token_expires_at";
@@ -17,8 +18,23 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 
 const ITEM_COLS = "id, watch_id, source, media_id, username, permalink, caption, media_type, image_url, posted_at, like_count, comments_count, status, found_at";
 
-export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & PreStore & OutreachStore & ReplyStore & QuizStore {
+export function supabaseStore(db: SupabaseClient): Store & StatsStore & CommentsStore & FollowUpStore & PreStore & OutreachStore & ReplyStore & QuizStore & CompetitorStore {
   return {
+    // ---------- «Konkurrenz» (competitors.ts) ----------
+    async competitors() {
+      return must(await db.from("competitor_channels").select("id, handle, channel_id, active").order("created_at"), "competitors") as Competitor[];
+    },
+    async ourYoutubeAccount() {
+      const rows = must(await db.from("social_accounts").select("id, app_id").eq("platform", "youtube").eq("active", true), "youtube account") as Array<{ id: string; app_id: string }>;
+      return rows.find((a) => a.app_id === "leesidelab") ?? rows[0] ?? null;
+    },
+    async saveCompetitor(id, patch) {
+      must(await db.from("competitor_channels").update(patch).eq("id", id), "competitor");
+    },
+    async saveCompetitorVideos(videos, days) {
+      if (videos.length) must(await db.from("competitor_videos").upsert(videos, { onConflict: "video_id" }), "competitor videos");
+      if (days.length) must(await db.from("competitor_video_days").upsert(days, { onConflict: "video_id,day" }), "competitor days");
+    },
     async claim(postId) {
       return must(await db.rpc("social_claim", { p_post_id: postId ?? null, p_limit: 5 }), "claim") as Post[];
     },
