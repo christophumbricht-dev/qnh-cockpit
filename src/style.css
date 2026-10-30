@@ -1282,3 +1282,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* Studio Ablauf: a day with nothing planned on purpose (Christoph 30.10.2026) */
 .pl-cell.pl-off { opacity: .7; font: 600 10px/1 var(--mono); color: var(--muted); letter-spacing: .02em; }
+/* Studio Ablauf: two or more posts on a day, one field each, one below the other (Christoph 30.10.2026) */
+.pl-stack { display: flex; flex-direction: column; gap: 3px; border-radius: 7px; }
+.pl-stack.today { outline: 2px solid var(--brand); outline-offset: 2px; }
+.pl-stack .pl-cell { height: 22px; }
+.pl-stack .pl-you { inset: auto 2px 2px auto; padding: 1px 4px; }

@@ -82,3 +82,20 @@ test("pipelineBlock: N/A on days with nothing on purpose", () => {
   const [ig] = pipelineBlock([], "2026-11-02", "2026-10-28", 1, BLOCK_ROWS.filter((r) => r.channel === "leesidelab/instagram"));
   assert.equal(ig.weeks[0].days.some((d) => d.off), false);
 });
+
+test("pipelineBlock: two posts on a day, one entry each with its own phase, ordered by air time", () => {
+  const short = (id, status, created_at) => ({ id, channel: "leesidelab/youtube", format: "short", day: "2026-11-02", status, created_at, social_post_id: `p-${id}` });
+  const times = { "p-a": "2026-11-02T18:00:00Z", "p-b": "2026-11-02T16:00:00Z" };
+  const items = [short("a", "review1", "2026-10-01"), short("b", "approved", "2026-10-02"), short("c", "work", "2026-09-01")];
+  const [row] = pipelineBlock(items, "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.looksOnly), (i) => times[i.social_post_id] ?? null);
+  const day = row.weeks[0].days[0];
+  // b airs at 17:00, a at 19:00, c has no time: last
+  assert.deepEqual(day.entries.map((e) => e.item.id), ["b", "a", "c"]);
+  assert.deepEqual(day.entries.map((e) => [e.phase.n, e.phase.who]), [[5, null], [3, "christoph"], [4, "claude"]]);
+  // Video is due 7 days ahead (late), Feinschliff 3 days ahead (still in time)
+  assert.deepEqual(day.entries.map((e) => e.late), [false, true, false]);
+  assert.equal(row.weeks[0].count, 3);
+  // one post: one entry, the day as before
+  const one = pipelineBlock([items[0]], "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.looksOnly))[0].weeks[0].days[0];
+  assert.deepEqual([one.entries.length, one.phase.n], [1, 3]);
+});

@@ -58,6 +58,8 @@ const social = createSocial({ S, render: (force) => render(force), toast: (t) =>
 const inbox = createInbox({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id, patch, mediaKey) => social.approvePost(id, patch, mediaKey),
   handleFor: (channel) => { const [app, platform] = channel.split("/"); const a = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform); return a?.handle || app; },
+  // air time of a studio item's Social post: the order of two posts on one day in the Ablauf block
+  postTime: (id) => (id && S.social?.value?.posts?.find((p) => p.id === id)?.scheduled_at) || null,
   // a day without a studio item: the Social post of that day (e.g. a YouTube Short), else the list
   openDay: (channel, date) => {
     const [app, platform] = channel.split("/");

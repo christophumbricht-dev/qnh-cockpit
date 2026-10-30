@@ -76,8 +76,14 @@ export const christophsTurn = (status) => phaseOf(status).who === "christoph";
 // 4-week block of the Ablauf: per channel, per day the long videos of that day (no fixed weekdays: a day without
 // one is just free), per week how many are planned against the goal; a week is short of videos («missing») when it
 // has fewer than perWeek items and its idea deadline (21 days before its Monday) has passed
-// → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late }] }] }]
-export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE) {
+// → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late, entries }] }] }]
+// entries: one per item with its own phase and «late», shown one below the other (Christoph 30.10.2026 «wenn es zwei
+// posts hat, zeige sie untereinander an»), ordered by air time (timeOf: item → ISO time of its Social post, or null),
+// else by creation
+export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE, timeOf = () => null) {
+  // a post without a time comes after those with one
+  const at = (i) => { const t = timeOf(i); return t ? new Date(t).getTime() : Infinity; };
+  const byTime = (a, b) => at(a) - at(b) || String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
   return pipeline.map(({ channel, formats, perWeek, label, looksOnly = false }) => {
     const [app_id, platform] = channel.split("/");
     // the standard week: Instagram, and the YouTube week (all Shorts)
@@ -90,13 +96,15 @@ export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELI
         const count = mine.filter((i) => i.day >= m && i.day <= addDaysIso(m, 6)).length;
         const days = Array.from({ length: 7 }, (_, d) => {
           const date = addDaysIso(m, d);
-          const list = mine.filter((i) => i.day === date);
+          const list = mine.filter((i) => i.day === date).sort(byTime);
           const weakest = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
           const slot = plan?.slots.find((s) => s.day === d) ?? null;
           // «N/A» (Christoph 30.10.2026): a day with nothing on purpose; with a standard week a day without its slot,
           // without one (long videos, no fixed days) the free days of a week that already has its goal
           const off = !list.length && (plan ? !slot : count >= perWeek);
-          return { date, slot, items: list, off, phase: phaseOf(weakest?.status ?? null), late: weakest && date >= today ? isLate(weakest.status, date, today) : false };
+          const lateOf = (i) => date >= today && isLate(i.status, date, today);
+          const entries = list.map((i) => ({ item: i, phase: phaseOf(i.status), late: lateOf(i) }));
+          return { date, slot, items: list, entries, off, phase: phaseOf(weakest?.status ?? null), late: weakest ? lateOf(weakest) : false };
         });
         const missing = Math.max(0, perWeek - count);
         // without ideas a missing Short is not late (it simply is not made yet)

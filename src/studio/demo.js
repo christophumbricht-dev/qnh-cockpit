@@ -25,6 +25,7 @@ const items = [
   // YouTube Shorts: only the two looks (Sichtung 1 = step 3 Video)
   { id: "sh1", channel: "leesidelab/youtube", format: "short", title: "What is the Bise? | Bise, part 1 #Shorts", slug: "yt-short-bise-1", day: addDaysIso(mon, 7), status: "review1", current_version: 1, social_post_id: null },
   { id: "sh2", channel: "leesidelab/youtube", format: "short", title: "Why the Bise is strongest in Geneva | Bise, part 2 #Shorts", slug: "yt-short-bise-2", day: addDaysIso(mon, 9), status: "review1", current_version: 1, social_post_id: null },
+  { id: "sh3", channel: "leesidelab/youtube", format: "short", title: "Left or right? Two ways to draw the same horizon #Shorts", slug: "yt-short-horizon", day: addDaysIso(mon, 9), status: "approved", current_version: 1, social_post_id: null },
   // YouTube-Ablauf: one item per step
   { id: "yt1", channel: "leesidelab/youtube", format: "video_long", title: "Wind im Griff 3: Böen beim Aufsetzen", slug: "yt-wind-3", day: addDaysIso(mon, 1), status: "approved", current_version: 2, social_post_id: null },
   { id: "yt2", channel: "leesidelab/youtube", format: "video_long", title: "Woher kommt das Wetter? Die Bise", slug: "yt-bise", day: addDaysIso(mon, 10), status: "work", current_version: 1, social_post_id: null },

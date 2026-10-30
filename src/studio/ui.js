@@ -22,7 +22,7 @@ const RATE_STEP = 0.25, RATE_MIN = 0.25, RATE_MAX = 3;
 const clampRate = (r) => Math.min(RATE_MAX, Math.max(RATE_MIN, Math.round(r / RATE_STEP) * RATE_STEP));
 const dm = (iso) => (iso ? `${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}.` : "ohne Tag");
 
-export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {} }) {
+export function createStudio({ S, render, toast, errorText, approvePost, handleFor = (c) => c.split("/")[0], openDay = () => {}, postTime = () => null }) {
   S.studio = { value: undefined, loading: false, error: null, itemId: null, round: null, page: 0, form: null, filter: "all", weekStart: null, local: {}, urls: {}, mediaFor: null, save: null };
   const st = () => S.studio;
   let unsubscribe = null, reloadTimer, again = false, ownWriteAt = 0, busy = false;
@@ -127,13 +127,21 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const t = today();
     // a channel chosen above: only its 4 weeks (Christoph 28.10.2026)
     const f = st().filter;
-    const rows = pipelineBlock(items(), monday, t, 4, BLOCK_ROWS.filter((p) => f === "all" || p.channel === f));
+    const rows = pipelineBlock(items(), monday, t, 4, BLOCK_ROWS.filter((p) => f === "all" || p.channel === f), (i) => postTime(i.social_post_id));
     const cell = (d, channel) => {
       const it = d.items[0];
       const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";
       const tip = d.off ? `${dm(d.date)} · nichts geplant (N/A)` : `${dm(d.date)} · ${d.items.length ? FORMAT_NAME[d.items[0].format] ?? "" : d.slot ? `geplant: ${d.slot.format}` : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
       const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="st-day" data-channel="${esc(channel)}" data-value="${esc(d.date)}"`;
+      if (d.entries.length > 1) return `<div class="pl-stack${d.date === t ? " today" : ""}">${d.entries.map(entry(d)).join("")}</div>`;
       return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.items.length ? "" : " pl-free"}${d.off ? " pl-off" : ""}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${d.off ? "N/A" : who}</button>`;
+    };
+    // two or more posts on a day: one field each, one below the other, each opens its own post
+    const entry = (d) => ({ item: i, phase: p, late }) => {
+      const time = postTime(i.social_post_id);
+      const hm = time ? new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(new Date(time)) : "";
+      const tip = `${dm(d.date)}${hm ? ` ${hm}` : ""} · ${FORMAT_NAME[i.format] ?? ""}\nSchritt ${p.n} ${p.name}: ${p.label}\n${i.title}${late ? "\nim Verzug" : ""}`;
+      return `<button class="pl-cell pl-${p.color}${late ? " pl-late" : ""}" data-action="st-open" data-id="${esc(i.id)}" title="${esc(tip)}" aria-label="${esc(tip)}">${p.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : ""}</button>`;
     };
     const legend = STEPS.filter(Boolean).map((s) => `<span class="pl-key pl-${s.color}"></span> ${s.n < 5 ? `${s.n} ` : ""}${esc(s.name)}`).join(" ");
     return `<section class="card pl-block"><div class="blk-head"><b>Ablauf: Idee → Entwurf → Video → Feinschliff</b>
