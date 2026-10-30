@@ -8,7 +8,7 @@ import * as data from "./data.js";
 import { canShareFiles, downloadFiles, fetchFile, fileName, sizeText } from "./save.js";
 import { CATEGORIES, MARKER_STATUS, splitFollowUps, R2_FREE_BYTES, SCOPES, STATUS, TARGETS, anchor, arrowStep, chosenPatch, fmtGB, fmtTime, isPages, keyAction, markersFor, openCount, r2Flag, r2Usage, remap, roundOrder, sceneAt, sceneJump, sortMarkers } from "./logic.js";
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
-import { DEADLINE_DAYS, LOOKING, PIPELINE, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
+import { BLOCK_ROWS, DEADLINE_DAYS, LOOKING, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
 const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Leeside · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube" };
 const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", carousel: "Karussell", image: "Bild", story: "Story" };
@@ -127,13 +127,13 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
     const t = today();
     // a channel chosen above: only its 4 weeks (Christoph 28.10.2026)
     const f = st().filter;
-    const rows = pipelineBlock(items(), monday, t, 4, PIPELINE.filter((p) => f === "all" || p.channel === f));
+    const rows = pipelineBlock(items(), monday, t, 4, BLOCK_ROWS.filter((p) => f === "all" || p.channel === f));
     const cell = (d, channel) => {
       const it = d.items[0];
       const who = d.phase.who === "christoph" ? `<span class="pl-you" title="du bist dran">du</span>` : "";
-      const tip = `${dm(d.date)} · ${d.items.length ? FORMAT_NAME[d.items[0].format] ?? "" : d.slot ? `geplant: ${d.slot.format}` : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
+      const tip = d.off ? `${dm(d.date)} · nichts geplant (N/A)` : `${dm(d.date)} · ${d.items.length ? FORMAT_NAME[d.items[0].format] ?? "" : d.slot ? `geplant: ${d.slot.format}` : "frei"}\nSchritt ${d.phase.n} ${d.phase.name}: ${d.phase.label}${d.items.map((i) => `\n${i.title}`).join("")}${d.late ? "\nim Verzug" : ""}`;
       const attrs = it ? `data-action="st-open" data-id="${esc(it.id)}"` : `data-action="st-day" data-channel="${esc(channel)}" data-value="${esc(d.date)}"`;
-      return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.items.length ? "" : " pl-free"}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${who}</button>`;
+      return `<button class="pl-cell pl-${d.phase.color}${d.late ? " pl-late" : ""}${d.date === t ? " today" : ""}${d.items.length ? "" : " pl-free"}${d.off ? " pl-off" : ""}" ${attrs} title="${esc(tip)}" aria-label="${esc(tip)}">${d.off ? "N/A" : who}</button>`;
     };
     const legend = STEPS.filter(Boolean).map((s) => `<span class="pl-key pl-${s.color}"></span> ${s.n < 5 ? `${s.n} ` : ""}${esc(s.name)}`).join(" ");
     return `<section class="card pl-block"><div class="blk-head"><b>Ablauf: Idee → Entwurf → Video → Feinschliff</b>

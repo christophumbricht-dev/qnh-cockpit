@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { afterNewVersion, afterReview, christophsTurn, deadline, isLate, phaseOf, pipelineBlock } from "../src/studio/pipeline.js";
+import { BLOCK_ROWS, inPipeline, afterNewVersion, afterReview, christophsTurn, deadline, isLate, phaseOf, pipelineBlock } from "../src/studio/pipeline.js";
 
 test("phaseOf: step, colour and whose turn", () => {
   assert.deepEqual([phaseOf(null).n, phaseOf(null).color, phaseOf(null).who], [1, "grey", "claude"]);
@@ -56,4 +56,29 @@ test("pipelineBlock: only long videos, weakest item per day, weekly goal of 2", 
   assert.deepEqual([w2.count, w2.missing, w2.late], [0, 2, true]);
   const w4 = row.weeks[3];                        // 23.11.: one idea, deadline 2.11. not yet
   assert.deepEqual([w4.count, w4.missing, w4.late], [1, 1, false]);
+});
+
+test("pipelineBlock: the Shorts row has the YouTube week and is never late for missing ideas", () => {
+  const items = [
+    { id: "s", channel: "leesidelab/youtube", format: "short", day: "2026-11-03", status: "review1" },
+    { id: "l", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-03", status: "review1" },
+  ];
+  const [row] = pipelineBlock(items, "2026-11-02", "2026-11-20", 1, BLOCK_ROWS.filter((r) => r.looksOnly));
+  const w = row.weeks[0];
+  assert.deepEqual([row.perWeek, w.count, w.late], [7, 1, false]);
+  assert.deepEqual(w.days[1].items.map((i) => i.id), ["s"]);
+  assert.deepEqual([w.days[1].phase.n, w.days[1].phase.color], [3, "orange"]);
+  assert.equal(w.days[0].slot.note, "Short");
+  assert.equal(inPipeline("leesidelab/youtube", "short"), false);
+});
+
+test("pipelineBlock: N/A on days with nothing on purpose", () => {
+  const long = (id, day) => ({ id, channel: "leesidelab/youtube", format: "video_long", day, status: "idea" });
+  const [row] = pipelineBlock([long("a", "2026-11-03"), long("b", "2026-11-06"), long("c", "2026-11-10")], "2026-11-02", "2026-10-28", 2);
+  // week 1 has its 2: the free days are N/A; week 2 has 1 of 2: the free days are still open
+  assert.deepEqual(row.weeks[0].days.map((d) => d.off), [true, false, true, true, false, true, true]);
+  assert.equal(row.weeks[1].days.some((d) => d.off), false);
+  // a row with a standard week: every day has its slot, so nothing is N/A
+  const [ig] = pipelineBlock([], "2026-11-02", "2026-10-28", 1, BLOCK_ROWS.filter((r) => r.channel === "leesidelab/instagram"));
+  assert.equal(ig.weeks[0].days.some((d) => d.off), false);
 });

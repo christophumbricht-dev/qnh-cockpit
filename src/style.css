@@ -1279,3 +1279,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 /* Studio «Speichern»: the video or the pictures onto the phone (src/studio/save.js) */
 .st-save { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 .st-save .small { flex: 1 1 200px; }
+
+/* Studio Ablauf: a day with nothing planned on purpose (Christoph 30.10.2026) */
+.pl-cell.pl-off { opacity: .7; font: 600 10px/1 var(--mono); color: var(--muted); letter-spacing: .02em; }

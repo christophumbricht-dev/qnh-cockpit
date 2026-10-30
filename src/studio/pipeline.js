@@ -16,6 +16,14 @@ export const PIPELINE = [
   { channel: "downwind/instagram", formats: null, perWeek: 7, label: "Instagram" },
 ];
 export const PIPELINE_CHANNELS = PIPELINE.map((p) => p.channel);
+// the rows of the Ablauf block: the Ablauf plus the YouTube Shorts (Christoph 30.10.2026 «zeige die auch im Studio»).
+// The Shorts get no idea and no draft (mostly the Instagram reel with another ending), only the two looks: a Short
+// with its video is in step 3 Video (Sichtung 1), then Feinschliff
+export const BLOCK_ROWS = [
+  PIPELINE[0],
+  { channel: "leesidelab/youtube", formats: ["short"], perWeek: 7, label: "Shorts, 1 pro Tag", looksOnly: true },
+  ...PIPELINE.slice(1),
+];
 export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && (!p.formats || p.formats.includes(format)));
 
 export const STEPS = [
@@ -70,23 +78,29 @@ export const christophsTurn = (status) => phaseOf(status).who === "christoph";
 // has fewer than perWeek items and its idea deadline (21 days before its Monday) has passed
 // → [{ channel, perWeek, weeks: [{ monday, count, missing, late, days: [{ date, items, phase, late }] }] }]
 export function pipelineBlock(items, monday, today, weeks = 4, pipeline = PIPELINE) {
-  return pipeline.map(({ channel, formats, perWeek, label }) => {
+  return pipeline.map(({ channel, formats, perWeek, label, looksOnly = false }) => {
     const [app_id, platform] = channel.split("/");
-    const plan = WEEKPLAN.find((c) => c.app_id === app_id && c.platform === platform && formats == null);   // the standard week (Instagram)
+    // the standard week: Instagram, and the YouTube week (all Shorts)
+    const plan = WEEKPLAN.find((c) => c.app_id === app_id && c.platform === platform && (formats == null || looksOnly));
     const mine = items.filter((i) => i.channel === channel && (!formats || formats.includes(i.format)) && i.status !== "dropped" && i.day);
     return {
-      channel, perWeek, label,
+      channel, perWeek, label, looksOnly,
       weeks: Array.from({ length: weeks }, (_, w) => {
         const m = addDaysIso(monday, 7 * w);
+        const count = mine.filter((i) => i.day >= m && i.day <= addDaysIso(m, 6)).length;
         const days = Array.from({ length: 7 }, (_, d) => {
           const date = addDaysIso(m, d);
           const list = mine.filter((i) => i.day === date);
           const weakest = list.length ? list.reduce((a, b) => (phaseOf(b.status).n < phaseOf(a.status).n ? b : a)) : null;
-          return { date, slot: plan?.slots.find((s) => s.day === d) ?? null, items: list, phase: phaseOf(weakest?.status ?? null), late: weakest && date >= today ? isLate(weakest.status, date, today) : false };
+          const slot = plan?.slots.find((s) => s.day === d) ?? null;
+          // «N/A» (Christoph 30.10.2026): a day with nothing on purpose; with a standard week a day without its slot,
+          // without one (long videos, no fixed days) the free days of a week that already has its goal
+          const off = !list.length && (plan ? !slot : count >= perWeek);
+          return { date, slot, items: list, off, phase: phaseOf(weakest?.status ?? null), late: weakest && date >= today ? isLate(weakest.status, date, today) : false };
         });
-        const count = days.reduce((n, d) => n + d.items.length, 0);
         const missing = Math.max(0, perWeek - count);
-        return { monday: m, count, missing, late: missing > 0 && addDaysIso(m, 6) >= today && today > deadline(m, 1), days };
+        // without ideas a missing Short is not late (it simply is not made yet)
+        return { monday: m, count, missing, late: !looksOnly && missing > 0 && addDaysIso(m, 6) >= today && today > deadline(m, 1), days };
       }),
     };
   });

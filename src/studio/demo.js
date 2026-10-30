@@ -1,4 +1,4 @@
-// ?demo: invented studio items (a long video, a reel, a carousel, a photo story) with markers, kept in memory.
+// ?demo: invented studio items (a long video, a reel, a carousel, a photo story, two YouTube Shorts) with markers, kept in memory.
 // The videos are not in the repo: the player offers «Video vom PC öffnen» like the real fallback.
 import { mondayOf, addDaysIso } from "../social/weekplan.js";
 import { withFollowUp } from "./logic.js";
@@ -22,6 +22,9 @@ const items = [
   { id: "reel", channel: "leesidelab/instagram", format: "reel", title: "Panel Puzzle 1: kalter Motor", slug: "2026-11-08-panel-1", day: addDaysIso(mon, 6), status: "review2", current_version: 2, social_post_id: null },
   { id: "car", channel: "downwind/instagram", format: "carousel", title: "3 Dinge, die dein Papier-Flugbuch nicht kann", slug: "2026-11-04-papier", day: addDaysIso(mon, 2), status: "review1", current_version: 1, social_post_id: null },
   { id: "sto", channel: "leesidelab/instagram", format: "story", title: "Story: drei Fotos vom Säntis", slug: "2026-11-05-story", day: addDaysIso(mon, 3), status: "review1", current_version: 1, social_post_id: null },
+  // YouTube Shorts: only the two looks (Sichtung 1 = step 3 Video)
+  { id: "sh1", channel: "leesidelab/youtube", format: "short", title: "What is the Bise? | Bise, part 1 #Shorts", slug: "yt-short-bise-1", day: addDaysIso(mon, 7), status: "review1", current_version: 1, social_post_id: null },
+  { id: "sh2", channel: "leesidelab/youtube", format: "short", title: "Why the Bise is strongest in Geneva | Bise, part 2 #Shorts", slug: "yt-short-bise-2", day: addDaysIso(mon, 9), status: "review1", current_version: 1, social_post_id: null },
   // YouTube-Ablauf: one item per step
   { id: "yt1", channel: "leesidelab/youtube", format: "video_long", title: "Wind im Griff 3: Böen beim Aufsetzen", slug: "yt-wind-3", day: addDaysIso(mon, 1), status: "approved", current_version: 2, social_post_id: null },
   { id: "yt2", channel: "leesidelab/youtube", format: "video_long", title: "Woher kommt das Wetter? Die Bise", slug: "yt-bise", day: addDaysIso(mon, 10), status: "work", current_version: 1, social_post_id: null },
