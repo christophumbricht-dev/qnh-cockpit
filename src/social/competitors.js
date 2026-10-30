@@ -1,8 +1,9 @@
 // Social → «Konkurrenz»: what stands out in the latest videos of watched YouTube channels. Pure, tested in
 // tests/social-competitors.test.mjs. The numbers come from social-publish (supabase/functions/social-publish/competitors.ts).
 //
-// «Auffällig» = a video gets more views per day than usual FOR ITS CHANNEL and its kind (long or Short): views per day
-// since publishing, against the median of the same channel. So a small channel with a hit shows up next to a big one.
+// «Auffällig» = a video has more views than usual FOR ITS CHANNEL and its kind (long or Short): its views against the
+// median views of the channel's latest videos of that kind. So a small channel with a hit shows up next to a big one.
+// (Views per day overrated new videos: old ones grow slower, 30.10.2026.) A video younger than 2 days is too early.
 
 const DAY = 864e5;
 export const median = (xs) => {
@@ -40,23 +41,23 @@ export function rated(videos, days, now = new Date()) {
     const age = ageDays(v.published_at, now);
     return { ...v, views: n.views, week: n.week, age, perDay: n.views / age };
   });
-  // the usual: median views per day of the channel's videos of the same kind (at least 3 of them, else no factor)
+  // the usual: median views of the channel's videos of the same kind (at least 3 of them, else no factor)
   const usual = new Map();
   for (const r of rows) {
     const k = `${r.competitor_id}|${r.is_short}`;
-    (usual.get(k) ?? usual.set(k, []).get(k)).push(r.perDay);
+    (usual.get(k) ?? usual.set(k, []).get(k)).push(r.views);
   }
   return rows.map((r) => {
     const list = usual.get(`${r.competitor_id}|${r.is_short}`);
     const m = list.length >= 3 ? median(list) : null;
-    return { ...r, factor: m ? r.perDay / m : null };
+    return { ...r, factor: m ? r.views / m : null };
   });
 }
 
 // the videos that stand out: published in the last `withinDays`, at least `minFactor` times the usual, best first
 export function standouts(videos, days, { now = new Date(), shorts = false, withinDays = 60, minFactor = 1.5, limit = 8 } = {}) {
   return rated(videos, days, now)
-    .filter((r) => r.is_short === shorts && r.age <= withinDays && r.factor != null && r.factor >= minFactor)
+    .filter((r) => r.is_short === shorts && r.age >= 2 && r.age <= withinDays && r.factor != null && r.factor >= minFactor)
     .sort((a, b) => b.factor - a.factor || b.views - a.views)
     .slice(0, limit);
 }

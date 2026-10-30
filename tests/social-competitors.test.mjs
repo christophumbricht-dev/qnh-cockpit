@@ -13,7 +13,7 @@ test("median and latest views with the growth of the last 7 days", () => {
   assert.deepEqual(m.get("b"), { views: 10, day: "2026-10-29", week: null });
 });
 
-test("standouts: views per day against the usual of the same channel and kind", () => {
+test("standouts: views against the usual of the same channel and kind", () => {
   const videos = [
     v("a1", "A", "2026-10-20"), v("a2", "A", "2026-10-10"), v("a3", "A", "2026-09-30"), v("a4", "A", "2026-10-25"),
     v("s1", "A", "2026-10-25", { is_short: true }),
@@ -28,9 +28,9 @@ test("standouts: views per day against the usual of the same channel and kind", 
   assert.equal(r.find((x) => x.video_id === "b1").factor, null);
   assert.equal(r.find((x) => x.video_id === "s1").factor, null);   // one Short only
   const top = standouts(videos, days, { now: NOW });
-  // a4: 5000 in 5 days = 1000/day against the channel's usual of 100/day
+  // a4: 5000 views against the channel's usual of 3000 (median of a1..a4 and old); «old» is outside the 60 days
   assert.deepEqual(top.map((x) => x.video_id), ["a4"]);
-  assert.ok(top[0].factor > 5);
+  assert.equal(top[0].factor.toFixed(2), "1.67");
   assert.deepEqual(standouts(videos, days, { now: NOW, shorts: true }), []);
 });
 

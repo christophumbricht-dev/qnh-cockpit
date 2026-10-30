@@ -40,7 +40,7 @@ export function createCompetitors({ S, render, toast, errorText }) {
       </section>
       <section class="card">
         <div class="kon-head-row"><h3>Auffällig in den letzten 60 Tagen</h3><div class="seg" role="group" aria-label="Art">${kinds}</div></div>
-        <p class="muted small">Mehr Aufrufe pro Tag als sonst auf diesem Kanal (gleiche Art). «3×» heisst: dreimal so schnell wie üblich.</p>
+        <p class="muted small">Mehr Aufrufe als sonst auf diesem Kanal (gleiche Art, letzte 50 Videos). «3×» heisst: dreimal so viele wie üblich.</p>
         ${top.length ? `<ol class="kon-list">${top.map((v) => videoRow(v, names.get(v.competitor_id))).join("")}</ol>`
           : `<p class="note small">${videos.length ? "Gerade sticht nichts heraus." : "Noch keine Zahlen. Sie kommen mit dem nächsten Tageslauf oder mit «Jetzt holen»."}</p>`}
       </section>
