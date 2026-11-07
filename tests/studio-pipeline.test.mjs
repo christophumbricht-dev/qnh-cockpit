@@ -58,17 +58,18 @@ test("pipelineBlock: only long videos, weakest item per day, weekly goal of 2", 
   assert.deepEqual([w4.count, w4.missing, w4.late], [1, 1, false]);
 });
 
-test("pipelineBlock: the Shorts row has the YouTube week and is never late for missing ideas", () => {
+test("pipelineBlock: YouTube is one row with episodes and Shorts, days fixed from 9.11.2026", () => {
+  const yt = BLOCK_ROWS.filter((r) => r.channel === "leesidelab/youtube");
+  assert.equal(yt.length, 1);
   const items = [
-    { id: "s", channel: "leesidelab/youtube", format: "short", day: "2026-11-03", status: "review1" },
-    { id: "l", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-03", status: "review1" },
+    { id: "s", channel: "leesidelab/youtube", format: "short", day: "2026-11-09", status: "review1" },
+    { id: "l", channel: "leesidelab/youtube", format: "video_long", day: "2026-11-09", status: "review1" },
   ];
-  const [row] = pipelineBlock(items, "2026-11-02", "2026-11-20", 1, BLOCK_ROWS.filter((r) => r.looksOnly));
+  const [row] = pipelineBlock(items, "2026-11-09", "2026-11-07", 1, yt);
   const w = row.weeks[0];
-  assert.deepEqual([row.perWeek, w.count, w.late], [2, 1, false]);
-  assert.deepEqual(w.days[1].items.map((i) => i.id), ["s"]);
-  assert.deepEqual([w.days[1].phase.n, w.days[1].phase.color], [3, "orange"]);
-  assert.equal(w.days[0].slot.note, "Short");
+  assert.deepEqual([w.perWeek, w.count], [4, 2]);
+  assert.deepEqual(w.days[0].items.map((i) => i.id).sort(), ["l", "s"]);
+  assert.deepEqual(w.days.map((d) => d.off), [false, false, true, false, true, false, true]);
   assert.equal(inPipeline("leesidelab/youtube", "short"), false);
 });
 
@@ -87,7 +88,7 @@ test("pipelineBlock: two posts on a day, one entry each with its own phase, orde
   const short = (id, status, created_at) => ({ id, channel: "leesidelab/youtube", format: "short", day: "2026-11-02", status, created_at, social_post_id: `p-${id}` });
   const times = { "p-a": "2026-11-02T18:00:00Z", "p-b": "2026-11-02T16:00:00Z" };
   const items = [short("a", "review1", "2026-10-01"), short("b", "approved", "2026-10-02"), short("c", "work", "2026-09-01")];
-  const [row] = pipelineBlock(items, "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.looksOnly), (i) => times[i.social_post_id] ?? null);
+  const [row] = pipelineBlock(items, "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.channel === "leesidelab/youtube"), (i) => times[i.social_post_id] ?? null);
   const day = row.weeks[0].days[0];
   // b airs at 17:00, a at 19:00, c has no time: last
   assert.deepEqual(day.entries.map((e) => e.item.id), ["b", "a", "c"]);
@@ -96,7 +97,7 @@ test("pipelineBlock: two posts on a day, one entry each with its own phase, orde
   assert.deepEqual(day.entries.map((e) => e.late), [false, true, false]);
   assert.equal(row.weeks[0].count, 3);
   // one post: one entry, the day as before
-  const one = pipelineBlock([items[0]], "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.looksOnly))[0].weeks[0].days[0];
+  const one = pipelineBlock([items[0]], "2026-11-02", "2026-10-30", 1, BLOCK_ROWS.filter((r) => r.channel === "leesidelab/youtube"))[0].weeks[0].days[0];
   assert.deepEqual([one.entries.length, one.phase.n], [1, 3]);
 });
 

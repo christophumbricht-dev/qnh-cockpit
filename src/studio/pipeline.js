@@ -18,12 +18,12 @@ export const PIPELINE = [
   { channel: "downwind/instagram", formats: null, perWeek: 7, label: "Instagram" },
 ];
 export const PIPELINE_CHANNELS = PIPELINE.map((p) => p.channel);
-// the rows of the Ablauf block: the Ablauf plus the YouTube Shorts (Christoph 30.10.2026 «zeige die auch im Studio»).
-// The Shorts get no idea and no draft (mostly the Instagram reel with another ending), only the two looks: a Short
-// with its video is in step 3 Video (Sichtung 1), then Feinschliff
+// the rows of the Ablauf block: YouTube is one overview with the episodes and the Shorts together (Christoph 7.11.2026
+// «alle in die gleiche Übersicht»), episodes Tue and Sat, Shorts Mon and Thu. Shorts still get no idea and no draft
+// (inPipeline only knows the long videos): a Short with its video is in step 3 Video (Sichtung 1), then Feinschliff
 export const BLOCK_ROWS = [
-  PIPELINE[0],
-  { channel: "leesidelab/youtube", formats: ["short"], perWeek: 2, label: "Zeitkacheln: Shorts, Mo und Do", looksOnly: true },
+  { channel: "leesidelab/youtube", formats: ["video_long", "short"], perWeek: 4, label: "Zeitkacheln: Folgen Di und Sa, Shorts Mo und Do",
+    from: [{ monday: "2026-11-09", perWeek: 4, days: [0, 1, 3, 5] }] },
   ...PIPELINE.slice(1),
 ];
 export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && (!p.formats || p.formats.includes(format)));
