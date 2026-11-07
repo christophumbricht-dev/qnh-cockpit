@@ -512,7 +512,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
         <div class="st-video-slot" id="st-video-slot"></div>
         ${screenOverlay(it, ver)}
         <div class="st-overlay${s.form?.target === "medium" ? " placing" : ""}" data-action="st-spot">${spots}${spot}</div>
-        ${url ? "" : `<div class="st-nomedia"><p>${ver.source?.kind === "r2" ? "Das Video liegt in Cloudflare R2, ist aber gerade nicht erreichbar." : "Kein Video verfügbar."}</p><button class="btn" data-action="st-local">Video vom PC öffnen</button></div>`}
+        ${url ? "" : `<div class="st-nomedia"><p>${ver.source?.kind === "r2" ? "Das Video liegt in Cloudflare R2, ist aber gerade nicht erreichbar." : ver.source?.kind === "removed" ? "Das Video wurde aus dem Speicher entfernt (alte Fassung, veröffentlicht oder storniert)." : "Kein Video verfügbar."}</p><button class="btn" data-action="st-local">Video vom PC öffnen</button></div>`}
       </div>`)}
       <div class="st-timeline" data-action="st-scrub">${ticks}${mticks}<span class="st-playhead" id="st-playhead"></span></div>
       <div class="st-time"><b id="st-time">${fmtTime(video.currentTime || 0)}</b><span class="muted" id="st-scene">${esc(sceneAt(ver.scenes, video.currentTime || 0)?.label ?? "")}</span><span class="muted">${fmtTime(dur)}</span></div>

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { r2Plan, r2Removed } from "../scripts/studio-lib.mjs";
 import { CliError, approvalCarriesOver, checkMeta, checkScenes, itemFromPost, rejectPatch, resolvePatch, sha256, slugOf, statusAfterNewVersion,
   summary, versionFromPost, workMarkers } from "../scripts/studio-lib.mjs";
 
@@ -207,4 +208,32 @@ test("chosenPatch: the studio's choice of title and title picture for the draft"
   // the chosen picture is not in the Social bucket (e.g. it failed): no other picture stands in for it
   assert.deepEqual(chosenPatch({ ...LONG_META, thumbnails: [LONG_META.thumbnails[0], { key: "studio/ah/v1/c.png" }], chosen_thumbnail: 1 }), { title: LONG_META.titles[0], cover_path: null });
   assert.equal(youtubeDraftRow({ accountId: "a", version: { ...LONG_VERSION, meta: { ...LONG_META, thumbnails: [LONG_META.thumbnails[0], { key: "x" }], chosen_thumbnail: 1 } } }).cover_path, null);
+});
+
+test("r2Plan: only what no waiting post needs leaves R2", () => {
+  const items = [
+    { id: "a", slug: "a", status: "review1", current_version: 2, social_post_id: "pa" },
+    { id: "b", slug: "b", status: "approved", current_version: 1, social_post_id: "pb" },
+    { id: "c", slug: "c", status: "dropped", current_version: 1, social_post_id: "pc" },
+    { id: "d", slug: "d", status: "review1", current_version: 2, social_post_id: "pd" },
+  ];
+  const v = (id, item_id, version, key, extra = {}) => ({ id, item_id, version, source: { kind: "r2", key, bytes: 10 }, meta: {}, ...extra });
+  const versions = [
+    v("a1", "a", 1, "k/a1", { meta: { thumbnails: [{ key: "k/a1.jpg", bytes: 1 }] } }), v("a2", "a", 2, "k/a2"),
+    v("b1", "b", 1, "k/b1"), v("c1", "c", 1, "k/c1"),
+    v("d1", "d", 1, "k/d1"), v("d2", "d", 2, "k/d2"),
+    { id: "x", item_id: "a", version: 1, source: { kind: "storage", path: "s" } },
+  ];
+  const posts = [
+    { id: "pa", status: "draft", media: [{ path: "k/a2" }] },
+    { id: "pb", status: "published", media: [{ path: "k/b1" }] },
+    { id: "pc", status: "cancelled", media: [{ path: "k/c1" }] },
+    { id: "pd", status: "approved", media: [{ path: "k/d1" }] }, // an approved post still points to the old file
+  ];
+  const plan = r2Plan({ items, versions, posts });
+  assert.deepEqual(plan.map((x) => [x.id, x.why]), [["a1", "alte Fassung"], ["b1", "veröffentlicht"], ["c1", "storniert"]]);
+  assert.deepEqual(plan[0].keys, ["k/a1", "k/a1.jpg"]);
+  const after = r2Removed(versions[0], "2026-11-07");
+  assert.equal(after.source.kind, "removed");
+  assert.equal(after.meta.thumbnails[0].bytes, 0);
 });

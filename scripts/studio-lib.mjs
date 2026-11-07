@@ -289,3 +289,36 @@ export function requestRow({ title, body = "", sentences = null, credits = null,
   if (kind === "voice" && (row.sentences == null || row.credits == null)) throw new CliError("Beim Vertonen gehören --saetze und --credits dazu (Regel: vor jedem ElevenLabs-Aufruf fragen).");
   return row;
 }
+
+// What may leave Cloudflare R2 (free up to 10 GB; Christoph 7.11.2026): old versions and videos already on YouTube,
+// with storniert: true also cancelled ones. Never a file that a post still waiting to go out points to.
+export function r2Plan({ items, versions, posts }) {
+  const item = new Map(items.map((i) => [i.id, i]));
+  const post = new Map(posts.map((p) => [p.id, p]));
+  const inUse = new Set();
+  for (const p of posts) {
+    if (["cancelled", "published"].includes(p.status)) continue;
+    for (const m of p.media ?? []) for (const k of [m.path, m.captions]) if (k) inUse.add(k);
+  }
+  const plan = [];
+  for (const v of versions) {
+    if (v.source?.kind !== "r2" || !v.source.key) continue;
+    const i = item.get(v.item_id);
+    if (!i || inUse.has(v.source.key)) continue;
+    const status = post.get(i.social_post_id)?.status;
+    const why = i.status === "dropped" || status === "cancelled" ? "storniert"
+      : status === "published" ? "veröffentlicht"
+      : v.version !== i.current_version ? "alte Fassung" : null;
+    if (!why) continue;
+    const small = (v.meta?.thumbnails ?? []).filter((t) => t?.key).map((t) => t.key);
+    const keys = [v.source.key, ...small, ...(v.meta?.captions_key ? [v.meta.captions_key] : [])].filter((k) => !inUse.has(k));
+    plan.push({ id: v.id, slug: i.slug, version: v.version, why, keys, bytes: Number(v.source.bytes) || 0 });
+  }
+  return plan;
+}
+
+// the version after its files left R2: the studio shows a note instead of the player, r2Usage counts nothing
+export function r2Removed(v, when) {
+  const thumbnails = (v.meta?.thumbnails ?? []).map((t) => (t?.key ? { ...t, bytes: 0, removed: true } : t));
+  return { source: { kind: "removed", key: v.source.key, removed_at: when }, meta: { ...v.meta, thumbnails } };
+}

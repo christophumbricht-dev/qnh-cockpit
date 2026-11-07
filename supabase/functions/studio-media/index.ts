@@ -1,7 +1,7 @@
 // QNH Core – Edge Function studio-media: short-lived links to the Digital Studio videos in Cloudflare R2.
 //
-// POST { key: "studio/<slug>/v<n>/<file>", method?: "GET" | "PUT" }  → { url, expires_in }
-//   GET: the cockpit plays a long video (link valid 1 h). PUT: `npm run studio -- upload` puts a file there (15 min).
+// POST { key: "studio/<slug>/v<n>/<file>", method?: "GET" | "PUT" | "DELETE" }  → { url, expires_in }
+//   GET: the cockpit plays a long video (link valid 1 h). PUT: `npm run studio -- upload` puts a file there (15 min). DELETE: `npm run studio -- r2` removes what is no longer needed.
 //   Only keys below studio/ (STUDIO_KEY), nothing else in the bucket.
 //
 // Allowed callers: a signed-in QNH admin (checked with is_qnh_admin()).
@@ -39,13 +39,13 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const key = String(body.key ?? "");
-  const method = body.method === "PUT" ? "PUT" : "GET";
+  const method = body.method === "PUT" || body.method === "DELETE" ? body.method : "GET";
   if (!STUDIO_KEY.test(key)) return json({ error: "bad_key" }, 400);
 
   const env = (k: string) => Deno.env.get(k)?.trim() || null;
   const accountId = env("R2_ACCOUNT_ID"), accessKeyId = env("R2_ACCESS_KEY_ID"), secretAccessKey = env("R2_SECRET_ACCESS_KEY"), bucket = env("R2_BUCKET");
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket) return json({ error: "not_configured" }, 200);
-  const expires = method === "PUT" ? 900 : 3600;
+  const expires = method === "GET" ? 3600 : 900;
   const jurisdiction = (Deno.env.get("R2_JURISDICTION") ?? "").trim().toLowerCase();
   if (jurisdiction && !/^[a-z]{2,10}$/.test(jurisdiction)) return json({ error: "bad_jurisdiction" }, 500);
   const url = await r2Presign({ accountId, jurisdiction, bucket, key, method, accessKeyId, secretAccessKey, expires });

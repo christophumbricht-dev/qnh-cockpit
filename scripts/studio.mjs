@@ -5,6 +5,7 @@
 //   npm run studio -- markers <id | slug | ordner> [--json]     markers to work on; also writes review-v<n>.json
 //   npm run studio -- resolve <marker-id> "was geändert" [--regel all|channel|post "Regeltext"]
 //   npm run studio -- reject <marker-id> "warum nicht"
+//   npm run studio -- r2 [--storniert] [--do]                   what can leave Cloudflare R2; with --do it goes (old versions, published)
 //   npm run studio -- upload <ordner> [--kanal leesidelab/youtube] [--tag YYYY-MM-DD] [--slug …]
 //                                                               long YouTube video with "publish_at" in meta.json: also its
 //                                                               Social draft (video stays in R2, title picture, captions)
@@ -28,7 +29,7 @@
 // (studioFromImport below). Signs in like the roadmap CLI (scripts/qnh-session.mjs); admins only, as in the cockpit.
 // Nothing here approves a post: the only approval is Christoph's click (or his studio approval of exactly this content).
 
-import { createReadStream, existsSync, openAsBlob, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, openAsBlob, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -38,6 +39,7 @@ import { PIPELINE_CHANNELS, inPipeline } from "../src/studio/pipeline.js";
 import { formatZurich, isPlaceholder } from "../src/social/validate.js";
 import { replacedPlaceholders } from "./social-lib.mjs";
 import { addDaysIso, mondayOf } from "../src/social/weekplan.js";
+import { r2Plan, r2Removed } from "./studio-lib.mjs";
 import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, requestRow, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
   statusAfterNewVersion, summary, versionFromPost, workMarkers, youtubeDraftRow } from "./studio-lib.mjs";
 
@@ -148,7 +150,7 @@ async function upload(sb, a) {
   }
   const mine = item ? versions.filter((v) => v.item_id === item.id).sort((x, y) => x.version - y.version) : [];
   const last = mine.at(-1);
-  if (last?.hash === hash) {
+  if (last?.hash === hash && last.source?.kind !== "removed") {
     console.log(`= ${slug}: Fassung ${last.version} hat schon genau dieses Video. Nichts hochgeladen.`);
     // its YouTube draft is still missing or holds another cut (e.g. it was approved meanwhile and then withdrawn)
     if (last.source?.kind === "r2" && item.channel.endsWith("/youtube") && item.format === "video_long") {
@@ -193,6 +195,74 @@ async function upload(sb, a) {
   must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), ...(a.tag ? { day: a.tag } : {}) }).eq("id", item.id));
   console.log(`✓ ${slug}: Fassung ${n}${put ? " (Video in R2)" : " · R2 nicht eingerichtet: Christoph öffnet das Video im Studio vom PC («Video vom PC öffnen»)"}.`);
   if (youtube) await youtubeDraft(sb, item, postId, saved, probeVideo(video), captionsKey);
+  // the older versions of this video are no longer needed in R2 (a failure here never spoils the upload)
+  if (put) await r2Clean(sb, { nur: item.id }).catch((err) => console.log(`  Alte Fassungen bleiben vorerst in R2: ${err.message}`));
+}
+
+async function r2Delete(sb, key) {
+  const { data, error } = await sb.functions.invoke("studio-media", { body: { key, method: "DELETE" } });
+  if (error || !data?.url) throw new CliError(`Kein Löschlink für ${key}: ${data?.error ?? error?.message ?? "unbekannt"}.`);
+  const res = await fetch(data.url, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new CliError(`Löschen in R2 fehlgeschlagen (${res.status}): ${key}. Ist die Funktion studio-media aktuell?`);
+}
+
+async function r2State(sb) {
+  const { items, versions } = await loadAll(sb);
+  const posts = must(await sb.from("social_posts").select("id, status, media"));
+  return r2Plan({ items, versions, posts });
+}
+
+// every video file below these folders, by size: a cancelled video only leaves R2 when a copy of the same size is on this PC
+function localVideosBySize() {
+  const sizes = new Map();
+  for (const root of ["C:/QNH/03_Social", "C:/QNH/99_Archiv", join(ROOT, "pakete")]) {
+    if (!existsSync(root)) continue;
+    const walk = (dir) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) {
+          if (!/^(frames.*|node_modules|\.venv|__pycache__|_cache|\.git)$/i.test(e.name)) walk(p);
+        } else if (e.isFile() && e.name.toLowerCase().endsWith(".mp4")) {
+          try { sizes.set(statSync(p).size, p); } catch { /* gone meanwhile */ }
+        }
+      }
+    };
+    walk(root);
+  }
+  return sizes;
+}
+
+// the daily clean-up and `npm run studio -- r2 [--storniert] [--do]`. Without --do it only lists.
+async function r2Clean(sb, { nur = null, storniert = false, tun = true, liste = false } = {}) {
+  const { versions } = await loadAll(sb);
+  const byId = new Map(versions.map((v) => [v.id, v]));
+  let plan = (await r2State(sb)).filter((x) => (!nur || byId.get(x.id)?.item_id === nur) && (storniert || x.why !== "storniert"));
+  const copies = plan.some((x) => x.why === "storniert") ? localVideosBySize() : new Map();
+  const ohneKopie = plan.filter((x) => x.why === "storniert" && !copies.has(x.bytes));
+  plan = plan.filter((x) => !ohneKopie.includes(x));
+  const gb = (b) => (b / 1e9).toFixed(2);
+  const summe = (l) => l.reduce((n, x) => n + x.bytes, 0);
+  if (liste) {
+    for (const why of ["storniert", "alte Fassung", "veröffentlicht"]) {
+      const l = plan.filter((x) => x.why === why);
+      if (!l.length) continue;
+      console.log(`\n${why}: ${l.length} Videos, ${gb(summe(l))} GB`);
+      for (const x of l.sort((a, b) => b.bytes - a.bytes)) console.log(`  ${gb(x.bytes)} GB  ${x.slug} v${x.version}${copies.has(x.bytes) ? `  (Kopie: ${copies.get(x.bytes)})` : ""}`);
+    }
+    if (ohneKopie.length) {
+      console.log(`\nbleibt, keine Kopie am PC gefunden: ${ohneKopie.length} Videos, ${gb(summe(ohneKopie))} GB`);
+      for (const x of ohneKopie) console.log(`  ${gb(x.bytes)} GB  ${x.slug} v${x.version}`);
+    }
+    console.log(`\nFrei werden: ${gb(summe(plan))} GB`);
+  }
+  if (!tun) return;
+  let n = 0;
+  for (const x of plan) {
+    for (const key of x.keys) await r2Delete(sb, key);
+    must(await sb.from("studio_versions").update(r2Removed(byId.get(x.id), new Date().toISOString())).eq("id", x.id));
+    n++;
+  }
+  if (n) console.log(`✓ ${n} Videos aus R2 entfernt, ${gb(summe(plan))} GB frei.`);
 }
 
 // every title picture also into the Social bucket (as JPEG – the bucket takes no PNG), from where the chosen one becomes
@@ -420,10 +490,10 @@ ${made.length} Einträge würden übernommen (Probelauf, nichts geschrieben).`);
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
+  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, r2: (sb, a) => r2Clean(sb, { storniert: !!a.storniert, tun: !!a.do, liste: true }), uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
   if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner> | anfrage <slug|-> --titel … --saetze … --credits … | anfragen | anfrage-erledigt <id> | uebernehmen");
   try {
-    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry", "alle", "ok"]));
+    await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry", "alle", "ok", "storniert", "do"]));
   } catch (err) {
     if (err instanceof CliError) fail(err.message);
     throw err;
