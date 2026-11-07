@@ -65,7 +65,7 @@ test("pipelineBlock: the Shorts row has the YouTube week and is never late for m
   ];
   const [row] = pipelineBlock(items, "2026-11-02", "2026-11-20", 1, BLOCK_ROWS.filter((r) => r.looksOnly));
   const w = row.weeks[0];
-  assert.deepEqual([row.perWeek, w.count, w.late], [7, 1, false]);
+  assert.deepEqual([row.perWeek, w.count, w.late], [2, 1, false]);
   assert.deepEqual(w.days[1].items.map((i) => i.id), ["s"]);
   assert.deepEqual([w.days[1].phase.n, w.days[1].phase.color], [3, "orange"]);
   assert.equal(w.days[0].slot.note, "Short");
@@ -75,9 +75,9 @@ test("pipelineBlock: the Shorts row has the YouTube week and is never late for m
 test("pipelineBlock: N/A on days with nothing on purpose", () => {
   const long = (id, day) => ({ id, channel: "leesidelab/youtube", format: "video_long", day, status: "idea" });
   const [row] = pipelineBlock([long("a", "2026-11-03"), long("b", "2026-11-06"), long("c", "2026-11-10")], "2026-11-02", "2026-10-28", 2);
-  // week 1 has its 2: the free days are N/A; week 2 has 1 of 2: the free days are still open
+  // week 1 has its 2: the free days are N/A; week 2 has fixed days (Tue, Sat): all others are N/A, the empty Saturday is a gap
   assert.deepEqual(row.weeks[0].days.map((d) => d.off), [true, false, true, true, false, true, true]);
-  assert.equal(row.weeks[1].days.some((d) => d.off), false);
+  assert.deepEqual(row.weeks[1].days.map((d) => d.off), [true, false, true, true, true, false, true]);
   // a row with a standard week: every day has its slot, so nothing is N/A
   const [ig] = pipelineBlock([], "2026-11-02", "2026-10-28", 1, BLOCK_ROWS.filter((r) => r.channel === "leesidelab/instagram"));
   assert.equal(ig.weeks[0].days.some((d) => d.off), false);
@@ -100,11 +100,10 @@ test("pipelineBlock: two posts on a day, one entry each with its own phase, orde
   assert.deepEqual([one.entries.length, one.phase.n], [1, 3]);
 });
 
-test("pipelineBlock: long videos 3 a week from 30.11.2026 on Wednesday, Friday and Sunday", () => {
+test("pipelineBlock: Zeitkacheln episodes 2 a week from 9.11.2026 on Tuesday and Saturday", () => {
   const long = (id, day) => ({ id, channel: "leesidelab/youtube", format: "video_long", day, status: "draft" });
-  const [row] = pipelineBlock([long("a", "2026-11-25"), long("b", "2026-12-02"), long("c", "2026-12-04")], "2026-11-23", "2026-10-30", 2);
-  const [nov, dec] = row.weeks;
-  assert.deepEqual([nov.perWeek, nov.count, dec.perWeek, dec.count, dec.missing], [2, 1, 3, 2, 1]);
-  // December: only Mon, Tue, Thu, Sat are N/A; the empty Sunday is a gap, not N/A
-  assert.deepEqual(dec.days.map((d) => d.off), [true, true, false, true, false, true, false]);
+  const [row] = pipelineBlock([long("a", "2026-11-04"), long("b", "2026-11-10")], "2026-11-02", "2026-10-30", 2);
+  const [vorher, start] = row.weeks;
+  assert.deepEqual([vorher.perWeek, vorher.count, start.perWeek, start.count, start.missing], [2, 1, 2, 1, 1]);
+  assert.deepEqual(start.days.map((d) => d.off), [true, false, true, true, true, false, true]);
 });

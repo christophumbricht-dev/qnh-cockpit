@@ -19,13 +19,8 @@ export const WEEKPLAN = [
   },
   {
     app_id: "leesidelab", platform: "youtube", slots: [
-      { day: 0, time: "19:00", format: "Wetter-Serie, Teil 1", note: "Short" },
-      { day: 1, time: "19:00", format: "Unfall-Reel", alt: "Short «Wind im Griff» (Serie A)", note: "Unfall in Paketwochen, sonst Serie A oder ein Kapitel aus einem Langvideo" },
-      { day: 2, time: "19:00", format: "Wetter-Serie, Teil 2", note: "Short" },
-      { day: 3, time: "19:00", format: "Instrument-Reel", alt: "Short «Woher kommt das Wetter?» (Serie B)", note: "Instrument in Paketwochen, sonst Serie B oder ein Kapitel aus einem Langvideo" },
-      { day: 4, time: "19:00", format: "Wetter-Serie, Teil 3", note: "Short" },
-      { day: 5, time: "19:00", format: "METAR of the week", note: "Short" },
-      { day: 6, time: "19:00", format: "Panel Puzzle", note: "Short" },
+      { day: 0, time: "18:00", format: "Zeitkacheln", note: "Short" },
+      { day: 3, time: "18:00", format: "Zeitkacheln", note: "Short" },
     ],
   },
   {

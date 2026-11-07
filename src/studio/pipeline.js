@@ -11,9 +11,9 @@ import { WEEKPLAN, addDaysIso } from "../social/weekplan.js";
 // Instagram of Leeside and Downwind with every format, reel, carousel, picture or story (7 a week each; «es soll alles
 // durchs Studio durch»). formats null = all formats.
 export const PIPELINE = [
-  // from December 3 a week on fixed days: Wednesday, Friday (accident case) and Sunday (Christoph 30.10.2026)
-  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "lange Videos, 2 pro Woche, ab Dezember 3: Mi, Fr Unfall, So",
-    from: [{ monday: "2026-11-30", perWeek: 3, days: [2, 4, 6] }] },
+  // the channel behind leesidelab/youtube is now Zeitkacheln (Christoph 7.11.2026): 2 long episodes a week, Tue and Sat
+  { channel: "leesidelab/youtube", formats: ["video_long"], perWeek: 2, label: "Zeitkacheln: Folgen, Di und Sa",
+    from: [{ monday: "2026-11-09", perWeek: 2, days: [1, 5] }] },
   { channel: "leesidelab/instagram", formats: null, perWeek: 7, label: "Instagram" },
   { channel: "downwind/instagram", formats: null, perWeek: 7, label: "Instagram" },
 ];
@@ -23,7 +23,7 @@ export const PIPELINE_CHANNELS = PIPELINE.map((p) => p.channel);
 // with its video is in step 3 Video (Sichtung 1), then Feinschliff
 export const BLOCK_ROWS = [
   PIPELINE[0],
-  { channel: "leesidelab/youtube", formats: ["short"], perWeek: 7, label: "Shorts, 1 pro Tag", looksOnly: true },
+  { channel: "leesidelab/youtube", formats: ["short"], perWeek: 2, label: "Zeitkacheln: Shorts, Mo und Do", looksOnly: true },
   ...PIPELINE.slice(1),
 ];
 export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && (!p.formats || p.formats.includes(format)));

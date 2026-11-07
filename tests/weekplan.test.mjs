@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { WEEKPLAN, mondayOf } from "../src/social/weekplan.js";
 
 
-test("every channel has one slot per weekday", () => {
-  for (const c of WEEKPLAN) assert.deepEqual(c.slots.map((s) => s.day), [0, 1, 2, 3, 4, 5, 6]);
+test("every channel has one slot per weekday, Zeitkacheln only Monday and Thursday", () => {
+  for (const c of WEEKPLAN) {
+    const tage = c.app_id === "leesidelab" && c.platform === "youtube" ? [0, 3] : [0, 1, 2, 3, 4, 5, 6];
+    assert.deepEqual(c.slots.map((s) => s.day), tage);
+  }
 });
 
 test("mondayOf: the Monday of the week, Sunday belongs to the week before", () => {
