@@ -8,5 +8,7 @@ $log = Join-Path (Get-Location) "pakete\.import.log"
 & npm.cmd run -s social -- import 2>&1 | ForEach-Object { "$_" } | Out-File -Append -Encoding utf8 $log
 # Cloudflare R2: old versions and videos already on YouTube leave the free 10 GB (never cancelled ones or waiting posts)
 & npm.cmd run -s studio -- r2 --do 2>&1 | ForEach-Object { "$_" } | Out-File -Append -Encoding utf8 $log
+# Zeitkacheln: new published videos into their YouTube playlists
+& npm.cmd run -s social -- playlists "C:\QNH\03_Social\zeitkacheln\folgen\playlists.json" 2>&1 | ForEach-Object { "$_" } | Out-File -Append -Encoding utf8 $log
 $lines = Get-Content -Encoding utf8 $log
 if ($lines.Count -gt 400) { $lines | Select-Object -Last 400 | Set-Content -Encoding utf8 $log }

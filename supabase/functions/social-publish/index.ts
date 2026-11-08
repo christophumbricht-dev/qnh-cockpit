@@ -37,6 +37,7 @@ import { collectStats } from "./stats.ts";
 import { collectCompetitors } from "./competitors.ts";
 import { runOutreach, translateGerman } from "./outreach.ts";
 import { elevenlabsCredits } from "./elevenlabs.ts";
+import { syncPlaylists } from "./playlists.ts";
 import { answerQuizzes, fetchComments, moderate, REDIRECTS_DEFAULT, replyTo, sendDueReplies, youtubeAuth, youtubeConnect, type ModerateAction } from "./comments.ts";
 
 const cors = {
@@ -66,7 +67,7 @@ async function isAdmin(req: Request): Promise<boolean> {
 }
 
 // ops that act in Christoph's name: only from the cockpit, never from cron
-const ADMIN_ONLY = new Set(["reply", "moderate", "youtube-auth", "youtube-connect", "outreach-translate", "elevenlabs"]);
+const ADMIN_ONLY = new Set(["reply", "moderate", "youtube-auth", "youtube-connect", "outreach-translate", "elevenlabs", "playlists"]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -154,6 +155,11 @@ Deno.serve(async (req) => {
     if (op === "youtube-auth") return json(youtubeAuth(google, allowed, str(body.app_id), str(body.redirect_uri), str(body.state)));
     if (op === "youtube-connect") return json(await youtubeConnect(cdeps, allowed, str(body.app_id), str(body.code), str(body.redirect_uri)));
     // admin only: ElevenLabs credits for Finanzen (own read-only key, secret ELEVENLABS_READ_KEY)
+    if (op === "playlists") {
+      const app = str(body.app_id);
+      const account = async () => (await store.accounts()).find((a) => a.app_id === app && a.platform === "youtube") ?? null;
+      return json({ results: await syncPlaylists({ fetch, google, account, token: (id) => store.token(id) }, body.playlists) });
+    }
     if (op === "elevenlabs") return json(await elevenlabsCredits(fetch, Deno.env.get("ELEVENLABS_READ_KEY")));
     if (op === "outreach-translate") {
       // admin only: German translation of a suggestion; the small cost is added to that suggestion (budget)
