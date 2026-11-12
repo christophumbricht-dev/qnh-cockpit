@@ -21,6 +21,8 @@
         "npm:@electric-sql/pglite@~0.5.9",
         "npm:@supabase/supabase-js@^2.117.3",
         "npm:fflate@~0.8.3",
+        "npm:jsqr@1.4.0",
+        "npm:pdfjs-dist@6.3.289",
         "npm:vite@^8.3.4"
       ]
     }

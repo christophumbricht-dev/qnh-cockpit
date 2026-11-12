@@ -252,6 +252,16 @@ Deno.test("cleanup deletes files of posts published more than 14 days ago", asyn
   assert(!fresh.media_deleted_at);
 });
 
+Deno.test("cleanup deletes only the video one day after publishing, pictures stay until day 14", async () => {
+  const p = { ...post({ id: "p", status: "published", cover_path: "a/c.jpg", media: [{ path: "a/1.mp4", type: "video/mp4", still: "a/1-still.jpg" }] }), published_at: "2026-10-18T10:00:00Z" } as Post;
+  const img = { ...post({ id: "img", status: "published" }), published_at: "2026-10-18T10:00:00Z" } as Post;
+  const today = { ...post({ id: "today", status: "published", media: [{ path: "a/2.mp4", type: "video/mp4" }] }), published_at: "2026-10-19T23:00:00Z" } as Post;
+  const { store, removed } = fakeStore([p, img, today]);
+  await cleanup(deps(store, mockGraph({}).fetchFn));
+  assertEquals(removed, ["a/1.mp4"]);
+  assert(!p.media_deleted_at);
+});
+
 Deno.test("cleanup also deletes the still frame of a video", async () => {
   const old = { ...post({ id: "old", status: "published", media: [{ path: "a/1.mp4", type: "video/mp4", still: "a/1-still.jpg" }] }), published_at: "2026-10-01T10:00:00Z" } as Post;
   const { store, removed } = fakeStore([old]);

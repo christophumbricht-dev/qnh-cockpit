@@ -1,6 +1,6 @@
 // What fills the Social file store, and tidy it (Supabase free plan: 1 GB for all buckets; Christoph 12.11.2026).
 //   npm run social -- speicher                          report only, changes nothing
-//   npm run social -- speicher --aufraeumen [--tage 3]  delete what is no longer needed
+//   npm run social -- speicher --aufraeumen [--tage 1]  delete what is no longer needed
 // Deleted are: files no post and no studio row names any more (older than 2 days), videos of cancelled posts,
 // and videos of posts published more than --tage days ago (cover and still stay, so the lists keep a picture).
 // Never touched: anything a draft, an approved, a publishing or a failed post names.
@@ -11,7 +11,7 @@ const KEEP = new Set(["draft", "approved", "publishing", "failed"]);
 
 // a path counts as named when a stored string ends with it (plain path or public URL)
 // pure: files [{ path, size, created_at }], posts [{ id, status, published_at, json }], studio = one string of all studio rows
-export function classify(files, posts, studio, now, keepDays = 3) {
+export function classify(files, posts, studio, now, keepDays = 1) {
   return files.map((f) => {
     const users = posts.filter((p) => p.json.includes(`${f.path}"`));
     const inStudio = studio.includes(`${f.path}"`);
@@ -57,7 +57,7 @@ async function allRows(sb, table) {
 }
 
 export async function storage(sb, opt) {
-  const keepDays = Number(opt.tage ?? 3);
+  const keepDays = Number(opt.tage ?? 1);
   if (!(keepDays >= 1)) throw new Error("--tage braucht eine Zahl ab 1.");
   const files = await listAll(sb);
   const posts = (await allRows(sb, "social_posts")).map((p) => ({ id: p.id, status: p.status, published_at: p.published_at, json: JSON.stringify(p) }));

@@ -60,7 +60,7 @@ export function supabaseStore(db: SupabaseClient): Store & StatsStore & Comments
     },
     async publishedWithFiles(before) {
       return must(await db.from("social_posts").select("*").eq("status", "published").is("media_deleted_at", null)
-        .lt("published_at", before.toISOString()).limit(50), "published posts") as Post[];
+        .lt("published_at", before.toISOString()).order("published_at").limit(500), "published posts") as Post[];
     },
     async saveAccountDay(accountId: string, day: string, metrics: Record<string, number>) {
       must(await db.from("social_account_stats").upsert({ account_id: accountId, day, metrics }, { onConflict: "account_id,day" }), "account stats");

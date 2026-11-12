@@ -342,16 +342,27 @@ export async function refreshTokens(deps: Deps, refreshBeforeDays = 20): Promise
   return out;
 }
 
-// ---------- daily: delete files of posts published more than 14 days ago ----------
-export async function cleanup(deps: Deps, keepDays = 14): Promise<Result[]> {
-  const before = new Date(deps.now().getTime() - keepDays * 86400_000);
+// ---------- daily: videos go 1 day after publishing, the pictures (cover, still, images) after 14 days ----------
+// The free plan has 1 GB for all files; the videos are what fills it (Christoph 12.11.2026). The platform has its
+// own copy once the post is out, the cockpit only needs a picture for its lists.
+const VIDEO_TYPE = /^video\//;
+export async function cleanup(deps: Deps, keepDays = 14, videoDays = 1): Promise<Result[]> {
+  const all = new Date(deps.now().getTime() - keepDays * 86400_000);
   const out: Result[] = [];
-  for (const post of await deps.store.publishedWithFiles(before)) {
+  for (const post of await deps.store.publishedWithFiles(new Date(deps.now().getTime() - videoDays * 86400_000))) {
     // a studio video in R2 is not in the bucket (the studio keeps it, Christoph tidies R2 there)
-    const paths = [...post.media.flatMap((m) => [...(m.source === "r2" ? [] : [m.path]), ...(m.still ? [m.still] : [])]), ...(post.cover_path ? [post.cover_path] : [])];
-    await deps.store.removeFiles(paths);
-    await deps.store.update(post.id, { media_deleted_at: deps.now().toISOString() });
-    out.push({ id: post.id, status: "files-deleted" });
+    const local = post.media.filter((m) => m.source !== "r2");
+    if (new Date(post.published_at!) < all) {
+      await deps.store.removeFiles([...local.map((m) => m.path), ...post.media.flatMap((m) => (m.still ? [m.still] : [])), ...(post.cover_path ? [post.cover_path] : [])]);
+      await deps.store.update(post.id, { media_deleted_at: deps.now().toISOString() });
+      out.push({ id: post.id, status: "files-deleted" });
+      continue;
+    }
+    // removing a file that is already gone is harmless, so no extra state is kept for this step
+    const videos = local.filter((m) => VIDEO_TYPE.test(m.type ?? "") || /\.(mp4|mov)$/i.test(m.path)).map((m) => m.path);
+    if (!videos.length) continue;
+    await deps.store.removeFiles(videos);
+    out.push({ id: post.id, status: "videos-deleted" });
   }
   return out;
 }

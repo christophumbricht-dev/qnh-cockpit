@@ -4,7 +4,7 @@
 //                                    Instagram and YouTube (videos upload in pieces, a long upload continues next run;
 //                                    long YouTube videos go up privately up to a day ahead and go public on time)
 // POST { op: "refresh-tokens" }      refresh Instagram tokens that expire within 20 days (weekly cron)
-// POST { op: "cleanup" }             delete files of posts published > 14 days ago (daily cron)
+// POST { op: "cleanup" }             delete videos 1 day and all files 14 days after publishing (daily cron)
 // POST { op: "stats" }               Instagram statistics per account and media item (daily cron, or the CLI)
 //                                    + prepared answers below our own first comments that are due (sendDueReplies)
 // POST { op: "comments" }            fetch new comments on our Instagram posts and YouTube videos (cron every 15 min),
