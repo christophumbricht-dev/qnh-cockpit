@@ -59,6 +59,7 @@ export const QNH = {
 export const BRANDS = [
   { id: "leesidelab", name: "Leeside Lab", tagline: "Aviation weather & PPL theory in 3D", color: "#12243D", logo: "/logos/leesidelab.svg" },
   { id: "wolkenhof", name: "Flughafen Wolkenhof", tagline: "Kindersendung über Flugzeuge (YouTube, für Kinder)", color: "#E8A317", logo: "/logos/wolkenhof.svg" },
+  { id: "airspaceunfolded", name: "Airspace Unfolded", tagline: "Flughäfen und Lufträume in 3D (YouTube)", color: "#0D1822", logo: "/logos/airspaceunfolded.svg" },
 ];
 
 export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id) ?? BRANDS.find((b) => b.id === id));

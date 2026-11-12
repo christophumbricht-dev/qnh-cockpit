@@ -10,7 +10,7 @@ import { CATEGORIES, MARKER_STATUS, splitFollowUps, R2_FREE_BYTES, SCOPES, STATU
 import { WEEKPLAN, WEEK_DAYS, addDaysIso, mondayOf } from "../social/weekplan.js";
 import { BLOCK_ROWS, DEADLINE_DAYS, LOOKING, PIPELINE_CHANNELS, STEPS, christophsTurn, deadline, inPipeline, isLate, phaseOf, pipelineBlock } from "./pipeline.js";
 
-const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Zeitkacheln · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube" };
+const CHANNEL_NAME = { "leesidelab/instagram": "Leeside · Instagram", "leesidelab/youtube": "Zeitkacheln · YouTube", "downwind/instagram": "Downwind · Instagram", "wolkenhof/youtube": "Wolkenhof · YouTube", "airspaceunfolded/youtube": "Airspace Unfolded · YouTube" };
 const FORMAT_NAME = { video_long: "Langes Video", reel: "Reel", short: "Short", carousel: "Karussell", image: "Bild", story: "Story" };
 // one formatter, and the day cached for a minute: today() runs for every card and cell of a render
 const ZURICH_DAY = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" });
