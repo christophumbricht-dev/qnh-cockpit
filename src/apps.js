@@ -62,4 +62,9 @@ export const BRANDS = [
   { id: "airspaceunfolded", name: "Airspace Unfolded", tagline: "Flughäfen und Lufträume in 3D (YouTube)", color: "#0D1822", logo: "/logos/airspaceunfolded.svg" },
 ];
 
+// A channel whose public name differs from its app or brand (the id stays, posts and tokens hang on it).
+// leesidelab/youtube is the channel «Zeitkacheln» (Christoph 7.11.2026, shown everywhere since 12.11.2026).
+export const CHANNELS = { "leesidelab/youtube": { name: "Zeitkacheln" } };
+export const channelName = (appId, platform) => CHANNELS[`${appId}/${platform}`]?.name ?? null;
+
 export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id) ?? BRANDS.find((b) => b.id === id));

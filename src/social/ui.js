@@ -31,7 +31,7 @@ const STATUS_FILTERS = [
   ["ai", "KI-Info", (p) => p.ai_generated === true, "mit «KI-Info» markiert"],
 ];
 
-export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], studioFor = () => null }) {
+export function createSocial({ S, render, toast, errorText, appName, appBadge = () => "", brands = () => [], channelName = () => null, studioFor = () => null }) {
   S.social = { value: null, loading: false, error: null, filter: "all", editor: null, mode: savedMode(), review: null, stats: null, statsDays: 28, statsSort: "views", q: "", status: "all", platform: savedPlatform(), byTopic: false, reviewTopic: null };
   let unsubscribe = null;
   let reloadTimer;
@@ -80,7 +80,9 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     return p ? { id: p.page_id, name: p.name } : null;
   };
   const account = (id) => accounts().find((a) => a.id === id);
-  const accountLabel = (a) => (a ? `${appName(a.app_id)} · ${PLATFORM[a.platform] ?? a.platform} @${a.handle}` : "Unbekanntes Konto");
+  // the channel's own name where it differs from the app (leesidelab/youtube = «Zeitkacheln»), else the app's
+  const chanName = (a) => channelName(a.app_id, a.platform) ?? appName(a.app_id);
+  const accountLabel = (a) => (a ? `${chanName(a)} · ${PLATFORM[a.platform] ?? a.platform} @${a.handle}` : "Unbekanntes Konto");
   const daysLeft = (iso) => (iso ? Math.floor((new Date(iso) - Date.now()) / 864e5) : null);
   const firstLines = (text, n = 3) => String(text ?? "").split("\n").filter(Boolean).slice(0, n).join("\n");
 
@@ -145,7 +147,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const words = S.social.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return true;
     const a = account(p.account_id);
-    const hay = [p.caption, p.title, p.first_comment, p.first_comment_reply, ...(p.quiz_answer ?? []), p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && PLATFORM[a.platform],
+    const hay = [p.caption, p.title, p.first_comment, p.first_comment_reply, ...(p.quiz_answer ?? []), p.todo, p.last_error, a?.handle && `@${a.handle}`, a && appName(a.app_id), a && chanName(a), a && PLATFORM[a.platform],
       p.location?.name, STATUS[p.status], KINDS[p.kind], p.ai_generated && "KI", p.source === "package" && "Paket",
       ...(p.media ?? []).flatMap((m) => (m.user_tags ?? []).map((t) => "@" + t.username)),
       p.scheduled_at && formatZurich(p.scheduled_at), p.published_at && formatZurich(p.published_at)]
@@ -251,7 +253,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const c = inbox.countFor(a.id);
     const youtube = a.platform === "youtube";
     return `<article class="channel-card">
-      <div class="channel-head">${appBadge(a.app_id)}<div><b>${esc(youtube ? a.handle || appName(a.app_id) : `@${a.handle}`)}</b><span class="muted small">${esc(PLATFORM[a.platform] ?? a.platform)} · ${esc(appName(a.app_id))}</span></div></div>
+      <div class="channel-head">${appBadge(a.app_id)}<div><b>${esc(youtube ? channelName(a.app_id, a.platform) ?? (a.handle || appName(a.app_id)) : `@${a.handle}`)}</b><span class="muted small">${esc(PLATFORM[a.platform] ?? a.platform)} · ${esc(appName(a.app_id))}</span></div></div>
       <span class="ch-status ${status[1]}">${esc(status[0])}</span>
       <dl class="channel-stats">
         <div><dt>Nächster Beitrag</dt><dd>${next ? esc(shortZurich(next.scheduled_at)) : "–"}</dd></div>
@@ -884,7 +886,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
 
   // a normal (long or landscape) YouTube video: shown on a computer screen, 16:9, title and description below
   function desktopHtml(ed, acc, it) {
-    const handle = acc?.handle || appName(acc?.app_id) || "Kanal";
+    const handle = (acc && channelName(acc.app_id, acc.platform)) || acc?.handle || appName(acc?.app_id) || "Kanal";
     const ratio = it.width && it.height ? `${it.width} / ${it.height}` : "16 / 9";
     const media = thumb({ ...it, url: it.url ?? (it.path ? data.mediaUrl(it.path) : it.copyFrom ? data.mediaUrl(it.copyFrom) : undefined) }, "phone-img");
     const desc = ed.caption.length > 220 ? `${esc(ed.caption.slice(0, 220))}… <span class="muted">mehr</span>` : esc(ed.caption);
