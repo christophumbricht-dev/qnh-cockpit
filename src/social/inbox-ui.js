@@ -120,8 +120,9 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     const taken = new Set(accounts().filter((a) => a.platform === "youtube").map((a) => a.app_id));
     const free = brands().filter((b) => !taken.has(b.id));
     if (!free.length) return "";
-    if (!free.some((b) => b.id === ib().connectApp)) ib().connectApp = free[0].id; // the choice survives re-renders
-    return `<div class="acc-connect"><select name="soc-yt-app" aria-label="Für welche App oder Marke">${free.map((b) => `<option value="${esc(b.id)}"${b.id === ib().connectApp ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
+    // no preselection: a channel connected under the wrong brand can only be moved in the database
+    if (!free.some((b) => b.id === ib().connectApp)) ib().connectApp = null; // the choice survives re-renders
+    return `<div class="acc-connect"><select name="soc-yt-app" aria-label="Für welche App oder Marke"><option value=""${ib().connectApp ? "" : " selected"}>Marke wählen …</option>${free.map((b) => `<option value="${esc(b.id)}"${b.id === ib().connectApp ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
       <button class="btn ghost small-btn" data-action="soc-yt-connect">YouTube-Kanal verbinden</button></div>`;
   }
 
@@ -231,7 +232,10 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
       case "soc-cmt-delete":
         if (c && confirm("Deine Antwort löschen? Sie verschwindet auch auf der Plattform.")) await act(id, () => data.moderateComment(id, "delete"), "Gelöscht");
         return true;
-      case "soc-yt-connect": await startConnect(ib().connectApp); return true;
+      case "soc-yt-connect":
+        if (!ib().connectApp) { toast("Zuerst wählen, zu welcher App oder Marke der Kanal gehört."); return true; }
+        if (confirm(`Den YouTube-Kanal mit «${appName(ib().connectApp)}» verbinden?`)) await startConnect(ib().connectApp);
+        return true;
       case "soc-yt-reconnect":
         if (confirm(`YouTube für ${appName(el.dataset.value)} neu verbinden? Du meldest dich bei Google an und wählst denselben Kanal.`)) await startConnect(el.dataset.value);
         return true;
@@ -241,7 +245,7 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
 
   function onChange(e) {
     if (e.target.name !== "soc-yt-app") return false;
-    ib().connectApp = e.target.value;
+    ib().connectApp = e.target.value || null;
     return true;
   }
 
