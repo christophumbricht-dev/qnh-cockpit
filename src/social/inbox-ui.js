@@ -56,7 +56,7 @@ export function createInbox({ S, render, toast, errorText, appName, appBadge, br
     const acc = account(p.account_id);
     const plat = PLATFORM[acc?.platform] ?? acc?.platform ?? "";
     return `<section class="card cmt-post">
-      <header class="cmt-post-head">${acc ? appBadge(acc.app_id) : ""}
+      <header class="cmt-post-head">${acc ? appBadge(acc.app_id, acc.platform) : ""}
         <div><b>${esc(p.title || "(ohne Titel)")}</b><span class="muted small">${esc(plat)} · @${esc(acc?.handle ?? "?")}${p.open ? ` · <span class="cmt-open">${p.open} offen</span>` : ""}</span></div>
         ${web(p.permalink) ? `<a class="btn ghost small-btn" href="${esc(p.permalink)}" target="_blank" rel="noopener">Auf ${esc(plat)} ↗</a>` : ""}
       </header>

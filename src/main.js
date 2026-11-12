@@ -1,5 +1,5 @@
 import "./style.css";
-import { APPS, BRANDS, QNH, appById, channelName } from "./apps.js";
+import { APPS, BRANDS, QNH, appById, channelName, channelOf } from "./apps.js";
 import * as api from "./api.js";
 import { esc, relTime, shortDate, num, sourceLabel, errorText } from "./format.js";
 import { bucket, chartSvg, periodLabel, sparkSvg } from "./charts.js";
@@ -54,7 +54,7 @@ const SCOPES = [{ id: "qnh", name: "QNH", color: "#0B7285" }, ...[...APPS, ...BR
 const qnh = createQnh({ S, render: () => render(), toast: (t) => toast(t), errorText, scopes: SCOPES });
 const store = createStore({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const social = createSocial({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, appName: (id) => appById(id)?.name ?? id,
-  appBadge: (id) => appBadge(appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), channelName, studioFor: (id) => studio.itemForPost(id) });
+  appBadge: (id, platform) => appBadge(channelOf(id, platform) ?? appById(id) ?? { name: id, color: "#0B7285" }), brands: () => [...APPS, ...BRANDS].map(({ id, name }) => ({ id, name })), channelName, studioFor: (id) => studio.itemForPost(id) });
 const inbox = createInbox({ S, render: () => render(), toast: (t) => toast(t), errorText });
 const studio = createStudio({ S, render: (force) => render(force), toast: (t) => toast(t), errorText, approvePost: (id, patch, mediaKey) => social.approvePost(id, patch, mediaKey),
   handleFor: (channel) => { const [app, platform] = channel.split("/"); const a = S.social?.value?.accounts?.find((x) => x.app_id === app && x.platform === platform); return a?.handle || app; },

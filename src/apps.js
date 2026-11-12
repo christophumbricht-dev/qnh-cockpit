@@ -64,7 +64,8 @@ export const BRANDS = [
 
 // A channel whose public name differs from its app or brand (the id stays, posts and tokens hang on it).
 // leesidelab/youtube is the channel «Zeitkacheln» (Christoph 7.11.2026, shown everywhere since 12.11.2026).
-export const CHANNELS = { "leesidelab/youtube": { name: "Zeitkacheln" } };
+export const CHANNELS = { "leesidelab/youtube": { name: "Zeitkacheln", logo: "/logos/zeitkacheln.svg" } };
+export const channelOf = (appId, platform) => CHANNELS[`${appId}/${platform}`] ?? null;
 export const channelName = (appId, platform) => CHANNELS[`${appId}/${platform}`]?.name ?? null;
 
 export const appById = (id) => (id === QNH.id ? QNH : APPS.find((a) => a.id === id) ?? BRANDS.find((b) => b.id === id));

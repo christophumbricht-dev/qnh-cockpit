@@ -253,7 +253,7 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
     const c = inbox.countFor(a.id);
     const youtube = a.platform === "youtube";
     return `<article class="channel-card">
-      <div class="channel-head">${appBadge(a.app_id)}<div><b>${esc(youtube ? channelName(a.app_id, a.platform) ?? (a.handle || appName(a.app_id)) : `@${a.handle}`)}</b><span class="muted small">${esc(PLATFORM[a.platform] ?? a.platform)} · ${esc(appName(a.app_id))}</span></div></div>
+      <div class="channel-head">${appBadge(a.app_id, a.platform)}<div><b>${esc(youtube ? channelName(a.app_id, a.platform) ?? (a.handle || appName(a.app_id)) : `@${a.handle}`)}</b><span class="muted small">${esc(PLATFORM[a.platform] ?? a.platform)} · ${esc(appName(a.app_id))}</span></div></div>
       <span class="ch-status ${status[1]}">${esc(status[0])}</span>
       <dl class="channel-stats">
         <div><dt>Nächster Beitrag</dt><dd>${next ? esc(shortZurich(next.scheduled_at)) : "–"}</dd></div>
@@ -310,8 +310,8 @@ export function createSocial({ S, render, toast, errorText, appName, appBadge = 
         .sort((a, b) => (Number(b.metrics[st.statsSort]) || 0) - (Number(a.metrics[st.statsSort]) || 0));
       const delta = last.followers_count != null && first.followers_count != null ? last.followers_count - first.followers_count : null;
       const tile = (label, value, sub = "") => `<div class="stat-tile"><span class="muted small">${label}</span><b>${value}</b>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>`;
-      if (!series.length && !media.length) return `<section class="card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3><p class="muted">Noch keine Zahlen. Sie werden täglich um ca. 06:23 abgeholt – oder jetzt mit «Jetzt aktualisieren».</p></section>`;
-      return `<section class="card stats-card"><h3>${appBadge(acc.app_id)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3>
+      if (!series.length && !media.length) return `<section class="card"><h3>${appBadge(acc.app_id, acc.platform)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3><p class="muted">Noch keine Zahlen. Sie werden täglich um ca. 06:23 abgeholt – oder jetzt mit «Jetzt aktualisieren».</p></section>`;
+      return `<section class="card stats-card"><h3>${appBadge(acc.app_id, acc.platform)} @${esc(acc.handle)} <span class="muted small">${esc(PLATFORM[acc.platform] ?? acc.platform)}</span></h3>
         <div class="stat-tiles">
           ${acc.platform === "youtube" ? `${tile("Abonnenten", last.followers_count ?? "–", delta != null ? `${delta >= 0 ? "+" : ""}${delta} in ${st.statsDays} Tagen` : "")}
             ${tile("Aufrufe gesamt", last.views_total != null ? num(last.views_total) : "–", first.views_total != null && last.views_total != null ? `+${num(last.views_total - first.views_total)} in ${st.statsDays} Tagen` : "")}
