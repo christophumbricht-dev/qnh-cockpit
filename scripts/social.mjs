@@ -170,9 +170,12 @@ async function todoClear(sb, a) {
   console.log(`\n${done} von ${rows.length} Notizen geleert. Sicherung: ${backup}`);
 }
 
+export const COMMANDS = ["status", "import", "stats", "comments", "todo-clear", "platzhalter", "konkurrenz", "playlists", "speicher"];
+
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  if (!["status", "import", "stats", "comments", "todo-clear", "platzhalter", "konkurrenz", "playlists"].includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | konkurrenz [--shorts] [--holen] | todo-clear [--dry] | platzhalter <app/plattform> <datum> <zeit> \"…\" | platzhalter list");
+  // every command main() dispatches must be in COMMANDS (tests/social-cli.test.mjs): «speicher» was missing from 12.11. to 13.11.2026
+  if (!COMMANDS.includes(cmd)) fail("Befehle: status | import [ordner …] | stats [--app …] [--days 28] [--json] [--refresh] | comments [fetch|draft <id> \"…\"] | konkurrenz [--shorts] [--holen] | todo-clear [--dry] | platzhalter <app/plattform> <datum> <zeit> \"…\" | platzhalter list | playlists | speicher [--aufraeumen] [--tage 1]");
   if (cmd === "playlists") return playlists(await signedIn(), process.argv[3], process.argv.includes("--dry"));
   if (cmd === "speicher") return storage(await signedIn(), args(process.argv.slice(3), ["aufraeumen"]));
   if (cmd === "platzhalter") return placeholder(await signedIn(), args(process.argv.slice(3)));
