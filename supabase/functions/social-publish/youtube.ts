@@ -13,7 +13,7 @@
 
 import type { FetchFn } from "./graph.ts";
 import { accessToken, GoogleError, googleGerman, parse, youtube, YT_UPLOAD, type YouTube } from "./google.ts";
-import { type Account, type Deps, FinalError, germanError, type MediaItem, type Post, type Result } from "./publish.ts";
+import { type Account, type Deps, FinalError, germanError, type MediaItem, mirrorKey, type Post, type Result } from "./publish.ts";
 import { r2Presign, STUDIO_KEY } from "../_shared/sigv4.js";
 
 export const CHUNK = 8 * 1024 * 1024; // must be a multiple of 256 KiB
@@ -68,7 +68,10 @@ export function nextOffset(range: string | null): number {
 }
 
 // where a file is read from: the public Social bucket, or a short-lived signed link into R2 (never the bucket itself)
-export async function fileUrl(deps: Deps, m: MediaItem, path = m.path): Promise<string> {
+export async function fileUrl(deps: Deps, m: MediaItem, path = m.path, post?: Pick<Post, "attempts">): Promise<string> {
+  // a Short whose reel the import also put to R2 (mirrorKey in publish.ts): read from there on the first try
+  const mirror = !fromR2(m) && post && path === m.path ? mirrorKey(deps, m, post) : null;
+  if (mirror) return await r2Presign({ ...deps.r2!, key: mirror, method: "GET", expires: 3600, now: deps.now() });
   if (!fromR2(m)) return deps.store.publicUrl(path);
   if (!STUDIO_KEY.test(path)) throw new FinalError("Das Video liegt an einem unbekannten Ort in R2 – im Studio neu hochladen.");
   if (!deps.r2) throw new FinalError("Das lange Video liegt in Cloudflare R2, aber social-publish fehlen die R2-Secrets (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET – dieselben wie bei studio-media, docs/studio-setup.md).");
@@ -179,7 +182,7 @@ type Sent = Done | { progress: number };
 // can still ask it after an error (a lost final answer means the video exists).
 async function sendVideo(deps: YDeps, token: string, post: Post, privacy: "public" | "private", ctx: { current: Session | null }): Promise<Sent> {
   const file = post.media[0];
-  const url = await fileUrl(deps, file);
+  const url = await fileUrl(deps, file, file.path, post);
   const total = await fileSize(deps.fetch, url);
   const fp = await fingerprint(post, total);
   const meta = await metaPrint(post);

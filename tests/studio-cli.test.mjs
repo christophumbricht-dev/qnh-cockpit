@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { r2Plan, r2Removed } from "../scripts/studio-lib.mjs";
+import { mediaWithR2, r2Plan, r2Removed, reelKey, reelMoves, reelToR2, sameFile } from "../scripts/studio-lib.mjs";
 import { CliError, approvalCarriesOver, checkMeta, checkScenes, itemFromPost, rejectPatch, resolvePatch, sha256, slugOf, statusAfterNewVersion,
   summary, versionFromPost, workMarkers } from "../scripts/studio-lib.mjs";
 
@@ -236,4 +236,63 @@ test("r2Plan: only what no waiting post needs leaves R2", () => {
   const after = r2Removed(versions[0], "2026-11-07");
   assert.equal(after.source.kind, "removed");
   assert.equal(after.meta.thumbnails[0].bytes, 0);
+});
+
+// ---------- reels play in the studio from R2 (13.11.2026, Supabase cached egress) ----------
+test("reelToR2: the studio version points to R2, the bucket file stays for publishing", () => {
+  assert.equal(reelKey("2026-11-24-night", 3), "studio/2026-11-24-night/v3/video.mp4");
+  assert.deepEqual(reelToR2({ kind: "storage", path: "p/0.mp4", still: "p/0-still.jpg" }, "studio/x/v1/video.mp4", 41e6),
+    { kind: "r2", key: "studio/x/v1/video.mp4", bytes: 41e6, social_path: "p/0.mp4", still: "p/0-still.jpg" });
+  const pages = { kind: "storage", pages: ["a.jpg"] };
+  assert.equal(reelToR2(pages, "k", 1), pages);                 // a carousel stays as it is
+});
+
+test("reelMoves: only current reels of posts still waiting, and only while the post uses that file", () => {
+  const items = [
+    { id: "a", slug: "a", status: "review1", current_version: 2, social_post_id: "pa" },
+    { id: "b", slug: "b", status: "approved", current_version: 1, social_post_id: "pb" },
+    { id: "c", slug: "c", status: "review1", current_version: 1, social_post_id: "pc" },   // published
+    { id: "d", slug: "d", status: "dropped", current_version: 1, social_post_id: "pd" },
+    { id: "e", slug: "e", status: "review1", current_version: 1, social_post_id: "pe" },   // the post has another file now
+    { id: "f", slug: "f", status: "review1", current_version: 1, social_post_id: "pf" },   // already in R2
+    { id: "g", slug: "g", status: "review1", current_version: 1, social_post_id: "pg" },   // carousel
+  ];
+  const st = (id, item_id, version, path) => ({ id, item_id, version, source: { kind: "storage", path } });
+  const versions = [st("a1", "a", 1, "pa/old.mp4"), st("a2", "a", 2, "pa/0.mp4"), st("b1", "b", 1, "pb/0.mp4"), st("c1", "c", 1, "pc/0.mp4"),
+    st("d1", "d", 1, "pd/0.mp4"), st("e1", "e", 1, "pe/0.mp4"), { id: "f1", item_id: "f", version: 1, source: { kind: "r2", key: "studio/f/v1/video.mp4" } },
+    { id: "g1", item_id: "g", version: 1, source: { kind: "storage", pages: ["pg/0.jpg"] } }];
+  const posts = [
+    { id: "pa", status: "draft", media: [{ path: "pa/0.mp4" }] }, { id: "pb", status: "approved", media: [{ path: "pb/0.mp4" }] },
+    { id: "pc", status: "published", media: [{ path: "pc/0.mp4" }] }, { id: "pd", status: "draft", media: [{ path: "pd/0.mp4" }] },
+    { id: "pe", status: "draft", media: [{ path: "pe/1.mp4" }] }, { id: "pf", status: "draft", media: [] }, { id: "pg", status: "draft", media: [{ path: "pg/0.jpg" }] },
+  ];
+  const m = reelMoves({ items, versions, posts });
+  assert.deepEqual(m.map((x) => [x.version.id, x.key]), [["a2", "studio/a/v2/video.mp4"], ["b1", "studio/b/v1/video.mp4"]]);
+});
+
+test("r2Plan keeps the R2 reel of a waiting post, removes it once published", () => {
+  const items = [{ id: "a", slug: "a", status: "approved", current_version: 1, social_post_id: "pa" }];
+  const versions = [{ id: "a1", item_id: "a", version: 1, source: { kind: "r2", key: "studio/a/v1/video.mp4", bytes: 41e6, social_path: "pa/0.mp4" }, meta: {} }];
+  assert.deepEqual(r2Plan({ items, versions, posts: [{ id: "pa", status: "approved", media: [{ path: "pa/0.mp4" }] }] }), []);
+  assert.deepEqual(r2Plan({ items, versions, posts: [{ id: "pa", status: "published", media: [{ path: "pa/0.mp4" }] }] }).map((x) => x.why), ["veröffentlicht"]);
+});
+
+test("sameFile: size, and the MD5 where the bucket's ETag is one", () => {
+  const md5 = "0123456789abcdef0123456789abcdef";
+  assert.equal(sameFile({ localBytes: 10, localMd5: md5 }, { size: 10, eTag: `"${md5}"` }), true);
+  assert.equal(sameFile({ localBytes: 10, localMd5: md5 }, { size: 10, eTag: '"ffffffffffffffffffffffffffffffff"' }), false);
+  assert.equal(sameFile({ localBytes: 10, localMd5: md5 }, { size: 10, eTag: '"abc-3"' }), true);   // multipart: the size decides
+  assert.equal(sameFile({ localBytes: 10, localMd5: md5 }, { size: 11, eTag: `"${md5}"` }), false);
+  assert.equal(sameFile({ localBytes: 10, localMd5: md5 }, { size: undefined }), false);
+});
+
+test("mediaWithR2: the draft's video notes its R2 copy; r2Plan keeps a copy a waiting post reads", () => {
+  const media = [{ path: "p/0.mp4", type: "video/mp4", still: "p/s.jpg" }, { path: "p/1.jpg", type: "image/jpeg" }];
+  assert.deepEqual(mediaWithR2(media, "p/0.mp4", "studio/a/v2/video.mp4"),
+    [{ path: "p/0.mp4", type: "video/mp4", still: "p/s.jpg", r2: { key: "studio/a/v2/video.mp4", of: "p/0.mp4" } }, media[1]]);
+  assert.deepEqual(mediaWithR2(media, "p/1.jpg", "k"), media);          // only a video
+  const items = [{ id: "a", slug: "a", status: "review1", current_version: 2, social_post_id: "pa" }];
+  const versions = [{ id: "a1", item_id: "a", version: 1, source: { kind: "r2", key: "studio/a/v1/video.mp4", bytes: 1 }, meta: {} }];
+  // an approved post still reads the old copy: it stays although it is an old version
+  assert.deepEqual(r2Plan({ items, versions, posts: [{ id: "pa", status: "approved", media: [{ path: "p/0.mp4", r2: { key: "studio/a/v1/video.mp4", of: "p/0.mp4" } }] }] }), []);
 });

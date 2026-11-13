@@ -8,6 +8,7 @@
 import { FB_HOST, graph, GraphError, IG_HOST, refreshInstagramToken, scrubToken, type FetchFn } from "./graph.ts";
 import { GoogleError, googleGerman, type GoogleConfig } from "./google.ts";
 import { publishYoutube } from "./youtube.ts";
+import { r2Presign, STUDIO_KEY } from "../_shared/sigv4.js";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -18,7 +19,27 @@ export type MediaItem = {
   source?: "r2"; bytes?: number;
   captions?: string; // YouTube: key of an .srt in R2 next to the video, uploaded as captions
   lang?: string; // YouTube: language of the video and the captions, e.g. "en"
+  // the same bytes as the bucket file in Cloudflare R2 (13.11.2026, Supabase egress over the free plan): the import puts
+  // every reel there for the studio and notes { key, of: path }
+  r2?: { key: string; of: string };
 };
+
+// Instagram and YouTube read a video from R2 instead of the bucket (R2 has no egress fees), but only on the first try,
+// only while the post still has exactly the file the copy was made of (a video replaced in the cockpit has another
+// path), and only with the R2 secrets. Any later try reads the bucket, so a link Instagram cannot fetch costs one try.
+export const mirrorKey = (deps: Deps, m: MediaItem, post: Pick<Post, "attempts">): string | null =>
+  deps.r2 && (post.attempts ?? 0) <= 1 && m.r2 && m.r2.of === m.path && STUDIO_KEY.test(m.r2.key ?? "") ? m.r2.key : null;
+export async function videoUrl(deps: Deps, m: MediaItem, post: Pick<Post, "attempts">): Promise<string> {
+  const key = mirrorKey(deps, m, post);
+  return key ? await r2Presign({ ...deps.r2!, key, method: "GET", expires: 3600, now: deps.now() }) : deps.store.publicUrl(m.path);
+}
+// Instagram could not process a video it fetched from R2: not final, the next try makes a new container from the bucket
+export class MirrorError extends Error {}
+const isVideoItem = (m: MediaItem) => m.type.startsWith("video/");
+const containerError = (deps: Deps, post: Post) =>
+  post.media?.some((m) => isVideoItem(m) && mirrorKey(deps, m, post))
+    ? new MirrorError("Instagram konnte das Video aus R2 nicht verarbeiten. Der nächste Versuch nimmt die Datei aus dem Speicher.")
+    : new FinalError(VIDEO_ERROR);
 
 // Instagram user_tags (images only): JSON list of { username, x, y } with x/y in 0..1
 export function userTags(m: MediaItem): string | undefined {
@@ -122,7 +143,7 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
       const { status_code } = await g.get(container, { fields: "status_code" });
       if (status_code === "PUBLISHED") return await finish(deps, g, post, await findPublishedMedia(g, account, post));
       if (status_code === "EXPIRED") container = null; // older than 24 h: make a new one
-      if (status_code === "ERROR") throw new FinalError(VIDEO_ERROR);
+      if (status_code === "ERROR") throw containerError(deps, post);
     }
 
     if (!container) {
@@ -141,7 +162,7 @@ async function publishOne(deps: Deps, post: Post): Promise<Result> {
       await store.update(post.id, { remote_container_id: container });
     }
 
-    if (!(await waitUntilFinished(deps, g, container))) {
+    if (!(await waitUntilFinished(deps, g, container, post))) {
       await store.update(post.id, { last_error: "Instagram verarbeitet das Video noch. Der nächste Durchgang macht weiter." });
       return { id: post.id, status: "processing" };
     }
@@ -163,8 +184,8 @@ export async function checkFiles(deps: Deps, post: Post) {
 }
 
 async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account: Account, post: Post): Promise<string> {
-  const url = (m: MediaItem) => deps.store.publicUrl(m.path);
-  const isVideo = (m: MediaItem) => m.type.startsWith("video/");
+  const url = async (m: MediaItem) => (isVideoItem(m) ? await videoUrl(deps, m, post) : deps.store.publicUrl(m.path));
+  const isVideo = isVideoItem;
   const ig = account.remote_id;
   const [first] = post.media;
   if (!first) throw new FinalError("Der Beitrag hat keine Bilder oder Videos.");
@@ -196,10 +217,10 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
   const ai = post.ai_generated ? { is_ai_generated: true } : {};
 
   if (post.kind === "image") {
-    return await withLocation({ image_url: url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first), ...ai });
+    return await withLocation({ image_url: await url(first), caption: post.caption, alt_text: first.alt || undefined, user_tags: userTags(first), ...ai });
   }
   if (post.kind === "story") {
-    const story = isVideo(first) ? { media_type: "STORIES", video_url: url(first) } : { media_type: "STORIES", image_url: url(first) };
+    const story = isVideo(first) ? { media_type: "STORIES", video_url: await url(first) } : { media_type: "STORIES", image_url: await url(first) };
     if (!post.ai_generated) return (await g.post(`${ig}/media`, story)).id;
     // not documented for stories: try it, and if Instagram refuses, post the story without the label and say so
     try {
@@ -213,7 +234,7 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
   if (post.kind === "reel") {
     return await withLocation({
       media_type: "REELS",
-      video_url: url(first),
+      video_url: await url(first),
       caption: post.caption,
       cover_url: post.cover_path ? deps.store.publicUrl(post.cover_path) : undefined,
       share_to_feed: true,
@@ -225,22 +246,22 @@ async function createContainer(deps: Deps, g: ReturnType<typeof graph>, account:
   const children: string[] = [];
   for (const m of post.media) {
     children.push((await g.post(`${ig}/media`, isVideo(m)
-      ? { media_type: "VIDEO", video_url: url(m), is_carousel_item: true }
-      : { image_url: url(m), is_carousel_item: true, alt_text: m.alt || undefined, user_tags: userTags(m) })).id);
+      ? { media_type: "VIDEO", video_url: await url(m), is_carousel_item: true }
+      : { image_url: await url(m), is_carousel_item: true, alt_text: m.alt || undefined, user_tags: userTags(m) })).id);
   }
-  for (const child of children) if (!(await waitUntilFinished(deps, g, child))) throw new Error("Instagram verarbeitet ein Karussell-Video noch.");
+  for (const child of children) if (!(await waitUntilFinished(deps, g, child, post))) throw new Error("Instagram verarbeitet ein Karussell-Video noch.");
   return await withLocation({ media_type: "CAROUSEL", children: children.join(","), caption: post.caption, ...ai });
 }
 
 const VIDEO_ERROR = "Instagram konnte die Datei nicht verarbeiten. Bitte Format prüfen (Bild: JPEG; Video: MP4, H.264, AAC) und neu hochladen.";
 
 // true = ready to publish, false = still processing after this run's polls
-async function waitUntilFinished(deps: Deps, g: ReturnType<typeof graph>, container: string): Promise<boolean> {
+async function waitUntilFinished(deps: Deps, g: ReturnType<typeof graph>, container: string, post?: Post): Promise<boolean> {
   const polls = deps.maxPolls ?? 5;
   for (let i = 0; i < polls; i++) {
     const { status_code } = await g.get(container, { fields: "status_code" });
     if (status_code === "FINISHED" || status_code === "PUBLISHED") return true;
-    if (status_code === "ERROR") throw new FinalError(VIDEO_ERROR);
+    if (status_code === "ERROR") throw post ? containerError(deps, post) : new FinalError(VIDEO_ERROR);
     if (status_code === "EXPIRED") throw new Error("Der Instagram-Container ist abgelaufen. Wird neu erstellt.");
     if (i < polls - 1) {
       // never sleep past the run's deadline: the next run (10 min) asks again, the container keeps its state
@@ -285,6 +306,7 @@ async function fail(deps: Deps, post: Post, err: unknown): Promise<Result> {
   const message = germanError(err);
   const final = err instanceof FinalError || isFinalGraphError(err) || post.attempts >= MAX_ATTEMPTS;
   await deps.store.update(post.id, {
+    ...(err instanceof MirrorError ? { remote_container_id: null } : {}), // the next try makes a new container from the bucket
     status: final ? "failed" : "approved", // approved + due → the next run tries again
     last_error: final || post.attempts >= MAX_ATTEMPTS ? message : `${message} (Versuch ${post.attempts} von ${MAX_ATTEMPTS}, nächster Versuch automatisch)`,
   });

@@ -408,3 +408,54 @@ Deno.test("Graph error text names the code and what to do", async () => {
   assertMatch(germanError(new GraphError("Media download has failed", 400, 9004, 2207052)), /neu hochladen.*\(Code 9004\/2207052\)/);
   assertMatch(germanError(new GraphError("Something else", 400, 100)), /Instagram meldet: Something else \(Code 100\)/);
 });
+
+// ---------- reels read from Cloudflare R2 (13.11.2026, Supabase egress) ----------
+const R2 = { accountId: "acct", bucket: "qnh-studio", accessKeyId: "AK", secretAccessKey: "SK" };
+const REEL_MEDIA = { path: "p1/0.mp4", type: "video/mp4", r2: { key: "studio/2026-11-24-night/v3/video.mp4", of: "p1/0.mp4" } };
+const reelRoutes = (status: string) => ({
+  "GET IG1/content_publishing_limit": LIMIT_OK,
+  "POST IG1/media": { id: "C1" },
+  "GET C1": { status_code: status },
+  "POST IG1/media_publish": { id: "M1" },
+  "GET M1": { permalink: "https://www.instagram.com/reel/abc/" },
+});
+
+Deno.test("reel with an R2 copy: Instagram gets a signed R2 link on the first try", async () => {
+  const posts = [post({ kind: "reel", media: [{ ...REEL_MEDIA }] })];
+  const { store } = fakeStore(posts);
+  const g = mockGraph(reelRoutes("FINISHED"));
+  assertEquals(await publishDue(deps(store, g.fetchFn, { r2: R2 })), [{ id: "p1", status: "published" }]);
+  const url = new URL(g.calls.find((c) => c.method === "POST" && c.path === "IG1/media")!.params.video_url);
+  assertEquals(url.host, "acct.r2.cloudflarestorage.com");
+  assertEquals(url.pathname, "/qnh-studio/studio/2026-11-24-night/v3/video.mp4");
+  assert(url.searchParams.get("X-Amz-Signature"));
+});
+
+Deno.test("reel R2 copy is not used without R2 secrets, after the first try, or for another file", async () => {
+  for (const [over, d] of [
+    [{}, {}],                                                                                   // no R2 secrets
+    [{ attempts: 1 }, { r2: R2 }],                                                              // second try
+    [{ media: [{ ...REEL_MEDIA, path: "p1/new.mp4" }] }, { r2: R2 }],                           // video replaced in the cockpit
+    [{ media: [{ ...REEL_MEDIA, r2: { key: "../other", of: "p1/0.mp4" } }] }, { r2: R2 }],      // not a studio key
+  ] as [Partial<Post>, Partial<Deps>][]) {
+    const posts = [post({ kind: "reel", media: [{ ...REEL_MEDIA }], ...over })];
+    const { store } = fakeStore(posts);
+    const g = mockGraph(reelRoutes("FINISHED"));
+    await publishDue(deps(store, g.fetchFn, d));
+    const sent = g.calls.find((c) => c.method === "POST" && c.path === "IG1/media")!.params.video_url;
+    assertMatch(sent, /^https:\/\/qnh\.supabase\.co\/storage\/v1\/object\/public\/social-media\/p1\//);
+  }
+});
+
+Deno.test("Instagram cannot process the R2 video: not final, the next try uses the bucket", async () => {
+  const posts = [post({ kind: "reel", media: [{ ...REEL_MEDIA }] })];
+  const { store } = fakeStore(posts);
+  const g1 = mockGraph(reelRoutes("ERROR"));
+  const [r1] = await publishDue(deps(store, g1.fetchFn, { r2: R2 }));
+  assertEquals(r1.status, "retry");
+  assertEquals(posts[0].status, "approved");
+  assertEquals(posts[0].remote_container_id, null);
+  const g2 = mockGraph(reelRoutes("FINISHED"));
+  assertEquals(await publishDue(deps(store, g2.fetchFn, { r2: R2 })), [{ id: "p1", status: "published" }]);
+  assertMatch(g2.calls.find((c) => c.path === "IG1/media")!.params.video_url, /supabase\.co/);
+});

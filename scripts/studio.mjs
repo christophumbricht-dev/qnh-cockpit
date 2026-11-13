@@ -6,6 +6,7 @@
 //   npm run studio -- resolve <marker-id> "was geändert" [--regel all|channel|post "Regeltext"]
 //   npm run studio -- reject <marker-id> "warum nicht"
 //   npm run studio -- r2 [--storniert] [--do]                   what can leave Cloudflare R2; with --do it goes (old versions, published)
+//   npm run studio -- r2-reels [--do]                           reels in the studio from the Social bucket → R2 (package on this PC)
 //   npm run studio -- upload <ordner> [--kanal leesidelab/youtube] [--tag YYYY-MM-DD] [--slug …]
 //                                                               long YouTube video with "publish_at" in meta.json: also its
 //                                                               Social draft (video stays in R2, title picture, captions)
@@ -39,7 +40,7 @@ import { PIPELINE_CHANNELS, inPipeline } from "../src/studio/pipeline.js";
 import { formatZurich, isPlaceholder } from "../src/social/validate.js";
 import { replacedPlaceholders } from "./social-lib.mjs";
 import { addDaysIso, mondayOf } from "../src/social/weekplan.js";
-import { r2Plan, r2Removed } from "./studio-lib.mjs";
+import { r2Plan, r2Removed, reelKey, reelMoves, reelToR2, sameFile } from "./studio-lib.mjs";
 import { CliError, approvalCarriesOver, adoptStatus, ideaRow, ideasOverview, pickIdea, placeholderText, requestRow, checkMeta, checkScenes, itemFromPost, markerLine, rejectPatch, resolvePatch, reviewFile, sha256, slugOf,
   statusAfterNewVersion, summary, versionFromPost, workMarkers, youtubeDraftRow } from "./studio-lib.mjs";
 
@@ -118,6 +119,14 @@ async function r2Put(sb, key, path, type) {
   const { data, error } = await sb.functions.invoke("studio-media", { body: { key, method: "PUT" } });
   if (error || !data?.url) return null;
   const res = await fetch(data.url, { method: "PUT", body: await openAsBlob(path, { type }), headers: { "content-type": type }, duplex: "half" });
+  if (!res.ok) throw new CliError(`Upload nach R2 fehlgeschlagen (${res.status}).`);
+  return key;
+}
+// the same with bytes in memory (the Social import has the reel as uploaded to the bucket)
+async function r2PutBytes(sb, key, bytes, type) {
+  const { data, error } = await sb.functions.invoke("studio-media", { body: { key, method: "PUT" } });
+  if (error || !data?.url) return null;
+  const res = await fetch(data.url, { method: "PUT", body: bytes, headers: { "content-type": type } });
   if (!res.ok) throw new CliError(`Upload nach R2 fehlgeschlagen (${res.status}).`);
   return key;
 }
@@ -313,7 +322,7 @@ async function youtubeDraft(sb, item, postId, version, video, captionsKey) {
 
 // --- called by the Social import for every draft it created or replaced ---
 let studioReady;
-export async function studioFromImport(sb, { folder, dir, post, account, videoBytes, packageHash }) {
+export async function studioFromImport(sb, { folder, dir, post, account, videoBytes, uploadBytes = null, packageHash, onR2 = null }) {
   if (studioReady === false) return null;
   const items = await sb.from("studio_items").select("*").or(`social_post_id.eq.${post.id},slug.eq.${slugOf(folder)}`);
   if (missingTables(items.error)) { studioReady = false; return null; }
@@ -350,10 +359,55 @@ export async function studioFromImport(sb, { folder, dir, post, account, videoBy
   if (!item) item = must(await sb.from("studio_items").insert(itemFromPost(post, account, folder)).select().single());
   else if (!item.social_post_id) must(await sb.from("studio_items").update({ social_post_id: post.id }).eq("id", item.id));
   const n = (last?.version ?? 0) + 1;
+  // the reel plays in the studio from R2 (reelToR2 in studio-lib.mjs: Supabase egress); the bucket file stays for publishing
+  let inR2 = false;
+  if (ver.source.path && uploadBytes?.length) {
+    const key = reelKey(item.slug, n);
+    const video = (post.media ?? []).find((m) => m.path === ver.source.path);
+    const put = await r2PutBytes(sb, key, uploadBytes, video?.type || "video/mp4").catch(() => null);
+    if (put) { ver.source = reelToR2(ver.source, key, uploadBytes.length); inR2 = true; onR2?.(key, ver.source.social_path); }
+  }
   must(await sb.from("studio_versions").insert({ item_id: item.id, version: n, ...ver, hash: packageHash }));
   const day = itemFromPost(post, account, folder).day;
   must(await sb.from("studio_items").update({ current_version: n, status: statusAfterNewVersion(item.status), ...(day ? { day } : {}) }).eq("id", item.id));
-  return n === 1 ? "im Studio" : `Studio Fassung ${n}`;
+  // the older versions of this reel leave R2 (a failure here never spoils the import)
+  if (inR2) await r2Clean(sb, { nur: item.id }).catch(() => {});
+  return `${n === 1 ? "im Studio" : `Studio Fassung ${n}`}${inR2 ? " (Video in R2)" : ""}`;
+}
+
+// `npm run studio -- r2-reels [--do]` (13.11.2026): the reels already in the studio that still play from the Social bucket
+// go to R2 from the package on this PC (no download from Supabase); only when the package file is exactly the bucket file
+async function reelsToR2(sb, a) {
+  const { items, versions } = await loadAll(sb);
+  const posts = must(await sb.from("social_posts").select("id, status, media, media_deleted_at"));
+  const moves = reelMoves({ items, versions, posts });
+  const imported = existsSync(join(ROOT, "pakete", ".imported.json")) ? JSON.parse(readFileSync(join(ROOT, "pakete", ".imported.json"), "utf8")) : {};
+  const folderOf = new Map(Object.entries(imported).map(([f, m]) => [m.id, f]));
+  let done = 0, bytes = 0;
+  for (const mv of moves) {
+    const tag = `${mv.item.slug} v${mv.version.version}`;
+    const folder = folderOf.get(mv.item.social_post_id);
+    const dir = folder && join(ROOT, "pakete", folder);
+    const files = dir && existsSync(dir) ? readdirSync(dir).filter((n) => /\.(mp4|mov)$/i.test(n)) : [];
+    if (files.length !== 1) { console.log(`  bleibt  ${tag}: ${files.length ? "mehrere Videos im Paket" : "Paket am PC nicht gefunden"}`); continue; }
+    const local = readFileSync(join(dir, files[0]));
+    const i = mv.path.lastIndexOf("/");
+    const { data: list, error } = await sb.storage.from("social-media").list(mv.path.slice(0, i), { search: mv.path.slice(i + 1), limit: 10 });
+    const obj = (list ?? []).find((o) => o.name === mv.path.slice(i + 1));
+    if (error || !obj) { console.log(`  bleibt  ${tag}: Datei im Speicher nicht gefunden`); continue; }
+    if (!sameFile({ localBytes: local.length, localMd5: createHash("md5").update(local).digest("hex") }, { size: obj.metadata?.size, eTag: obj.metadata?.eTag })) {
+      console.log(`  bleibt  ${tag}: Paket-Video ist nicht die Datei im Speicher (z. B. beim Import verkleinert)`); continue;
+    }
+    if (!a.do) { console.log(`  nach R2 ${tag}  ${(local.length / 1e6).toFixed(1)} MB`); done++; bytes += local.length; continue; }
+    const put = await r2PutBytes(sb, mv.key, local, "video/mp4");
+    if (!put) throw new CliError("R2 ist nicht eingerichtet (Funktion studio-media).");
+    const upd = must(await sb.from("studio_versions").update({ source: reelToR2(mv.version.source, mv.key, local.length) })
+      .eq("id", mv.version.id).eq("source->>path", mv.path).select("id"));
+    if (!upd.length) { console.log(`  bleibt  ${tag}: die Fassung hat sich inzwischen geändert`); continue; }
+    console.log(`  ✓ R2    ${tag}  ${(local.length / 1e6).toFixed(1)} MB`);
+    done++; bytes += local.length;
+  }
+  console.log(`${a.do ? "✓" : "Vorschau:"} ${done} von ${moves.length} Reels ${a.do ? "spielen jetzt aus R2" : "können nach R2 (mit --do)"}, ${(bytes / 1e6).toFixed(0)} MB.`);
 }
 
 async function idea(sb, a) {
@@ -490,7 +544,7 @@ ${made.length} Einträge würden übernommen (Probelauf, nichts geschrieben).`);
 
 async function main() {
   const [cmd = "status", ...rest] = process.argv.slice(2);
-  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, r2: (sb, a) => r2Clean(sb, { storniert: !!a.storniert, tun: !!a.do, liste: true }), uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
+  const cmds = { status, markers, resolve: (sb, a) => judge(sb, a, "resolve"), reject: (sb, a) => judge(sb, a, "reject"), upload, idee: idea, ideen: ideas, entwurf: draft, r2: (sb, a) => r2Clean(sb, { storniert: !!a.storniert, tun: !!a.do, liste: true }), "r2-reels": reelsToR2, uebernehmen: adopt, anfrage: ask, anfragen: requests, "anfrage-erledigt": requestDone, auftraege: instructions, auftrag: instruction };
   if (!cmds[cmd]) fail("Befehle: status [--kanal …] | markers <id|slug|ordner> [--json] | resolve <marker-id> \"…\" [--regel all|channel|post \"Regel\"] | reject <marker-id> \"…\" | upload <ordner> [--kanal …] [--tag …] | idee <kanal> <datum> \"Titel\" \"Worum\" | ideen | entwurf <ordner> | anfrage <slug|-> --titel … --saetze … --credits … | anfragen | anfrage-erledigt <id> | uebernehmen");
   try {
     await cmds[cmd](await signedIn(), args(rest, ["json", "zusaetzlich", "dry", "alle", "ok", "storniert", "do"]));

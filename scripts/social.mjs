@@ -29,6 +29,7 @@ import { playlists } from "./social-playlists.mjs";
 import { competitors } from "./social-competitors.mjs";
 import { storage } from "./social-storage.mjs";
 import { studioFromImport } from "./studio.mjs";
+import { mediaWithR2 } from "./studio-lib.mjs";
 import { findPublishedTwin } from "../src/social/dupes.js";
 import { IMPORT, PackageError, isQuizStory, parsePackage } from "../src/social/package.js";
 import { KINDS, formatZurich, hoursLabel, validatePost, zurichToUtc } from "../src/social/validate.js";
@@ -101,6 +102,7 @@ async function save(sb, p, id, isNew) {
       const v = prepareVideo(it.bytes);
       if (v.shrunk) p.shrunk = [...(p.shrunk ?? []), v.shrunk];
       up = { ...it, bytes: v.bytes };
+      p.videoUp ??= v.bytes;   // the bytes that went to the bucket: the studio plays the same file from R2 (studioFromImport)
       still = await uploadStill(sb, id, v.still, i);
       video = v;   // length and size: YouTube needs the length for the right link (Short or normal video)
     }
@@ -303,8 +305,16 @@ async function main() {
         if (r.action !== "link" && saved.media?.length) {
           try {
             const note = await studioFromImport(sb, { folder: r.folder, dir: join(DIR, r.folder), post: saved, account: accounts.find((x) => x.id === saved.account_id),
-              videoBytes: r.items.find((it) => /^video\//.test(it.type))?.bytes ?? null, packageHash: r.hash });
+              videoBytes: r.items.find((it) => /^video\//.test(it.type))?.bytes ?? null, uploadBytes: r.videoUp ?? null, packageHash: r.hash,
+              onR2: (key, path) => { r.r2 = { key, path }; } });
             if (note) r.note = [r.note, note].filter(Boolean).join(" · ");
+            // the draft notes the R2 copy (social-publish reads the reel from there, no Supabase egress); the import
+            // marker follows, so the next import does not take this for an edit in the cockpit
+            if (r.r2 && saved.status === "draft") {
+              const { data: upd } = await sb.from("social_posts").update({ media: mediaWithR2(saved.media, r.r2.path, r.r2.key) })
+                .eq("id", saved.id).eq("status", "draft").eq("updated_at", saved.updated_at).select("updated_at");
+              if (upd?.length) markers[r.folder].updated_at = upd[0].updated_at;
+            }
           } catch (err) { r.note = [r.note, `Studio: ${err.message}`].filter(Boolean).join(" · "); }
         }
         r.done = true;

@@ -151,6 +151,40 @@ export function versionFromPost(post, { scenes = [], fps = null, assumptions = [
     },
   };
 }
+// Reels and Shorts play in the studio from Cloudflare R2, not from the Social bucket (13.11.2026: Supabase cached egress
+// at 4.6 of the free 5 GB after 9 days, the studio loaded the whole 40 MB reel from Supabase each time one was opened;
+// R2 has no egress fees). The Social draft keeps its bucket file for publishing (social_path), the studio version
+// points to the same bytes in R2. Without R2 (studio-media missing) the version stays on the bucket.
+export const reelKey = (slug, n) => `studio/${slug}/v${n}/video.mp4`;
+export function reelToR2(source, key, bytes) {
+  if (source?.kind !== "storage" || !source.path) return source;
+  return { kind: "r2", key, bytes, social_path: source.path, ...(source.still ? { still: source.still } : {}) };
+}
+// the Social draft notes the R2 copy next to its bucket file (social-publish reads it from there: mirrorKey in publish.ts)
+export const mediaWithR2 = (media, path, key) => (media ?? []).map((m) => (m.path === path && /^video\//.test(m.type ?? "") ? { ...m, r2: { key, of: path } } : m));
+// the reels already in the studio that still play from the bucket: the current version of every item whose post
+// has not gone out or been cancelled, and only while the post still uses exactly that file (`npm run studio -- r2-reels`)
+export function reelMoves({ items, versions, posts }) {
+  const post = new Map(posts.map((p) => [p.id, p]));
+  const out = [];
+  for (const it of items) {
+    if (it.status === "dropped" || !it.social_post_id) continue;
+    const v = versions.find((x) => x.item_id === it.id && x.version === it.current_version);
+    if (v?.source?.kind !== "storage" || !v.source.path) continue;
+    const p = post.get(it.social_post_id);
+    if (!p || ["published", "cancelled", "publishing"].includes(p.status) || p.media_deleted_at) continue;
+    if (!(p.media ?? []).some((m) => m.path === v.source.path)) continue;
+    out.push({ item: it, version: v, path: v.source.path, key: reelKey(it.slug, v.version) });
+  }
+  return out;
+}
+// the package video on this PC is the file in the bucket: same size, and the same MD5 where the bucket's ETag is a
+// plain MD5 (a multipart upload has «md5-n», then the size has to do)
+export function sameFile({ localBytes, localMd5 }, { size, eTag }) {
+  if (!Number.isFinite(Number(size)) || Number(size) !== localBytes) return false;
+  const tag = String(eTag ?? "").replace(/"/g, "").toLowerCase();
+  return /^[0-9a-f]{32}$/.test(tag) ? tag === localMd5 : true;
+}
 export const itemFromPost = (post, account, folder) => ({
   channel: `${account.app_id}/${account.platform}`,
   format: formatOf(post.kind, account.platform, (post.media ?? []).find((m) => m.duration)?.duration ?? null),
@@ -298,7 +332,7 @@ export function r2Plan({ items, versions, posts }) {
   const inUse = new Set();
   for (const p of posts) {
     if (["cancelled", "published"].includes(p.status)) continue;
-    for (const m of p.media ?? []) for (const k of [m.path, m.captions]) if (k) inUse.add(k);
+    for (const m of p.media ?? []) for (const k of [m.path, m.captions, m.r2?.key]) if (k) inUse.add(k);   // r2: the reel copy social-publish reads
   }
   const plan = [];
   for (const v of versions) {
