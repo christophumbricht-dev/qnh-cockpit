@@ -293,7 +293,7 @@ export function createStudio({ S, render, toast, errorText, approvePost, handleF
       <p class="muted small">Jeder Beitrag höchstens zweimal: Sichtung 1 mit Markern, Sichtung 2 mit Claudes Antworten und Freigabe. Lange YouTube-Videos und alles auf Instagram haben davor Idee und Entwurf.</p>
       ${(() => { const r2 = index.r2; const fl = r2Flag(r2.bytes); return r2.files ? `<p class="small ${fl?.level === "cost" ? "error" : fl ? "warn-text" : "muted"}">Cloudflare R2: ${fmtGB(r2.bytes)} von ${fmtGB(R2_FREE_BYTES)} gratis (${r2.files} Dateien)${fl?.level === "cost" ? `, kostet etwa ${fl.usd.toFixed(2)} pro Monat` : ""}.</p>` : ""; })()}
       ${runsHtml()}
-      ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? `${ideasHtml()}${pipelineHtml()}` : ""}
+      ${s.filter === "all" || PIPELINE_CHANNELS.includes(s.filter) ? ideasHtml() : ""}${s.filter === "all" || BLOCK_ROWS.some((r) => r.channel === s.filter) ? pipelineHtml() : ""}
       ${weeks.map(week).join("")}
       ${noDay.length ? `<section class="card st-week"><b>Ohne Tag</b><div class="st-cards">${noDay.map(card).join("")}</div></section>` : ""}`;
   }
