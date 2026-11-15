@@ -109,7 +109,7 @@ test("pipelineBlock: Zeitkacheln episodes 2 a week from 9.11.2026 on Tuesday and
   assert.deepEqual(start.days.map((d) => d.off), [true, false, true, true, true, false, true]);
 });
 
-test("Airspace Unfolded has its own row in the Ablauf block: start Sunday 15.11., then video Fri and Shorts Tue, Thu, Sat", () => {
+test("Airspace Unfolded has its own row in the Ablauf block: start Sunday 15.11., then video Fri and Shorts Tue, Thu, Sat, Sun", () => {
   const rows = BLOCK_ROWS.filter((r) => r.channel === "airspaceunfolded/youtube");
   assert.equal(rows.length, 1);
   const items = [
@@ -122,8 +122,8 @@ test("Airspace Unfolded has its own row in the Ablauf block: start Sunday 15.11.
   assert.equal(row.weeks[0].count, 2);
   assert.equal(row.weeks[0].days[6].entries.length, 2);
   assert.equal(row.weeks[0].days[2].off, true);
-  assert.equal(row.weeks[1].perWeek, 4);
+  assert.equal(row.weeks[1].perWeek, 5);
   assert.equal(row.weeks[1].count, 1);
-  assert.deepEqual(row.weeks[1].days.map((d) => d.off), [true, false, true, false, false, false, true]);
+  assert.deepEqual(row.weeks[1].days.map((d) => d.off), [true, false, true, false, false, false, false]);
   assert.equal(row.weeks[1].late, false);
 });

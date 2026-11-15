@@ -27,9 +27,9 @@ export const BLOCK_ROWS = [
   ...PIPELINE.slice(1),
   // Airspace Unfolded (Christoph 13.11.2026 «ich will auch noch diese Ansicht», Startplan «ja, so einplanen»): long videos and
   // Shorts in the same overview. Start Sun 15.11. with two videos (overview and control zone), from 16.11. one video on Friday
-  // and three Shorts Tue, Thu, Sat; no ideas yet, so a missing one is not late (looksOnly)
-  { channel: "airspaceunfolded/youtube", formats: ["video_long", "short"], perWeek: 4, label: "Video Fr, Shorts Di, Do, Sa", looksOnly: true,
-    from: [{ monday: "2026-11-09", perWeek: 2, days: [6] }, { monday: "2026-11-16", perWeek: 4, days: [1, 3, 4, 5] }] },
+  // and Shorts Tue, Thu, Sat and (Christoph 15.11.2026, five a week) Sun; no ideas yet, so a missing one is not late (looksOnly)
+  { channel: "airspaceunfolded/youtube", formats: ["video_long", "short"], perWeek: 5, label: "Video Fr, Shorts Di, Do, Sa, So", looksOnly: true,
+    from: [{ monday: "2026-11-09", perWeek: 2, days: [6] }, { monday: "2026-11-16", perWeek: 5, days: [1, 3, 4, 5, 6] }] },
 ];
 export const inPipeline = (channel, format) => PIPELINE.some((p) => p.channel === channel && (!p.formats || p.formats.includes(format)));
 
